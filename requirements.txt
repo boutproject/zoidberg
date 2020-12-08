@@ -1,0 +1,2 @@
+# the following line installs requirements from setup.py
+-e .
