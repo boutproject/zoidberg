@@ -375,7 +375,7 @@ def fci_to_vtk(infile, outfile, scale=5):
         if bx is None:
             xt_prime = f.read("forward_xt_prime")
             zt_prime = f.read("forward_zt_prime")
-            array_indices = indices(xt_prime.shape)
+            array_indices = np.indices(xt_prime.shape)
             bx = xt_prime - array_indices[0, ...]
             by = by * dy
             bz = zt_prime - array_indices[2, ...]

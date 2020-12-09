@@ -195,7 +195,7 @@ class MagneticField(object):
             if np.amin(np.abs(By)) < 1e-8:
                 # Very small By
                 print(x, z, ycoord, By)
-                # raise ValueError("Small By")
+                raise ValueError("Small By")
 
             R_By = Rmaj / By
             # Rate of change of x location [m] with y angle [radians]
@@ -1398,7 +1398,7 @@ class GEQDSK(MagneticField):
         if hasattr(psinorm, "shape"):
             return np.reshape(self.f_spl(np.ravel(psinorm)), psinorm.shape) / x
 
-        return f_spl(psinorm) / x  # f = R*Bt
+        return self.f_spl(psinorm) / x  # f = R*Bt
 
     def Rfunc(self, x, z, phi):
         return x
@@ -1410,7 +1410,7 @@ class GEQDSK(MagneticField):
         if hasattr(psinorm, "shape"):
             return np.reshape(self.p_spl(np.ravel(psinorm)), psinorm.shape)
 
-        return f_spl(psinorm)
+        return self.p_spl(psinorm)
 
 
 class W7X_vacuum(MagneticField):
