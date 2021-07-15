@@ -1234,7 +1234,7 @@ class SmoothedMagneticField(MagneticField):
     """
 
     def __init__(self, field, grid, xboundary=None, zboundary=None):
-        """"""
+        """ """
 
         self.field = field
         self.grid = grid
@@ -1421,7 +1421,7 @@ class GEQDSK(MagneticField):
         if hasattr(psinorm, "shape"):
             return np.reshape(self.p_spl(np.ravel(psinorm)), psinorm.shape)
 
-        return self.f_spl(psinorm)
+        return self.p_spl(psinorm)
 
 
 class W7X_vacuum(MagneticField):
@@ -1488,9 +1488,19 @@ class W7X_vacuum(MagneticField):
         # we can get an interpolation function in 3D
         points = (r, phi, z)
 
-        self.br_interp = RegularGridInterpolator(
-            points, Bx, bounds_error=False, fill_value=0.0
-        )
+        try:
+            self.br_interp = RegularGridInterpolator(
+                points, Bx, bounds_error=False, fill_value=0.0
+            )
+        except:
+            print([i.shape for i in points], Bx.shape)
+            import matplotlib.pyplot as plt
+
+            for i in points:
+                plt.plot(i)
+            plt.show()
+            raise
+
         self.bz_interp = RegularGridInterpolator(
             points, Bz, bounds_error=False, fill_value=0.0
         )
