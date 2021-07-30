@@ -1,23 +1,11 @@
 from builtins import object
 
 import numpy as np
-import sys
-
 
 try:
     from . import boundary
 except ImportError:
     import boundary
-
-
-if sys.version_info >= (3, 0):
-    pickle_read_mode = "rb"
-    pickle_write_mode = "wb"
-else:
-    pickle_read_mode = "r"
-    pickle_write_mode = "w"
-
-from .progress import update_progress
 
 
 class MagneticField(object):
@@ -347,6 +335,9 @@ try:
         gamma,
         And,
         factorial,
+        symbols,
+        Add,
+        symarray,
         diff,
     )
 
@@ -1449,7 +1440,7 @@ class W7X_vacuum(MagneticField):
             While the description are at:
             http://svvmec1.ipp-hgw.mpg.de:8080/vmecrest/v1/Coil_currents_1_AA_T_0011.pdf
         """
-        from scipy.interpolate import RegularGridInterpolator
+        from scipy.interpolate import griddata, RegularGridInterpolator
         import numpy as np
 
         ## create 1D arrays of cylindrical coordinates
@@ -1534,24 +1525,42 @@ class W7X_vacuum(MagneticField):
         ny = phi.shape[1]
         nz = z.shape[2]
 
-        # create (standardized) file name for saving/loading magnetic field.
-        fname = "B.w7x.{}.{}.{}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.dat".format(
-            nx,
-            ny,
-            nz,
-            r[0, 0, 0],
-            r[-1, 0, 0],
-            phi[0, 0, 0],
-            phi[0, -1, 0],
-            z[0, 0, 0],
-            z[0, 0, -1],
+        ### create (standardized) file name for saving/loading magnetic field.
+        fname = (
+            "B.w7x."
+            + str(nx)
+            + "."
+            + str(ny)
+            + "."
+            + str(nz)
+            + "."
+            + "{:.2f}".format(r[0, 0, 0])
+            + "-"
+            + "{:.2f}".format(r[-1, 0, 0])
+            + "."
+            + "{:.2f}".format(phi[0, 0, 0])
+            + "-"
+            + "{:.2f}".format(phi[0, -1, 0])
+            + "."
+            + "{:.2f}".format(z[0, 0, 0])
+            + "-"
+            + "{:.2f}".format(z[0, 0, -1])
+            + ".dat"
         )
 
         if os.path.isfile(fname):
-            print("Saved field found, loading from: ", fname)
-            with open(fname, pickle_read_mode) as f:
+            if sys.version_info >= (3, 0):
+                print("Saved field found, loading from: ", fname)
+                f = open(fname, "rb")
                 Br, Bphi, Bz = pickle.load(f)
-
+                f.close
+            else:
+                print("Saved field found, loading from: ", fname)
+                f = open(fname, "r")
+                Br, Bphi, Bz = pickle.load(
+                    f
+                )  ## error here means you pickled with v3+ re-do.
+                f.close
         else:
             print(
                 "No saved field found -- (re)calculating (must be on IPP network for this to work...)"
@@ -1613,7 +1622,7 @@ class W7X_vacuum(MagneticField):
             Bphi = -Bx * np.sin(phi) + By * np.cos(phi)
 
             ## Save so we don't have to do this every time.
-            with open(fname, pickle_write_mode) as f:
+            with open(fname, "wb") as f:
                 pickle.dump([Br, Bphi, Bz], f)
 
         if plot_poincare:
@@ -1665,28 +1674,39 @@ class W7X_vacuum(MagneticField):
         import pickle
 
         cl = Client("http://esb.ipp-hgw.mpg.de:8280/services/Extender?wsdl")
+
         vmecURL = "http://svvmec1.ipp-hgw.mpg.de:8080/vmecrest/v1/w7x_ref_1/wout.nc"
 
         nx = r.shape[0]
         ny = phi.shape[1]
         nz = z.shape[2]
 
-        # create (standardized) file name for saving/loading magnetic field.
-        fname = "B.w7x_plasma_field.{}.{}.{}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.dat".format(
-            nx,
-            ny,
-            nz,
-            r[0, 0, 0],
-            r[-1, 0, 0],
-            phi[0, 0, 0],
-            phi[0, -1, 0],
-            z[0, 0, 0],
-            z[0, 0, -1],
+        ### create (standardized) file name for saving/loading magnetic field.
+        fname = (
+            "B.w7x_plasma_field."
+            + str(nx)
+            + "."
+            + str(ny)
+            + "."
+            + str(nz)
+            + "."
+            + "{:.2f}".format(r[0, 0, 0])
+            + "-"
+            + "{:.2f}".format(r[-1, 0, 0])
+            + "."
+            + "{:.2f}".format(phi[0, 0, 0])
+            + "-"
+            + "{:.2f}".format(phi[0, -1, 0])
+            + "."
+            + "{:.2f}".format(z[0, 0, 0])
+            + "-"
+            + "{:.2f}".format(z[0, 0, -1])
+            + ".dat"
         )
 
         if os.path.isfile(fname):
             print("Saved field found, loading from: ", fname)
-            with open(fname, pickle_read_mode) as f:
+            with open(fname, "rb") as f:
                 Br, Bphi, Bz = pickle.load(f)
         else:
             print(
@@ -1725,7 +1745,7 @@ class W7X_vacuum(MagneticField):
             Bz = np.ndarray.reshape(np.asarray(plasmafield.x3), (nx, ny, nz))
 
             ## Save so we don't have to do this every time.
-            with open(fname, pickle_write_mode) as f:
+            with open(fname, "wb") as f:
                 pickle.dump([Br, Bphi, Bz], f)
 
         return Br, Bphi, Bz
@@ -1786,16 +1806,14 @@ class W7X_VMEC(MagneticField):
         nx=512,
         ny=32,
         nz=512,
-        x_range=(4.05, 6.55),
-        z_range=(-1.35, 1, 35),
-        phi_range=(0, 2 * np.pi),
+        x_range=[4.05, 6.55],
+        z_range=[-1.35, 1, 35],
+        phi_range=[0, 2 * np.pi],
         vmec_id="w7x_ref_171",
     ):
-        from scipy.interpolate import RegularGridInterpolator
+        from scipy.interpolate import griddata, RegularGridInterpolator
+        import numpy as np
 
-        self.nx = nx
-        self.ny = ny
-        self.nz = nz
         ## create 1D arrays of cylindrical coordinates
         r = np.linspace(x_range[0], x_range[-1], nx)
         phi = np.linspace(phi_range[0], phi_range[-1], ny)
