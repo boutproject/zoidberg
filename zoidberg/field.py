@@ -1,11 +1,8 @@
-from builtins import object
-
+import sys
 import numpy as np
 
-try:
-    from . import boundary
-except ImportError:
-    import boundary
+from . import boundary
+from .progress import update_progress
 
 
 class MagneticField(object):
@@ -132,7 +129,7 @@ class MagneticField(object):
 
         .. math ::
 
-           Bmag = \sqrt(B_x^2 + B_y^2 + B_z^2)
+           Bmag = \\sqrt(B_x^2 + B_y^2 + B_z^2)
 
         Parameters
         ----------
@@ -335,9 +332,6 @@ try:
         gamma,
         And,
         factorial,
-        symbols,
-        Add,
-        symarray,
         diff,
     )
 
@@ -1440,7 +1434,7 @@ class W7X_vacuum(MagneticField):
             While the description are at:
             http://svvmec1.ipp-hgw.mpg.de:8080/vmecrest/v1/Coil_currents_1_AA_T_0011.pdf
         """
-        from scipy.interpolate import griddata, RegularGridInterpolator
+        from scipy.interpolate import RegularGridInterpolator
         import numpy as np
 
         ## create 1D arrays of cylindrical coordinates
@@ -1811,7 +1805,7 @@ class W7X_VMEC(MagneticField):
         phi_range=[0, 2 * np.pi],
         vmec_id="w7x_ref_171",
     ):
-        from scipy.interpolate import griddata, RegularGridInterpolator
+        from scipy.interpolate import RegularGridInterpolator
         import numpy as np
 
         ## create 1D arrays of cylindrical coordinates
