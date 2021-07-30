@@ -1,4 +1,3 @@
-import sys
 import numpy as np
 
 from . import boundary
@@ -1473,19 +1472,9 @@ class W7X_vacuum(MagneticField):
         # we can get an interpolation function in 3D
         points = (r, phi, z)
 
-        try:
-            self.br_interp = RegularGridInterpolator(
-                points, Bx, bounds_error=False, fill_value=0.0
-            )
-        except:
-            print([i.shape for i in points], Bx.shape)
-            import matplotlib.pyplot as plt
-
-            for i in points:
-                plt.plot(i)
-            plt.show()
-            raise
-
+        self.br_interp = RegularGridInterpolator(
+            points, Bx, bounds_error=False, fill_value=0.0
+        )
         self.bz_interp = RegularGridInterpolator(
             points, Bz, bounds_error=False, fill_value=0.0
         )
@@ -1510,8 +1499,10 @@ class W7X_vacuum(MagneticField):
         """
         from osa import Client
         import os.path
+        import xarray as xr
         import pickle
         import matplotlib.pyplot as plt
+        from time import sleep
 
         tracer = Client("http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl")
 
@@ -1519,42 +1510,51 @@ class W7X_vacuum(MagneticField):
         ny = phi.shape[1]
         nz = z.shape[2]
 
-        ### create (standardized) file name for saving/loading magnetic field.
-        fname = (
-            "B.w7x."
-            + str(nx)
-            + "."
-            + str(ny)
-            + "."
-            + str(nz)
-            + "."
-            + "{:.2f}".format(r[0, 0, 0])
-            + "-"
-            + "{:.2f}".format(r[-1, 0, 0])
-            + "."
-            + "{:.2f}".format(phi[0, 0, 0])
-            + "-"
-            + "{:.2f}".format(phi[0, -1, 0])
-            + "."
-            + "{:.2f}".format(z[0, 0, 0])
-            + "-"
-            + "{:.2f}".format(z[0, 0, -1])
-            + ".dat"
+        # create (standardized) file name for saving/loading magnetic field.
+        fname_old = (
+            "B.w7x.{}.{}.{}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.dat".format(
+                nx,
+                ny,
+                nz,
+                r[0, 0, 0],
+                r[-1, 0, 0],
+                phi[0, 0, 0],
+                phi[0, -1, 0],
+                z[0, 0, 0],
+                z[0, 0, -1],
+            )
+        )
+
+        fname = "B.w7x.{}.{}.{}.{}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.nc".format(
+            configuration,
+            nx,
+            ny,
+            nz,
+            r[0, 0, 0],
+            r[-1, 0, 0],
+            phi[0, 0, 0],
+            phi[0, -1, 0],
+            z[0, 0, 0],
+            z[0, 0, -1],
         )
 
         if os.path.isfile(fname):
-            if sys.version_info >= (3, 0):
-                print("Saved field found, loading from: ", fname)
-                f = open(fname, "rb")
+            print("Saved field found, loading from: ", fname)
+            with xr.open_dataset(fname) as ds:
+                Br = ds["Br"].values
+                Bphi = ds["Bphi"].values
+                Bz = ds["Bz"].values
+
+        elif os.path.isfile(fname_old):
+            print("Saved field found, loading from: ", fname_old)
+            with open(fname_old, "rb") as f:
                 Br, Bphi, Bz = pickle.load(f)
-                f.close
-            else:
-                print("Saved field found, loading from: ", fname)
-                f = open(fname, "r")
-                Br, Bphi, Bz = pickle.load(
-                    f
-                )  ## error here means you pickled with v3+ re-do.
-                f.close
+            with xr.Dataset() as ds:
+                ds["Br"] = ("x", "y", "z"), Br
+                ds["Bz"] = ("x", "y", "z"), Bz
+                ds["Bphi"] = ("x", "y", "z"), Bphi
+                ds.to_netcdf(fname)
+
         else:
             print(
                 "No saved field found -- (re)calculating (must be on IPP network for this to work...)"
@@ -1598,7 +1598,22 @@ class W7X_vacuum(MagneticField):
                 pos.x3 = x3[slc]
 
                 ## Call tracer service
-                res = tracer.service.magneticField(pos, config)
+                redo = 2
+                while redo:
+                    try:
+                        res = tracer.service.magneticField(pos, config)
+                    except:
+                        # Catch any error. Different errors might be
+                        # reported, but we want to retry anyway.
+                        # Do not except Exception, as that would also
+                        # ignore control-C, which we do not want to
+                        # ignore.
+                        redo -= 1
+                        if redo == 0:
+                            raise
+                        sleep(0.6 - 0.4 * redo)
+                    else:
+                        break
 
                 Bx[slc] = res.field.x1
                 By[slc] = res.field.x2
@@ -1615,9 +1630,15 @@ class W7X_vacuum(MagneticField):
             Br = Bx * np.cos(phi) + By * np.sin(phi)
             Bphi = -Bx * np.sin(phi) + By * np.cos(phi)
 
+            del Bx
+            del By
+
             ## Save so we don't have to do this every time.
-            with open(fname, "wb") as f:
-                pickle.dump([Br, Bphi, Bz], f)
+            with xr.Dataset() as ds:
+                ds["Br"] = ("x", "y", "z"), Br
+                ds["Bz"] = ("x", "y", "z"), Bz
+                ds["Bphi"] = ("x", "y", "z"), Bphi
+                ds.to_netcdf(fname)
 
         if plot_poincare:
             ## Poincare plot as done on the web services
