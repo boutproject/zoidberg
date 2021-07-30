@@ -1,11 +1,7 @@
-from builtins import object
-
 import numpy as np
 
-try:
-    from . import boundary
-except ImportError:
-    import boundary
+from . import boundary
+from .progress import update_progress
 
 
 class MagneticField(object):
@@ -132,7 +128,7 @@ class MagneticField(object):
 
         .. math ::
 
-           Bmag = \sqrt(B_x^2 + B_y^2 + B_z^2)
+           Bmag = \\sqrt(B_x^2 + B_y^2 + B_z^2)
 
         Parameters
         ----------
@@ -195,7 +191,9 @@ class MagneticField(object):
             if np.amin(np.abs(By)) < 1e-8:
                 # Very small By
                 print(x, z, ycoord, By)
-                raise ValueError("Small By")
+                raise ValueError(
+                    "Small By ({}) at (x={}, y={}, z={})".format(By, x, ycoord, z)
+                )
 
             R_By = Rmaj / By
             # Rate of change of x location [m] with y angle [radians]
@@ -333,9 +331,6 @@ try:
         gamma,
         And,
         factorial,
-        symbols,
-        Add,
-        symarray,
         diff,
     )
 
@@ -617,17 +612,17 @@ try:
             self.Byf = lambdify((self.R, self.phi, self.Z), By, "numpy")
             self.Bzf = lambdify((self.R, self.phi, self.Z), Bz, "numpy")
 
-        def Bxfunc(self, x, z, y):
+        def Bxfunc(self, x, z, phi):
 
-            return self.Bxf(x, y, z) / self.Byf(self.R_0, 0, 0) * self.B_0
+            return self.Bxf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
 
-        def Byfunc(self, x, z, y):
+        def Byfunc(self, x, z, phi):
 
-            return self.Byf(x, y, z) / self.Byf(self.R_0, 0, 0) * self.B_0
+            return self.Byf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
 
-        def Bzfunc(self, x, z, y):
+        def Bzfunc(self, x, z, phi):
 
-            return self.Bzf(x, y, z) / self.Byf(self.R_0, 0, 0) * self.B_0
+            return self.Bzf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
 
         def Sfunc(self, x, z, y):
             """
@@ -643,7 +638,7 @@ try:
             """
             return self.Sf(x, y, z)
 
-        def Rfunc(self, x, z, y):
+        def Rfunc(self, x, z, phi):
             """
             Parameters
             ----------
@@ -1223,7 +1218,7 @@ class SmoothedMagneticField(MagneticField):
     """
 
     def __init__(self, field, grid, xboundary=None, zboundary=None):
-        """"""
+        """ """
 
         self.field = field
         self.grid = grid
@@ -1419,15 +1414,26 @@ class W7X_vacuum(MagneticField):
         nx=128,
         ny=32,
         nz=128,
-        x_range=[4.05, 6.55],
-        z_range=[-1.35, 1, 35],
+        x_range=(4.05, 6.55),
+        z_range=(-1.35, 1, 35),
         phimax=2.0 * np.pi,
         configuration=0,
         plot_poincare=False,
         include_plasma_field=False,
         wout_file="wout_w7x.0972_0926_0880_0852_+0000_+0000.01.00jh.nc",
     ):
-        from scipy.interpolate import griddata, RegularGridInterpolator
+        """
+        Get the field for W7X from the webservices.
+
+        Parameters
+        ----------
+        configuration : int
+            The id's are listed here:
+            http://webservices.ipp-hgw.mpg.de/docs/fieldlinetracer.html#MagneticConfig
+            While the description are at:
+            http://svvmec1.ipp-hgw.mpg.de:8080/vmecrest/v1/Coil_currents_1_AA_T_0011.pdf
+        """
+        from scipy.interpolate import RegularGridInterpolator
         import numpy as np
 
         ## create 1D arrays of cylindrical coordinates
@@ -1481,20 +1487,22 @@ class W7X_vacuum(MagneticField):
 
         # return points, br_interp, bphi_interp, bz_interp
 
-    ################## Vacuum field service ########################
-    # This uses the webservices field line tracer to get           #
-    # the vacuum magnetic field given 3d arrrays for R, phi, and Z #
-    # http://webservices.ipp-hgw.mpg.de/docs/fieldlinetracer.html  #
-    # Only works on IPP network                                    #
-    # Contact brendan.shanahan@ipp.mpg.de for questions            #
-    ################################################################
-
     def field_values(r, phi, z, configuration=0, plot_poincare=False):
+        """This uses the webservices field line tracer to get the vacuum
+        magnetic field given 3d arrrays for R, phi, and Z. Only works
+        on IPP network
+
+        http://webservices.ipp-hgw.mpg.de/docs/fieldlinetracer.html
+
+        Contact brendan.shanahan@ipp.mpg.de for questions
+
+        """
         from osa import Client
         import os.path
-        import sys
+        import xarray as xr
         import pickle
         import matplotlib.pyplot as plt
+        from time import sleep
 
         tracer = Client("http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl")
 
@@ -1502,42 +1510,51 @@ class W7X_vacuum(MagneticField):
         ny = phi.shape[1]
         nz = z.shape[2]
 
-        ### create (standardized) file name for saving/loading magnetic field.
-        fname = (
-            "B.w7x."
-            + str(nx)
-            + "."
-            + str(ny)
-            + "."
-            + str(nz)
-            + "."
-            + "{:.2f}".format(r[0, 0, 0])
-            + "-"
-            + "{:.2f}".format(r[-1, 0, 0])
-            + "."
-            + "{:.2f}".format(phi[0, 0, 0])
-            + "-"
-            + "{:.2f}".format(phi[0, -1, 0])
-            + "."
-            + "{:.2f}".format(z[0, 0, 0])
-            + "-"
-            + "{:.2f}".format(z[0, 0, -1])
-            + ".dat"
+        # create (standardized) file name for saving/loading magnetic field.
+        fname_old = (
+            "B.w7x.{}.{}.{}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.dat".format(
+                nx,
+                ny,
+                nz,
+                r[0, 0, 0],
+                r[-1, 0, 0],
+                phi[0, 0, 0],
+                phi[0, -1, 0],
+                z[0, 0, 0],
+                z[0, 0, -1],
+            )
+        )
+
+        fname = "B.w7x.{}.{}.{}.{}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.nc".format(
+            configuration,
+            nx,
+            ny,
+            nz,
+            r[0, 0, 0],
+            r[-1, 0, 0],
+            phi[0, 0, 0],
+            phi[0, -1, 0],
+            z[0, 0, 0],
+            z[0, 0, -1],
         )
 
         if os.path.isfile(fname):
-            if sys.version_info >= (3, 0):
-                print("Saved field found, loading from: ", fname)
-                f = open(fname, "rb")
+            print("Saved field found, loading from: ", fname)
+            with xr.open_dataset(fname) as ds:
+                Br = ds["Br"].values
+                Bphi = ds["Bphi"].values
+                Bz = ds["Bz"].values
+
+        elif os.path.isfile(fname_old):
+            print("Saved field found, loading from: ", fname_old)
+            with open(fname_old, "rb") as f:
                 Br, Bphi, Bz = pickle.load(f)
-                f.close
-            else:
-                print("Saved field found, loading from: ", fname)
-                f = open(fname, "r")
-                Br, Bphi, Bz = pickle.load(
-                    f
-                )  ## error here means you pickled with v3+ re-do.
-                f.close
+            with xr.Dataset() as ds:
+                ds["Br"] = ("x", "y", "z"), Br
+                ds["Bz"] = ("x", "y", "z"), Bz
+                ds["Bphi"] = ("x", "y", "z"), Bphi
+                ds.to_netcdf(fname)
+
         else:
             print(
                 "No saved field found -- (re)calculating (must be on IPP network for this to work...)"
@@ -1555,40 +1572,73 @@ class W7X_vacuum(MagneticField):
             config = tracer.types.MagneticConfig()
             config.configIds = configuration
 
-            Br = np.zeros((nx, ny, nz))
-            Bphi = np.ones((nx, ny, nz))
-            Bz = np.zeros((nx, ny, nz))
+            tot = nx * ny * nz
+
+            Bx = np.zeros(tot)
+            By = np.zeros(tot)
+            Bz = np.zeros(tot)
             pos = tracer.types.Points3D()
 
-            pos.x1 = np.ndarray.flatten(
+            x1 = np.ndarray.flatten(
                 np.ones((nx, ny, nz)) * r * np.cos(phi)
             )  # x in Cartesian (real-space)
-            pos.x2 = np.ndarray.flatten(
+            x2 = np.ndarray.flatten(
                 np.ones((nx, ny, nz)) * r * np.sin(phi)
             )  # y in Cartesian (real-space)
-            pos.x3 = np.ndarray.flatten(z)  # z in Cartesian (real-space)
+            x3 = np.ndarray.flatten(z)  # z in Cartesian (real-space)
+            chunk = 100000
+            if tot > chunk * 2:
+                update_progress(0)
+            for i in range(0, tot, chunk):
+                end = i + chunk
+                end = min(end, tot)
+                slc = slice(i, end)
+                pos.x1 = x1[slc]
+                pos.x2 = x2[slc]
+                pos.x3 = x3[slc]
 
-            ## Call tracer service
-            res = tracer.service.magneticField(pos, config)
+                ## Call tracer service
+                redo = 2
+                while redo:
+                    try:
+                        res = tracer.service.magneticField(pos, config)
+                    except:
+                        # Catch any error. Different errors might be
+                        # reported, but we want to retry anyway.
+                        # Do not except Exception, as that would also
+                        # ignore control-C, which we do not want to
+                        # ignore.
+                        redo -= 1
+                        if redo == 0:
+                            raise
+                        sleep(0.6 - 0.4 * redo)
+                    else:
+                        break
 
+                Bx[slc] = res.field.x1
+                By[slc] = res.field.x2
+                Bz[slc] = res.field.x3
+
+                if tot > chunk * 2:
+                    update_progress((i + 1) / tot)
             ## Reshape to 3d array
-            Bx = np.ndarray.reshape(np.asarray(res.field.x1), (nx, ny, nz))
-            By = np.ndarray.reshape(np.asarray(res.field.x2), (nx, ny, nz))
-            Bz = np.ndarray.reshape(np.asarray(res.field.x3), (nx, ny, nz))
+            Bx = Bx.reshape((nx, ny, nz))
+            By = By.reshape((nx, ny, nz))
+            Bz = Bz.reshape((nx, ny, nz))
 
             ## Convert to cylindrical coordinates
             Br = Bx * np.cos(phi) + By * np.sin(phi)
             Bphi = -Bx * np.sin(phi) + By * np.cos(phi)
 
+            del Bx
+            del By
+
             ## Save so we don't have to do this every time.
-            if sys.version_info >= (3, 0):
-                f = open(fname, "wb")
-                pickle.dump([Br, Bphi, Bz], f)
-                f.close()
-            else:
-                f = open(fname, "w")
-                pickle.dump([Br, Bphi, Bz], f)
-                f.close()
+            with xr.Dataset() as ds:
+                ds["Br"] = ("x", "y", "z"), Br
+                ds["Bz"] = ("x", "y", "z"), Bz
+                ds["Bphi"] = ("x", "y", "z"), Bphi
+                ds.to_netcdf(fname)
 
         if plot_poincare:
             ## Poincare plot as done on the web services
@@ -1624,32 +1674,23 @@ class W7X_vacuum(MagneticField):
 
         return Br, Bphi, Bz
 
-    ################## Plasma field service ########################
-    # This uses EXTENDER via the webservices to get                #
-    # the magnetic field from the plasma given 3d arrrays          #
-    # for R, phi, and Z                                            #
-    # http://webservices.ipp-hgw.mpg.de/docs/extender.html         #
-    # Only works on IPP network                                    #
-    # Contact brendan.shanahan@ipp.mpg.de for questions            #
-    ################################################################
-
     def plasma_field(r, phi, z, wout_file="wout.nc"):
+        """This uses EXTENDER via the IPP webservices to get the magnetic
+        field from the plasma given 3d arrrays for R, phi, and Z. Only
+        works on IPP network
+
+        http://webservices.ipp-hgw.mpg.de/docs/extender.html
+
+        Contact brendan.shanahan@ipp.mpg.de for questions
+
+        """
         from osa import Client
         import os.path
-        import sys
         import pickle
-        import matplotlib.pyplot as plt
-        from boututils.datafile import DataFile
 
         cl = Client("http://esb.ipp-hgw.mpg.de:8280/services/Extender?wsdl")
-        # print (os.path.isfile(wout_file))
-        # if not (os.path.isfile(wout_file)):
-        # vmecURL = 'http://svvmec1.ipp-hgw.mpg.de:8080/vmecrest/v1/run/test42/wout.nc'
+
         vmecURL = "http://svvmec1.ipp-hgw.mpg.de:8080/vmecrest/v1/w7x_ref_1/wout.nc"
-        # else:
-        #     f = DataFile(wout_file)
-        #     wout = f
-        #     f.close()
 
         nx = r.shape[0]
         ny = phi.shape[1]
@@ -1679,18 +1720,9 @@ class W7X_vacuum(MagneticField):
         )
 
         if os.path.isfile(fname):
-            if sys.version_info >= (3, 0):
-                print("Saved field found, loading from: ", fname)
-                f = open(fname, "rb")
+            print("Saved field found, loading from: ", fname)
+            with open(fname, "rb") as f:
                 Br, Bphi, Bz = pickle.load(f)
-                f.close
-            else:
-                print("Saved field found, loading from: ", fname)
-                f = open(fname, "r")
-                Br, Bphi, Bz = pickle.load(
-                    f
-                )  ## error here means you pickled with v3+ re-do.
-                f.close
         else:
             print(
                 "No saved plasma field found -- (re)calculating (must be on IPP network for this to work...)"
@@ -1728,23 +1760,13 @@ class W7X_vacuum(MagneticField):
             Bz = np.ndarray.reshape(np.asarray(plasmafield.x3), (nx, ny, nz))
 
             ## Save so we don't have to do this every time.
-            if sys.version_info >= (3, 0):
-                f = open(fname, "wb")
+            with open(fname, "wb") as f:
                 pickle.dump([Br, Bphi, Bz], f)
-                f.close()
-            else:
-                f = open(fname, "w")
-                pickle.dump([Br, Bphi, Bz], f)
-                f.close()
 
         return Br, Bphi, Bz
 
     def magnetic_axis(self, phi_axis=0, configuration=0):
         from osa import Client
-        import os.path
-        import sys
-        import pickle
-        import matplotlib.pyplot as plt
 
         tracer = Client("http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl")
 
@@ -1804,7 +1826,7 @@ class W7X_VMEC(MagneticField):
         phi_range=[0, 2 * np.pi],
         vmec_id="w7x_ref_171",
     ):
-        from scipy.interpolate import griddata, RegularGridInterpolator
+        from scipy.interpolate import RegularGridInterpolator
         import numpy as np
 
         ## create 1D arrays of cylindrical coordinates
@@ -1816,7 +1838,7 @@ class W7X_VMEC(MagneticField):
         rarray, yarray, zarray = np.meshgrid(r, phi, z, indexing="ij")
 
         ## call vacuum field values
-        b_vmec = W7X_VMEC.field_values(rarray, yarray, zarray, vmec_id)
+        b_vmec = self.field_values(rarray, yarray, zarray, vmec_id)
         Bx_vmec = b_vmec[0]
         By_vmec = b_vmec[1]
         Bz_vmec = b_vmec[2]
@@ -1826,16 +1848,16 @@ class W7X_VMEC(MagneticField):
         points = (r, phi, z)
 
         self.br_interp = RegularGridInterpolator(
-            points, Bx, bounds_error=False, fill_value=0.0
+            points, Bx_vmec, bounds_error=False, fill_value=0.0
         )
         self.bz_interp = RegularGridInterpolator(
-            points, Bz, bounds_error=False, fill_value=0.0
+            points, Bz_vmec, bounds_error=False, fill_value=0.0
         )
         self.bphi_interp = RegularGridInterpolator(
-            points, By, bounds_error=False, fill_value=1.0
+            points, By_vmec, bounds_error=False, fill_value=1.0
         )
 
-    def field_values(r, phi, z, vmec_id="w7x_ref_171"):
+    def field_values(self, r, phi, z, vmec_id="w7x_ref_171"):
         from osa import Client
 
         vmec = Client("http://esb:8280/services/vmec_v5?wsdl")
@@ -1843,18 +1865,18 @@ class W7X_VMEC(MagneticField):
         pos = vmec.types.Points3D()
 
         pos.x1 = np.ndarray.flatten(
-            np.ones((nx, ny, nz)) * r * np.cos(phi)
+            np.ones((self.nx, self.ny, self.nz)) * r * np.cos(phi)
         )  # x in Cartesian (real-space)
         pos.x2 = np.ndarray.flatten(
-            np.ones((nx, ny, nz)) * r * np.sin(phi)
+            np.ones((self.nx, self.ny, self.nz)) * r * np.sin(phi)
         )  # y in Cartesian (real-space)
         pos.x3 = np.ndarray.flatten(z)  # z in Cartesian (real-space)
-        b = vmec.service.magneticField(str(vmec_id), p)
+        b = vmec.service.magneticField(str(vmec_id), pos)
 
         ## Reshape to 3d array
-        Bx = np.ndarray.reshape(np.asarray(b.field.x1), (nx, ny, nz))
-        By = np.ndarray.reshape(np.asarray(b.field.x2), (nx, ny, nz))
-        Bz = np.ndarray.reshape(np.asarray(b.field.x3), (nx, ny, nz))
+        Bx = np.ndarray.reshape(np.asarray(b.field.x1), (self.nx, self.ny, self.nz))
+        By = np.ndarray.reshape(np.asarray(b.field.x2), (self.nx, self.ny, self.nz))
+        Bz = np.ndarray.reshape(np.asarray(b.field.x3), (self.nx, self.ny, self.nz))
 
         ## Convert to cylindrical coordinates
         Br = Bx * np.cos(phi) + By * np.sin(phi)
