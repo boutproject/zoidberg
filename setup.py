@@ -47,12 +47,4 @@ setuptools.setup(
         "Documentation": "https://bout-dev.readthedocs.io/en/latest/",
         "Source Code": "https://github.com/boutproject/zoidberg/",
     },
-    command_options={
-        "build_sphinx": {
-            "project": ("setup.py", name),
-            "version": ("setup.py", version),
-            "release": ("setup.py", release),
-            "source_dir": ("setup.py", "docs"),
-        }
-    },
 )
