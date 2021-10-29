@@ -11,11 +11,11 @@ def test_getPoloidalGrid():
 
     # Try to get points outside the domain
     p, y = grid.getPoloidalGrid(-1)
-    assert p == None
+    assert p is None
     assert np.allclose(y, 0.0)
 
     p, y = grid.getPoloidalGrid(10)
-    assert p == None
+    assert p is None
     assert np.allclose(y, 10.0)
 
     # Check values of y at the start and end of the domain

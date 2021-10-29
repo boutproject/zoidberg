@@ -58,7 +58,7 @@ def update_progress(progress, barLength=10, ascii=False, **kwargs):
                 face = u" (°,,,°) "
                 ink = u"█"
 
-            open_claw = "(\/)"
+            open_claw = "(\\/)"
             closed_claw = "(|)"
 
             if int(progress * barLength) % 2:
