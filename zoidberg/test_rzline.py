@@ -37,7 +37,6 @@ def test_distance():
 def test_order_by_distance():
     # Check the RZline.equallySpaced function
     inner = rzline.circle(R0=1.0, r=1.0, n=20)
-    outer = rzline.circle(R0=1.0, r=2.0, n=20)
 
     new_inner = inner.equallySpaced(n=10)
 
