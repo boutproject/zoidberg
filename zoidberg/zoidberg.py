@@ -1,5 +1,3 @@
-from __future__ import division
-
 import numpy as np
 from boututils import datafile as bdata
 from collections import namedtuple
