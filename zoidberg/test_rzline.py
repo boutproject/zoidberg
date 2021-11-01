@@ -1,6 +1,6 @@
-from . import rzline
-
 import numpy as np
+
+from . import rzline
 
 
 def test_circular_boundaries():

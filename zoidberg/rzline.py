@@ -3,13 +3,12 @@ poloidal planes
 
 """
 
-import numpy as np
-
-from numpy import pi, linspace, sqrt, cos, sin, append, argmin
-from scipy.interpolate import splrep, splev, interp1d
-from scipy.integrate import cumtrapz
-
 import warnings
+
+import numpy as np
+from numpy import append, argmin, cos, linspace, pi, sin, sqrt
+from scipy.integrate import cumtrapz
+from scipy.interpolate import interp1d, splev, splrep
 
 try:
     import matplotlib.pyplot as plt
@@ -518,7 +517,6 @@ if __name__ == "__main__":
 
     #############################################################################
     # Define the magnetic field
-
     # Length in y after which the coils return to their starting (R,Z) locations
     yperiod = 10.0
 

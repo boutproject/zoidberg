@@ -1,8 +1,8 @@
-from . import fieldtracer
+import warnings
 
 import numpy as np
 
-import warnings
+from . import fieldtracer
 
 try:
     import matplotlib.animation as anim

@@ -18,12 +18,12 @@ Functions
 
 """
 
+import warnings
+
 import numpy as np
-from numpy import pi, linspace, zeros
+from numpy import linspace, pi, zeros
 from scipy.interpolate import RectBivariateSpline
 from scipy.spatial import cKDTree as KDTree
-
-import warnings
 
 try:
     import matplotlib.pyplot as plt

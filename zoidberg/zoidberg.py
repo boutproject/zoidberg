@@ -1,7 +1,8 @@
-import numpy as np
-from boututils import datafile as bdata
 from collections import namedtuple
 from itertools import chain
+
+import numpy as np
+from boututils import datafile as bdata
 
 from . import fieldtracer
 from .progress import update_progress
@@ -481,8 +482,8 @@ def upscale(field, maps, upscale_factor=4, quiet=True):
 
     """
 
-    from scipy.ndimage.interpolation import map_coordinates
     from scipy.interpolate import griddata
+    from scipy.ndimage.interpolation import map_coordinates
 
     xt_prime = maps["forward_xt_prime"]
     zt_prime = maps["forward_zt_prime"]
