@@ -3,17 +3,10 @@ import setuptools
 with open("README.md", "r") as f:
     long_description = f.read()
 
-version_dict = {}
-with open("zoidberg/_version.py") as f:
-    exec(f.read(), version_dict)
-
 name = "zoidberg"
-version = version_dict["__version__"]
-release = version
 
 setuptools.setup(
     name=name,
-    version=version,
     url="https://github.com/boutproject/zoidberg",
     author="Peter Hill",
     author_email="peter.hill@york.ac.uk",
@@ -39,6 +32,9 @@ setuptools.setup(
         "Operating System :: POSIX :: Linux",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
         "Topic :: Scientific/Engineering :: Visualization",
     ],
     packages=setuptools.find_packages(),
@@ -47,12 +43,6 @@ setuptools.setup(
         "Documentation": "https://bout-dev.readthedocs.io/en/latest/",
         "Source Code": "https://github.com/boutproject/zoidberg/",
     },
-    command_options={
-        "build_sphinx": {
-            "project": ("setup.py", name),
-            "version": ("setup.py", version),
-            "release": ("setup.py", release),
-            "source_dir": ("setup.py", "docs"),
-        }
-    },
+    use_scm_version=True,
+    setup_requires=["setuptools_scm"],
 )
