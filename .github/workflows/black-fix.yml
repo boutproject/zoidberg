@@ -1,0 +1,39 @@
+name: linting
+
+on: [push, pull_request]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  black:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        ref: ${{ github.head_ref }}
+
+    - name: Install black
+      run: |
+        sudo apt update -y
+        sudo apt -y install python3-pip python3-setuptools python3-wheel
+        pip3 install black isort
+
+    - name: Version
+      run: |
+        python3 --version
+        $HOME/.local/bin/black --version
+        $HOME/.local/bin/isort --version
+
+    - name: Run black
+      run: |
+        pwd
+        ls
+        $HOME/.local/bin/black zoidberg
+        $HOME/.local/bin/isort zoidberg
+
+    - uses: stefanzweifel/git-auto-commit-action@v4
+      with:
+        commit_message: "[skip ci] Apply black/isort changes"
