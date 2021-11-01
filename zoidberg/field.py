@@ -317,22 +317,8 @@ class CurvedSlab(MagneticField):
 
 
 try:
-    from sympy import (
-        Symbol,
-        atan2,
-        cos,
-        sin,
-        log,
-        pi,
-        sqrt,
-        lambdify,
-        Piecewise,
-        Sum,
-        gamma,
-        And,
-        factorial,
-        diff,
-    )
+    from sympy import (And, Piecewise, Sum, Symbol, atan2, cos, diff,
+                       factorial, gamma, lambdify, log, pi, sin, sqrt)
 
     class StraightStellarator(MagneticField):
         """A "rotating ellipse" stellarator without curvature
@@ -1124,7 +1110,7 @@ class VMEC(MagneticField):
 
     def __init__(self, vmec_file, ntheta=None, nzeta=None, nr=32, nz=32):
         # Only needed here
-        from scipy.interpolate import griddata, RegularGridInterpolator
+        from scipy.interpolate import RegularGridInterpolator, griddata
 
         self.read_vmec_file(vmec_file, ntheta, nzeta)
 
@@ -1433,8 +1419,8 @@ class W7X_vacuum(MagneticField):
             While the description are at:
             http://svvmec1.ipp-hgw.mpg.de:8080/vmecrest/v1/Coil_currents_1_AA_T_0011.pdf
         """
-        from scipy.interpolate import RegularGridInterpolator
         import numpy as np
+        from scipy.interpolate import RegularGridInterpolator
 
         ## create 1D arrays of cylindrical coordinates
         r = np.linspace(x_range[0], x_range[-1], nx)
@@ -1497,12 +1483,13 @@ class W7X_vacuum(MagneticField):
         Contact brendan.shanahan@ipp.mpg.de for questions
 
         """
-        from osa import Client
         import os.path
-        import xarray as xr
         import pickle
-        import matplotlib.pyplot as plt
         from time import sleep
+
+        import matplotlib.pyplot as plt
+        import xarray as xr
+        from osa import Client
 
         tracer = Client("http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl")
 
@@ -1684,9 +1671,10 @@ class W7X_vacuum(MagneticField):
         Contact brendan.shanahan@ipp.mpg.de for questions
 
         """
-        from osa import Client
         import os.path
         import pickle
+
+        from osa import Client
 
         cl = Client("http://esb.ipp-hgw.mpg.de:8280/services/Extender?wsdl")
 
@@ -1826,8 +1814,8 @@ class W7X_VMEC(MagneticField):
         phi_range=[0, 2 * np.pi],
         vmec_id="w7x_ref_171",
     ):
-        from scipy.interpolate import RegularGridInterpolator
         import numpy as np
+        from scipy.interpolate import RegularGridInterpolator
 
         ## create 1D arrays of cylindrical coordinates
         r = np.linspace(x_range[0], x_range[-1], nx)

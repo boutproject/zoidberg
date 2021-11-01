@@ -1,5 +1,6 @@
 import numpy as np
-from .field import Slab, CurvedSlab
+
+from .field import CurvedSlab, Slab
 
 
 def test_slab():

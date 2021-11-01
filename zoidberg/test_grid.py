@@ -1,5 +1,6 @@
-from .grid import rectangular_grid
 import numpy as np
+
+from .grid import rectangular_grid
 
 
 def test_getPoloidalGrid():

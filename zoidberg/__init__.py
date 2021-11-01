@@ -1,9 +1,6 @@
 import zoidberg
-from . import grid
-from . import field
-from . import fieldtracer
-from . import plot
 
+from . import field, fieldtracer, grid, plot
 from .zoidberg import make_maps, write_maps
 
 __all__ = [

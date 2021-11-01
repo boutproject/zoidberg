@@ -1,7 +1,6 @@
 import numpy as np
 
-from . import rzline
-from . import poloidal_grid
+from . import poloidal_grid, rzline
 
 
 def test_out_of_domain():

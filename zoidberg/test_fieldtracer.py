@@ -1,7 +1,6 @@
 import numpy as np
 
-from . import fieldtracer
-from . import field
+from . import field, fieldtracer
 
 
 def test_slab():

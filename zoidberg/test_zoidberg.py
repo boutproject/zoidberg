@@ -1,6 +1,8 @@
 from itertools import chain, product
+
 import numpy as np
-from . import zoidberg, grid, field
+
+from . import field, grid, zoidberg
 
 
 def test_make_maps_slab():
