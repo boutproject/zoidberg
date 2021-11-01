@@ -3,17 +3,10 @@ import setuptools
 with open("README.md", "r") as f:
     long_description = f.read()
 
-version_dict = {}
-with open("zoidberg/_version.py") as f:
-    exec(f.read(), version_dict)
-
 name = "zoidberg"
-version = version_dict["__version__"]
-release = version
 
 setuptools.setup(
     name=name,
-    version=version,
     url="https://github.com/boutproject/zoidberg",
     author="Peter Hill",
     author_email="peter.hill@york.ac.uk",
@@ -47,4 +40,6 @@ setuptools.setup(
         "Documentation": "https://bout-dev.readthedocs.io/en/latest/",
         "Source Code": "https://github.com/boutproject/zoidberg/",
     },
+    use_scm_version=True,
+    setup_requires=["setuptools_scm"],
 )
