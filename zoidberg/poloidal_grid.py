@@ -671,11 +671,35 @@ def grid_elliptic(
         # Align inner and outer boundaries
         # Easiest way is to roll both boundaries
         # so that index 0 is on the outboard midplane
-
-        ind = np.argmax(inner.R)
-        inner = rzline.RZline(np.roll(inner.R, -ind), np.roll(inner.Z, -ind))
-        ind = np.argmax(outer.R)
-        outer = rzline.RZline(np.roll(outer.R, -ind), np.roll(outer.Z, -ind))
+        if len(inner.R) < len(outer.R):
+            shorter = inner
+            longer = outer
+        else:
+            shorter = outer
+            longer = inner
+        ind = np.argmax(shorter.R)
+        shorter = rzline.RZline(np.roll(shorter.R, -ind), np.roll(shorter.Z, -ind))
+        # if len(longer.R) == len(shorter.R):
+        dr = shorter.R - longer.R[:, None]
+        dz = shorter.Z - longer.Z[:, None]
+        delta = dr ** 2 + dz ** 2
+        sums = []
+        fac = len(longer.R) / len(shorter.R)
+        for i in range(len(longer.R)):
+            sums.append(
+                np.sum(
+                    [delta[int(round(j * fac)) - i, j] for j in range(len(shorter.R))]
+                )
+            )
+        ind = -np.argmin(sums)
+        print(len(longer.R) + ind, np.argmax(longer.R))
+        longer = rzline.RZline(np.roll(longer.R, -ind), np.roll(longer.Z, -ind))
+        if len(inner.R) < len(outer.R):
+            inner = shorter
+            outer = longer
+        else:
+            outer = shorter
+            inner = longer
 
     if (nx > restrict_size) or (nz > restrict_size):
         # Create a coarse grid first to get a starting guess
