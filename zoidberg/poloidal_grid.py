@@ -587,6 +587,7 @@ def grid_elliptic(
     restrict_size=20,
     restrict_factor=2,
     return_coords=False,
+    nx_outer=0,
 ):
     """Create a structured grid between inner and outer boundaries using
     elliptic method
@@ -656,7 +657,10 @@ def grid_elliptic(
 
     """
 
-    assert nx >= 2
+    if nx_outer:
+        assert nx_outer > 0
+        nx -= nx_outer
+    assert nx > 1
     assert nz > 1
 
     # Generate angle values (y coordinate),
@@ -849,6 +853,14 @@ def grid_elliptic(
 
         if maxchange_sq < tol:
             break
+
+    if nx_outer:
+        nxn = nx + nx_outer
+        dn = np.arange(nx_outer) + 1
+        dR = R[-1] - R[-2]
+        dZ = Z[-1] - Z[-2]
+        R = np.vstack([R, R[-1] + dR[None, :] * dn[:, None]])
+        Z = np.vstack([Z, Z[-1] + dZ[None, :] * dn[:, None]])
 
     if show and plotting_available:
         plt.plot(R, Z)
