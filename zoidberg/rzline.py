@@ -44,6 +44,9 @@ class RZline:
         Ensure that the line goes anticlockwise in the R-Z plane
         (positive theta)
 
+    ** kwargs : dict, optional
+        Options for scipy.interpolate.splrep
+
     Note that the last point in (r,z) arrays should not be the same
     as the first point. The (r,z) points are in [0,2pi)
 
@@ -52,7 +55,7 @@ class RZline:
 
     """
 
-    def __init__(self, r, z, anticlockwise=True):
+    def __init__(self, r, z, anticlockwise=True, **kwargs):
         r = np.asfarray(r)
         z = np.asfarray(z)
 
@@ -78,8 +81,12 @@ class RZline:
 
         # Create a spline representation
         # Note that the last point needs to be passed but is not used
-        self._rspl = splrep(append(self.theta, 2 * pi), append(r, r[0]), per=True)
-        self._zspl = splrep(append(self.theta, 2 * pi), append(z, z[0]), per=True)
+        self._rspl = splrep(
+            append(self.theta, 2 * pi), append(r, r[0]), per=True, **kwargs
+        )
+        self._zspl = splrep(
+            append(self.theta, 2 * pi), append(z, z[0]), per=True, **kwargs
+        )
 
     def Rvalue(self, theta=None, deriv=0):
         """Calculate the value of R at given theta locations
@@ -434,7 +441,7 @@ def line_from_points_poly(rarray, zarray, show=False):
     return RZline(rvals, zvals)
 
 
-def line_from_points(rarray, zarray, show=False):
+def line_from_points(rarray, zarray, show=False, **kw):
     """Find a periodic line which goes through the given (r,z) points
 
     This function starts at a point, and finds the nearest neighbour
@@ -497,7 +504,7 @@ def line_from_points(rarray, zarray, show=False):
         rvals.append(rarr[0])
         zvals.append(zarr[0])
 
-        new_line = RZline(rvals, zvals)
+        new_line = RZline(rvals, zvals, **kw)
         new_dist = new_line.distance()[-1]  # Total distance
 
         if (best_line is None) or (new_dist < best_dist):
