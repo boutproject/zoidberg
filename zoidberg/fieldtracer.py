@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.integrate import odeint
 
+from multiprocessing import Pool
+
 
 class FieldTracer(object):
     """A class for following magnetic field lines
@@ -393,3 +395,194 @@ def trace_poincare(
     result = np.reshape(result, (revs, nplot) + result.shape[1:])
 
     return result, y_slices
+
+
+class FieldTracerWeb(object):
+    """A class for following magnetic field lines
+
+    Parameters
+    ----------
+    field : :py:obj:`~zoidberg.field.MagneticField`
+        A Zoidberg MagneticField instance
+
+    """
+
+    def __init__(self, config=None, configId=None, timeout=0.1, chunk=10000):
+        import requests
+
+        # First check whether the webservice is available, as the default timeout is rather slow.
+        self.url = "http://esb:8280/services/FieldLineProxy?wsdl"
+        requests.get(self.url, timeout=timeout).raise_for_status()
+
+        self.config = config
+        self.configId = configId
+        if self.config:
+            assert self.configId is None
+        else:
+            assert self.configId is not None
+
+        # Check tracing direction
+        pos = self.flt.types.Points3D()
+        pos.x1 = [6]
+        pos.x2 = [0]
+        pos.x3 = [0]
+
+        lineTask = self.flt.types.LineTracing()
+        lineTask.numSteps = 1
+
+        task = self.flt.types.Task()
+        task.step = 0.001
+        task.lines = lineTask
+
+        line = self.flt.service.trace(pos, self.getConfig(), task, None, None).lines[0]
+        phi = np.arctan2(line.vertices.x2, line.vertices.x1)[-1]
+        assert phi != 0
+        self.isforward = phi > 0
+        self.chunk = chunk
+
+    def follow_field_lines(self, x_values, z_values, y_values, rtol=None):
+        """Uses field_direction to follow the magnetic field
+        from every grid (x,z) point at toroidal angle y
+        through a change in toroidal angle dy
+
+        Parameters
+        ----------
+        x_values : array_like
+            Starting x coordinates
+        z_values : array_like
+            Starting z coordinates
+        y_values : array_like
+            y coordinates to follow the field line to. y_values[0] is
+            the starting position
+        rtol : float, optional
+            The relative tolerance to use for the integrator. If None,
+            use the default value
+
+        Returns
+        -------
+        result : numpy.ndarray
+            Field line ending coordinates
+
+            The first dimension is y, the last is (x,z). The
+            middle dimensions are the same shape as [x|z]:
+            [0,...] is the initial position
+            [...,0] are the x-values
+            [...,1] are the z-values
+            If x_values is a scalar and z_values a 1D array, then result
+            has the shape [len(y), len(z), 2], and vice-versa.
+            If x_values and z_values are 1D arrays, then result has the shape
+            [len(y), len(x), 2].
+            If x_values and z_values are 2D arrays, then result has the shape
+            [len(y), x.shape[0], x.shape[1], 2].
+
+        """
+
+        # Ensure all inputs are NumPy arrays
+        x_values = np.atleast_1d(x_values)
+        y_values = np.atleast_1d(y_values)
+        z_values = np.atleast_1d(z_values)
+
+        if len(y_values) < 2:
+            raise ValueError("There must be at least two elements in y_values")
+        if len(y_values.shape) > 1:
+            raise ValueError("y_values must be 1D")
+
+        if x_values.shape != z_values.shape:
+            # Make the scalar the same shape as the array
+            if x_values.size == 1:
+                x_values = np.zeros(z_values.shape) + x_values
+            elif z_values.size == 1:
+                z_values = np.zeros(x_values.shape) + z_values
+            else:
+                raise ValueError(
+                    "x_values and z_values must be the same size, or one must be a scalar"
+                )
+
+        array_shape = x_values.shape
+
+        # Position vector must be 1D - so flatten before passing to
+        # integrator, then reshape after
+        if len(x_values.shape) > 1:
+            x_values = x_values.flatten()
+            z_values = z_values.flatten()
+
+        if self.config is None and x_values.size > self.chunk:
+            with Pool() as pool:
+                # Start parallel calculation
+                results = [
+                    pool.apply_async(
+                        self._follow_field_lines,
+                        (
+                            x_values[i : i + self.chunk],
+                            z_values[i : i + self.chunk],
+                            y_values,
+                            rtol,
+                        ),
+                    )
+                    for i in range(0, len(x_values), self.chunk)
+                ]
+                # Wait for result and combine
+                results = np.concatenate([res.get() for res in results], axis=1)
+        else:
+            results = [
+                self._follow_field_lines(
+                    x_values[i : i + self.chunk],
+                    z_values[i : i + self.chunk],
+                    y_values,
+                    rtol,
+                )
+                for i in range(0, len(x_values), self.chunk)
+            ]
+            print([res.shape for res in results])
+            # Wait for result and combine
+            results = np.concatenate(results, axis=1)
+            print(results.shape)
+
+        return results.reshape(y_values.shape + array_shape + (2,))
+
+    def getConfig(self):
+        if self.config is not None:
+            self.config.inverseField = False
+            return self.config
+        config = self.flt.types.MagneticConfig()
+        config.configIds = self.configId
+        config.inverseField = False
+        return config
+
+    @property
+    def flt(self):
+        from osa import Client
+
+        return Client(self.url)
+
+    def _follow_field_lines(self, x_values, z_values, y_values, rtol):
+
+        p = self.flt.types.Points3D()
+        p.x1 = x_values * np.cos(y_values[0])
+        p.x2 = x_values * np.sin(y_values[0])
+        p.x3 = z_values
+
+        task = self.flt.types.Task()
+        task.step = 0.01
+        task.linesPhi = self.flt.types.LinePhiSpan()
+
+        def xor(x, y):
+            return bool((x and not y) or (not x and y))
+
+        dphi = y_values[1] - y_values[0]
+        config = self.getConfig()
+        config.inverseField = not xor(dphi > 0, self.isforward)
+        result = np.empty((len(y_values), len(p.x1), 2))
+        result[0, :, 0] = x_values
+        result[0, :, 1] = z_values
+        phi0 = y_values[0]
+        for i, phi in enumerate(y_values):
+            if i == 0:
+                continue
+            task.linesPhi.phi = phi - phi0
+            res = self.flt.service.trace(p, config, task)
+            for j, curve in enumerate(res.lines):
+                ps = curve.vertices
+                result[i, j, 0] = np.sqrt(ps.x2[-1] ** 2 + ps.x1[-1] ** 2)
+                result[i, j, 1] = ps.x3[-1]
+        return result

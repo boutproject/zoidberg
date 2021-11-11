@@ -1,3 +1,5 @@
+import pytest
+
 import numpy as np
 
 from . import field, fieldtracer
@@ -56,3 +58,49 @@ def test_poincare():
 
     assert y_slices.size == 3
     assert result.shape == (5, y_slices.size, 1, 2)
+
+
+def test_traceweb():
+    try:
+        import osa
+    except ImportError:
+        pytest.skip("osa not installed")
+    try:
+        web = fieldtracer.FieldTracerWeb(configId=0)
+    except:
+        pytest.skip("Failed to initiallise - service not available?")
+
+    num = 10
+    start=np.linspace(5.7, 6,num), np.zeros(num)
+
+    res = web.follow_field_lines(*start, np.linspace(0, .1, 10))
+    assert np.all(res[1:,:,1] < 0)
+    dist = np.sqrt(np.sum((res[:, 1:,:] - res[:,:-1,:])**2,  axis=2))
+    assert np.all(dist >= 0)
+    assert np.max(dist) < 0.05
+
+    # Check reverse direction
+    res = web.follow_field_lines(*start, -np.linspace(0, .1, 10))
+    assert np.all(res[1:,:,1] > 0)
+    dist = np.sqrt(np.sum((res[:, 1:,:] - res[:,:-1,:])**2,  axis=2))
+    assert np.all(dist >= 0)
+    # make sure step isn't to large
+    assert np.max(dist) < 0.05
+
+    res = web.follow_field_lines(*start, np.linspace(0, .1, 10)+np.pi*4/5)
+    #import matplotlib.pyplot as plt
+    #plt.plot(res[..., 0], res[...,1])
+    #plt.show()
+    assert np.all(res[1:,:,1] < 0)
+    dist = np.sqrt(np.sum((res[:, 1:,:] - res[:,:-1,:])**2,  axis=2))
+    assert np.all(dist >= 0)
+    assert np.max(dist) < 0.05
+
+    res = web.follow_field_lines(*start, -np.linspace(0, .1, 10)+np.pi*6/5)
+    assert np.all(res[1:,:,1] > 0)
+    dist = np.sqrt(np.sum((res[:, 1:,:] - res[:,:-1,:])**2,  axis=2))
+    assert np.all(dist >= 0)
+    assert np.max(dist) < 0.05
+
+if __name__ == "__main__":
+    test_traceweb()
