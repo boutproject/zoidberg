@@ -696,7 +696,6 @@ def grid_elliptic(
                 )
             )
         ind = -np.argmin(sums)
-        print(len(longer.R) + ind, np.argmax(longer.R))
         longer = rzline.RZline(np.roll(longer.R, -ind), np.roll(longer.Z, -ind))
         if len(inner.R) < len(outer.R):
             inner = shorter
@@ -780,9 +779,9 @@ def grid_elliptic(
         plt.plot(outer.R, outer.Z, "-o")
 
         # Black lines through inner and outer boundaries
-        r, z = inner.position(np.linspace(0, 2 * np.pi, 100))
+        r, z = inner.position(np.linspace(0, 2 * np.pi, 10 * nz))
         plt.plot(r, z, "k")
-        r, z = outer.position(np.linspace(0, 2 * np.pi, 100))
+        r, z = outer.position(np.linspace(0, 2 * np.pi, 10 * nz))
         plt.plot(r, z, "k")
 
         # Red dots to mark the inner and outer boundaries
