@@ -453,7 +453,7 @@ def line_from_points_poly(rarray, zarray, show=False, spline_order=None):
     return RZline(rvals, zvals, spline_order=spline_order)
 
 
-def line_from_points(rarray, zarray, show=False, spline_order=None):
+def line_from_points(rarray, zarray, show=False, spline_order=None, is_sorted=False):
     """Find a periodic line which goes through the given (r,z) points
 
     This function starts at a point, and finds the nearest neighbour
@@ -463,6 +463,16 @@ def line_from_points(rarray, zarray, show=False, spline_order=None):
     ----------
     rarray, zarray : array_like
         R, Z coordinates. These arrays should be the same length
+
+    show : bool (optional)
+        Whether to plot the found solution (using matplotlib)
+
+    spline_order : integer (optional)
+        Allows to change the spline order
+
+    is_sorted : bool (optional)
+        Avoids sorting the data. Makes it faster, but no checking is
+        performed to ensure that the data is truly sorted.
 
     Returns
     -------
@@ -481,6 +491,9 @@ def line_from_points(rarray, zarray, show=False, spline_order=None):
     # we start the line on.
     # Therefore start the line from every point in turn,
     # and keep the line with the shortest total distance
+
+    if is_sorted:
+        return RZline(rarray, zarray, spline_order=spline_order)
 
     best_line = None  # The best line found so far
     best_dist = 0.0  # Distance around best line
