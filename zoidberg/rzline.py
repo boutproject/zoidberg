@@ -67,11 +67,21 @@ class RZline:
 
         if anticlockwise:
             # Ensure that the line is going anticlockwise (positive theta)
-            mid_ind = np.argmax(r)  # Outboard midplane index
-            if z[(mid_ind + 1) % n] < z[mid_ind]:
-                # Line going down at outboard midplane. Need to reverse
+            # The first method is faster, but unreliable.
+            # mid_ind = np.argmax(r)  # Outboard midplane index
+            # ind_next = (mid_ind + 1) % n
+
+            # if z[ind_next] < z[mid_ind]:
+            #     # Line going down at outboard midplane. Need to reverse
+            #     r = r[::-1]  # r = np.flip(r)
+            #     z = z[::-1]  # z = np.flip(z)
+            # Calcculating the area should be much more robust
+            A = np.sum((r - np.roll(r, 1)) * (z + np.roll(z, 1)))
+            assert A != 0
+            if A > 0:
                 r = r[::-1]  # r = np.flip(r)
                 z = z[::-1]  # z = np.flip(z)
+            assert np.sum((r - np.roll(r, 1)) * (z + np.roll(z, 1))) < 0
 
         self.R = r
         self.Z = z
