@@ -790,7 +790,7 @@ def grid_elliptic(
         plt.plot(R[-1, :], Z[-1, :], "ro")
 
     # Start solver loop
-    while True:
+    for _ in range(R.size * 2):
         # Calculate coefficients, which exclude boundary points
         # Note that the domain is periodic in y so roll arrays
 
@@ -853,6 +853,29 @@ def grid_elliptic(
 
         if maxchange_sq < tol:
             break
+
+    else:
+        print("Convergence failure, trying to plot ...")
+        if plotting_available:
+            if not show:
+                # Markers on original points on inner and outer boundaries
+                plt.plot(inner.R, inner.Z, "-o")
+                plt.plot(outer.R, outer.Z, "-o")
+
+                # Black lines through inner and outer boundaries
+                r, z = inner.position(np.linspace(0, 2 * np.pi, 10 * nz))
+                plt.plot(r, z, "k")
+                r, z = outer.position(np.linspace(0, 2 * np.pi, 10 * nz))
+                plt.plot(r, z, "k")
+
+                # Red dots to mark the inner and outer boundaries
+                plt.plot(R[0, :], Z[0, :], "ro")
+                plt.plot(R[-1, :], Z[-1, :], "ro")
+            plt.show()
+
+        raise RuntimeError(
+            f"Failed to converge - grid shape {R.shape}: Error was {maxchange_sq} > {tol}"
+        )
 
     if nx_outer:
         nxn = nx + nx_outer
