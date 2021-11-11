@@ -1,8 +1,10 @@
 import numpy as np
 
 from . import boundary
-from .progress import update_progress
+from .progress import Progress
 
+from multiprocessing import Pool
+from itertools import chain
 
 class MagneticField(object):
     """Represents a magnetic field in either Cartesian or cylindrical
@@ -1394,6 +1396,9 @@ class GEQDSK(MagneticField):
         return self.p_spl(psinorm)
 
 
+tracer = None
+
+
 class W7X_vacuum(MagneticField):
     def __init__(
         self,
@@ -1431,9 +1436,7 @@ class W7X_vacuum(MagneticField):
         rarray, yarray, zarray = np.meshgrid(r, phi, z, indexing="ij")
 
         ## call vacuum field values
-        b_vac = W7X_vacuum.field_values(
-            rarray, yarray, zarray, configuration, plot_poincare
-        )
+        b_vac = self.field_values(rarray, yarray, zarray, configuration, plot_poincare)
         Bx_vac = b_vac[0]
         By_vac = b_vac[1]
         Bz_vac = b_vac[2]
@@ -1473,7 +1476,7 @@ class W7X_vacuum(MagneticField):
 
         # return points, br_interp, bphi_interp, bz_interp
 
-    def field_values(r, phi, z, configuration=0, plot_poincare=False):
+    def field_values(self, r, phi, z, configuration=0, plot_poincare=False):
         """This uses the webservices field line tracer to get the vacuum
         magnetic field given 3d arrrays for R, phi, and Z. Only works
         on IPP network
@@ -1491,7 +1494,10 @@ class W7X_vacuum(MagneticField):
         import xarray as xr
         from osa import Client
 
-        tracer = Client("http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl")
+        global tracer
+        tracer = tracer or Client(
+            "http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl"
+        )
 
         nx = r.shape[0]
         ny = phi.shape[1]
@@ -1547,71 +1553,58 @@ class W7X_vacuum(MagneticField):
                 "No saved field found -- (re)calculating (must be on IPP network for this to work...)"
             )
             print(
-                "Calculating field for Wendelstein 7-X; nx = ",
-                nx,
-                " ny = ",
-                ny,
-                " nz = ",
-                nz,
+                f"Calculating field for Wendelstein 7-X; nx = {nx}, ny = {ny}, nz = {nz}"
             )
-
-            ## Create configuration objects
-            config = tracer.types.MagneticConfig()
-            config.configIds = configuration
 
             tot = nx * ny * nz
 
-            Bx = np.zeros(tot)
-            By = np.zeros(tot)
-            Bz = np.zeros(tot)
-            pos = tracer.types.Points3D()
+            dar = da.from_array(r)
+            daone = da.ones((nx, ny, nz))
+            daphi = da.from_array(phi)
+            chunk = 10000
+            # x in Cartesian (real-space)
+            x1 = (daone * dar * np.cos(daphi)).flatten().rechunk(chunk)
+            x2 = (daone * dar * np.sin(daphi)).flatten().rechunk(chunk)
+            # z in Cartesian (real-space)
+            x3 = da.from_array(z).flatten().rechunk(chunk)
 
-            x1 = np.ndarray.flatten(
-                np.ones((nx, ny, nz)) * r * np.cos(phi)
-            )  # x in Cartesian (real-space)
-            x2 = np.ndarray.flatten(
-                np.ones((nx, ny, nz)) * r * np.sin(phi)
-            )  # y in Cartesian (real-space)
-            x3 = np.ndarray.flatten(z)  # z in Cartesian (real-space)
-            chunk = 100000
-            if tot > chunk * 2:
-                update_progress(0)
-            for i in range(0, tot, chunk):
-                end = i + chunk
-                end = min(end, tot)
-                slc = slice(i, end)
-                pos.x1 = x1[slc]
-                pos.x2 = x2[slc]
-                pos.x3 = x3[slc]
+            Bx = []
+            By = []
+            Bz = []
+            results = []
+            with Pool() as pool:
+                with Progress() as prog:
+                    print(prog)
+                    for i, j in zip(
+                        chain(range(0, tot, chunk), [-1] * 100),
+                        chain([-1] * 100, range(0, tot, chunk)),
+                    ):
+                        if i >= 0:
+                            results.append(
+                                pool.apply_async(
+                                    self._calc_chunk,
+                                    (
+                                        x1[i : i + chunk],
+                                        x2[i : i + chunk],
+                                        x3[i : i + chunk],
+                                        configuration,
+                                    ),
+                                )
+                            )
+                        if j >= 0:
+                            for B, f in zip([Bx, By, Bz], results[j//chunk].get()):
+                                B.append(f)
+                            results[j//chunk] = None
+                            if tot > chunk * 2:
+                                if prog is not None:
+                                    prog.update((j + 1) / tot)
+            Bx = np.concatenate(Bx)
+            By = np.concatenate(By)
+            Bz = np.concatenate(Bz)
 
-                ## Call tracer service
-                redo = 2
-                while redo:
-                    try:
-                        res = tracer.service.magneticField(pos, config)
-                    except:
-                        # Catch any error. Different errors might be
-                        # reported, but we want to retry anyway.
-                        # Do not except Exception, as that would also
-                        # ignore control-C, which we do not want to
-                        # ignore.
-                        redo -= 1
-                        if redo == 0:
-                            raise
-                        sleep(0.6 - 0.4 * redo)
-                    else:
-                        break
-
-                Bx[slc] = res.field.x1
-                By[slc] = res.field.x2
-                Bz[slc] = res.field.x3
-
-                if tot > chunk * 2:
-                    update_progress((i + 1) / tot)
             ## Reshape to 3d array
-            Bx = Bx.reshape((nx, ny, nz))
-            By = By.reshape((nx, ny, nz))
-            Bz = Bz.reshape((nx, ny, nz))
+            for B in Bx, By, Bz:
+                B.shape = (nx, ny, nz)
 
             ## Convert to cylindrical coordinates
             Br = Bx * np.cos(phi) + By * np.sin(phi)
@@ -1756,7 +1749,10 @@ class W7X_vacuum(MagneticField):
     def magnetic_axis(self, phi_axis=0, configuration=0):
         from osa import Client
 
-        tracer = Client("http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl")
+        global tracer
+        tracer = tracer or Client(
+            "http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl"
+        )
 
         config = tracer.types.MagneticConfig()
         config.configIds = configuration
@@ -1801,6 +1797,40 @@ class W7X_vacuum(MagneticField):
     def Rfunc(self, x, z, phi):
         phi = np.mod(phi, 2.0 * np.pi)
         return x
+
+    def _calc_chunk(self, x1, x2, x3, configuration):
+        global tracer
+        tracer = tracer or Client(
+            "http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl"
+        )
+
+        pos = tracer.types.Points3D()
+        pos.x1 = x1
+        pos.x2 = x2
+        pos.x3 = x3
+
+        ## Create configuration objects
+        config = tracer.types.MagneticConfig()
+        config.configIds = configuration
+
+        ## Call tracer service
+        redo = 2
+        while redo:
+            try:
+                res = tracer.service.magneticField(pos, config)
+            except:
+                # Catch any error. Different errors might be
+                # reported, but we want to retry anyway.
+                # Do not except Exception, as that would also
+                # ignore control-C, which we do not want to
+                # ignore.
+                redo -= 1
+                if redo == 0:
+                    raise
+                sleep(0.6 - 0.4 * redo)
+            else:
+                break
+        return [np.array(x) for x in (res.field.x1, res.field.x2, res.field.x3)]
 
 
 class W7X_VMEC(MagneticField):
