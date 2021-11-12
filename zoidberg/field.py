@@ -1832,6 +1832,38 @@ class W7X_vacuum(MagneticField):
                 break
         return [np.array(x) for x in (res.field.x1, res.field.x2, res.field.x3)]
 
+class W7X_vacuum_on_demand(object):
+    def __init__(self, configuration):
+        self.configuration = configuration
+        self.boundary = boundary.NoBoundary()  # An optional Boundary object
+        self.attributes = {}
+
+    def Rfunc(self, x, z, phi):
+        return x
+
+    def Bmag(self, x, z, phi):
+        return np.sqrt(np.sum(self.getB(x, z, phi) ** 2, axis=0)).reshape(x.shape)
+
+    def pressure(self, x, z, phi):
+        return np.zeros_like(x)
+
+    def getB(self, *pos):
+        shape = pos[0].shape
+        pos = np.atleast_3d(*pos)
+        B = W7X_vacuum._calc_B(*pos, self.configuration)
+        return B.reshape((3,) + shape)
+
+    def Byfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        return -B[0] * np.sin(phi) + B[1] * np.cos(phi)
+
+    def Bxfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        return B[0] * np.cos(phi) + B[1] * np.sin(phi)
+
+    def Bzfunc(self, *pos):
+        return self.getB(*pos)[2]
+
 
 class W7X_VMEC(MagneticField):
     def __init__(
