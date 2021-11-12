@@ -407,7 +407,9 @@ class FieldTracerWeb(object):
 
     """
 
-    def __init__(self, config=None, configId=None, timeout=0.1, chunk=10000):
+    def __init__(
+        self, config=None, configId=None, timeout=0.1, chunk=10000, stepsize=None
+    ):
         import requests
 
         # First check whether the webservice is available, as the default timeout is rather slow.
@@ -416,6 +418,7 @@ class FieldTracerWeb(object):
 
         self.config = config
         self.configId = configId
+        self.stepsize = stepsize
         if self.config:
             assert self.configId is None
         else:
@@ -440,7 +443,9 @@ class FieldTracerWeb(object):
         self.isforward = phi > 0
         self.chunk = chunk
 
-    def follow_field_lines(self, x_values, z_values, y_values, rtol=None):
+    def follow_field_lines(
+        self, x_values, z_values, y_values, rtol=None, stepsize=None
+    ):
         """Uses field_direction to follow the magnetic field
         from every grid (x,z) point at toroidal angle y
         through a change in toroidal angle dy
@@ -517,6 +522,7 @@ class FieldTracerWeb(object):
                             z_values[i : i + self.chunk],
                             y_values,
                             rtol,
+                            stepsize,
                         ),
                     )
                     for i in range(0, len(x_values), self.chunk)
@@ -530,13 +536,12 @@ class FieldTracerWeb(object):
                     z_values[i : i + self.chunk],
                     y_values,
                     rtol,
+                    stepsize,
                 )
                 for i in range(0, len(x_values), self.chunk)
             ]
-            print([res.shape for res in results])
             # Wait for result and combine
             results = np.concatenate(results, axis=1)
-            print(results.shape)
 
         return results.reshape(y_values.shape + array_shape + (2,))
 
@@ -555,7 +560,7 @@ class FieldTracerWeb(object):
 
         return Client(self.url)
 
-    def _follow_field_lines(self, x_values, z_values, y_values, rtol):
+    def _follow_field_lines(self, x_values, z_values, y_values, rtol, stepsize):
 
         p = self.flt.types.Points3D()
         p.x1 = x_values * np.cos(y_values[0])
@@ -563,7 +568,7 @@ class FieldTracerWeb(object):
         p.x3 = z_values
 
         task = self.flt.types.Task()
-        task.step = 0.01
+        task.step = stepsize or self.stepsize or 0.01
         task.linesPhi = self.flt.types.LinePhiSpan()
 
         def xor(x, y):
