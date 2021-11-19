@@ -1,7 +1,7 @@
+from multiprocessing import Pool
+
 import numpy as np
 from scipy.integrate import odeint
-
-from multiprocessing import Pool
 
 
 class FieldTracer(object):

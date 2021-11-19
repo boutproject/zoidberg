@@ -1,10 +1,11 @@
+from itertools import chain
+from multiprocessing import Pool
+
 import numpy as np
 
 from . import boundary
 from .progress import Progress
 
-from multiprocessing import Pool
-from itertools import chain
 
 class MagneticField(object):
     """Represents a magnetic field in either Cartesian or cylindrical
@@ -1592,9 +1593,9 @@ class W7X_vacuum(MagneticField):
                                 )
                             )
                         if j >= 0:
-                            for B, f in zip([Bx, By, Bz], results[j//chunk].get()):
+                            for B, f in zip([Bx, By, Bz], results[j // chunk].get()):
                                 B.append(f)
-                            results[j//chunk] = None
+                            results[j // chunk] = None
                             if tot > chunk * 2:
                                 if prog is not None:
                                     prog.update((j + 1) / tot)
@@ -1831,6 +1832,7 @@ class W7X_vacuum(MagneticField):
             else:
                 break
         return [np.array(x) for x in (res.field.x1, res.field.x2, res.field.x3)]
+
 
 class W7X_vacuum_on_demand(object):
     def __init__(self, configuration):
