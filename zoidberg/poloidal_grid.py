@@ -473,42 +473,43 @@ class StructuredPoloidalGrid(PoloidalGrid):
 
         """
 
-        dx = 1.0 / float(self.nx - 1)  # x from 0 to 1
-        dz = 2.0 * np.pi / float(self.nz)  # z from 0 to 2pi
-
         # Get arrays of indices
         xind, zind = np.meshgrid(np.arange(self.nx), np.arange(self.nz), indexing="ij")
 
         # Calculate the gradient along each coordinate
-        dRdx, dZdx = self.getCoordinate(xind, zind, dx=1)
-        dRdx /= dx
-        dZdx /= dx
-        dRdz, dZdz = self.getCoordinate(xind, zind, dz=1)
-        dRdz /= dz
-        dZdz /= dz
+        dolddnew = np.array(
+            [self.getCoordinate(xind, zind, dx=a, dz=b) for a, b in ((1, 0), (0, 1))]
+        )
+        # dims: 0 : dx/dz  - 1 : R/z - 2,3 : spatial
+        ddist = np.sqrt(np.sum(dolddnew ** 2, axis=1))
+        sumdz = np.sum(ddist[1], axis=1)
+        ddist[1] *= 2 * np.pi / sumdz[..., None]
+        dolddnew /= ddist[:, None, ...]
 
-        g_xx = dRdx ** 2 + dZdx ** 2
-        g_xz = dRdx * dRdz + dZdx * dZdz
-        g_zz = dRdz ** 2 + dZdz ** 2
-
-        # Calculate metric by inverting
-        # ( gxx   gxz ) = ( g_xx   g_xz )^-1
-        # ( gxz   gzz )   ( g_xz   g_zz )
-
-        determinant = g_xx * g_zz - g_xz ** 2
-        gxx = g_zz / determinant
-        gzz = g_xx / determinant
-        gxz = -g_xz / determinant
-
+        g = np.array(
+            [
+                [[dolddnew[i, j] * dolddnew[i, k] for i in range(2)] for j in range(2)]
+                for k in range(2)
+            ]
+        )
+        g = np.sum(
+            g,
+            axis=2,
+        )
+        assert np.all(g[0, 0] > 0)
+        assert np.all(g[1, 1] > 0)
+        g = g.transpose(2, 3, 0, 1)
+        assert np.all(np.linalg.det(g) > 0)
+        ginv = np.linalg.inv(g)
         return {
-            "dx": dx,
-            "dz": dz,  # Grid spacing
-            "gxx": gxx,
-            "g_xx": g_xx,
-            "gxz": gxz,
-            "g_xz": g_xz,
-            "gzz": gzz,
-            "g_zz": g_zz,
+            "dx": ddist[0],
+            "dz": ddist[1],  # Grid spacing
+            "gxx": g[..., 0, 0],
+            "g_xx": ginv[..., 0, 0],
+            "gxz": g[..., 0, 1],
+            "g_xz": ginv[..., 0, 1],
+            "gzz": g[..., 1, 1],
+            "g_zz": ginv[..., 1, 1],
         }
 
 
