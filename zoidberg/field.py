@@ -1,5 +1,6 @@
-import numpy as np
 from math import gamma
+
+import numpy as np
 
 from . import boundary
 from .progress import update_progress
@@ -652,19 +653,46 @@ try:
             Sympy function CD_mk (R) (Dirichlet boudary conditions)
             """
 
-            alpha = lambda n, b: (-1.0)**n/(gamma(b + n + 1)*gamma(n + 1)*2.0**(2*n + b)) if (n >= 0) else 0.0
-            alpha_st = lambda n, b: alpha(n,b)*(2*n + b)
+            alpha = (
+                lambda n, b: (-1.0) ** n
+                / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+                if (n >= 0)
+                else 0.0
+            )
+            alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
 
-            beta = lambda n, b: gamma(b - n)/(gamma(n + 1)*2.0**(2*n - b + 1)) if (n >= 0 and n < b) else 0.0
-            beta_st = lambda n, b: beta(n,b)*(2*n - b)
+            beta = (
+                lambda n, b: gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+                if (n >= 0 and n < b)
+                else 0.0
+            )
+            beta_st = lambda n, b: beta(n, b) * (2 * n - b)
 
-            delta = lambda n, b: alpha(n,b)*np.sum([1.0/i + 1.0/(b + i) for i in range(1,n+1)])/2 if (n > 0) else 0.0
-            delta_st = lambda n, b: delta(n,b)*(2*n + b)
+            delta = (
+                lambda n, b: alpha(n, b)
+                * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
+                / 2
+                if (n > 0)
+                else 0.0
+            )
+            delta_st = lambda n, b: delta(n, b) * (2 * n + b)
 
             CD = log(1)
-            for j in range(k+1):
-                CD += (-(alpha(j,m)*(alpha_st(k-m-j,m)*log(self.R) + delta_st(k-m-j,m) - alpha(k-m-j,m)) - delta(j,m)*alpha_st(k-m-j,m) 
-                        + alpha(j,m)*beta_st(k-j,m))*self.R**(2*j + m) + beta(j,m)*alpha_st(k-j,m)*self.R**(2*j - m))
+            for j in range(k + 1):
+                CD += -(
+                    alpha(j, m)
+                    * (
+                        alpha_st(k - m - j, m) * log(self.R)
+                        + delta_st(k - m - j, m)
+                        - alpha(k - m - j, m)
+                    )
+                    - delta(j, m) * alpha_st(k - m - j, m)
+                    + alpha(j, m) * beta_st(k - j, m)
+                ) * self.R ** (2 * j + m) + beta(j, m) * alpha_st(
+                    k - j, m
+                ) * self.R ** (
+                    2 * j - m
+                )
 
             return CD
 
@@ -680,19 +708,40 @@ try:
             Sympy function CN_mk (R) (Neumann boundary conditions)
             """
 
-            alpha = lambda n, b: (-1.0)**n/(gamma(b + n + 1)*gamma(n + 1)*2.0**(2*n + b)) if (n >= 0) else 0.0
-            alpha_st = lambda n, b: alpha(n,b)*(2*n + b)
+            alpha = (
+                lambda n, b: (-1.0) ** n
+                / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+                if (n >= 0)
+                else 0.0
+            )
+            alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
 
-            beta = lambda n, b: gamma(b - n)/(gamma(n + 1)*2.0**(2*n - b + 1)) if (n >= 0 and n < b) else 0.0
-            beta_st = lambda n, b: beta(n,b)*(2*n - b)
+            beta = (
+                lambda n, b: gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+                if (n >= 0 and n < b)
+                else 0.0
+            )
+            beta_st = lambda n, b: beta(n, b) * (2 * n - b)
 
-            delta = lambda n, b: alpha(n,b)*np.sum([1.0/i + 1.0/(b + i) for i in range(1,n+1)])/2 if (n > 0) else 0.0
-            delta_st = lambda n, b: delta(n,b)*(2*n + b)
+            delta = (
+                lambda n, b: alpha(n, b)
+                * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
+                / 2
+                if (n > 0)
+                else 0.0
+            )
+            delta_st = lambda n, b: delta(n, b) * (2 * n + b)
 
             CN = log(1)
-            for j in range(k+1):
-                CN += ((alpha(j,m)*(alpha(k-m-j,m)*log(self.R) + delta(k-m-j,m)) - delta(j,m)*alpha(k-m-j,m) 
-                       + alpha(j,m)*beta(k-j,m))*self.R**(2*j + m) - beta(j,m)*alpha(k-j,m)*self.R**(2*j - m))
+            for j in range(k + 1):
+                CN += (
+                    alpha(j, m)
+                    * (alpha(k - m - j, m) * log(self.R) + delta(k - m - j, m))
+                    - delta(j, m) * alpha(k - m - j, m)
+                    + alpha(j, m) * beta(k - j, m)
+                ) * self.R ** (2 * j + m) - beta(j, m) * alpha(k - j, m) * self.R ** (
+                    2 * j - m
+                )
 
             return CN
 
@@ -791,11 +840,9 @@ try:
             """
 
             V = (
-                a * cos(m*self.phi - np.pi/2)
-                + b * sin(m*self.phi - np.pi/2)
+                a * cos(m * self.phi - np.pi / 2) + b * sin(m * self.phi - np.pi / 2)
             ) * self.D(m, l) + (
-                c * cos(m*self.phi - np.pi/2)
-                + d * sin(m*self.phi - np.pi/2)
+                c * cos(m * self.phi - np.pi / 2) + d * sin(m * self.phi - np.pi / 2)
             ) * self.N(
                 m, l - 1
             )
@@ -816,8 +863,10 @@ try:
 
             U = log(1)
             for i in range(A.shape[0]):
-                if (i != 0): i_inv = 1/i
-                else: i_inv = np.nan
+                if i != 0:
+                    i_inv = 1 / i
+                else:
+                    i_inv = np.nan
                 for j in range(A.shape[1]):
                     if A[i, j, 0] or A[i, j, 1] or A[i, j, 2] or A[i, j, 3] != 0:
                         U += self.V_hat(
