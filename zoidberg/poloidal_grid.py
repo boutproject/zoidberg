@@ -476,22 +476,27 @@ class StructuredPoloidalGrid(PoloidalGrid):
         dolddnew = np.array(
             [self.getCoordinate(xind, zind, dx=a, dz=b) for a, b in ((1, 0), (0, 1))]
         )
-        # dims: 0 : dx/dz  - 1 : R/z - 2,3 : spatial
-        ddist = np.sqrt(np.sum(dolddnew ** 2, axis=1))
-        sumdz = np.sum(ddist[1], axis=1)
-        ddist[1] *= 2 * np.pi / sumdz[..., None]
+        # dims: 0 : dx/dz  - 1 : R/z - 2,3 : spatial (r, \theta)
+        ddist = np.sqrt(np.sum(dolddnew ** 2, axis=1))  # sum R + z
+        sumdz = np.sum(ddist[1], axis=1)  # sum in r direction
+        ddist[1] *= 2 * np.pi / sumdz[..., None]  # normalise theta (0 -> 2 pi)
+        # Transform derivatives from index space to real space.
         dolddnew /= ddist[:, None, ...]
 
-        g = np.array(
-            [
-                [[dolddnew[i, j] * dolddnew[i, k] for i in range(2)] for j in range(2)]
-                for k in range(2)
-            ]
-        )
+        # g_ij = J_ki J_kj
+        # (2.5.27) from D'Haeseleer 1991
+        # Note: our J is transposed
+        J = dolddnew
         g = np.sum(
-            g,
+            np.array(
+                [
+                    [[J[j, i] * J[k, i] for i in range(2)] for j in range(2)]
+                    for k in range(2)
+                ]
+            ),
             axis=2,
         )
+
         assert np.all(g[0, 0] > 0)
         assert np.all(g[1, 1] > 0)
         g = g.transpose(2, 3, 0, 1)
@@ -500,12 +505,12 @@ class StructuredPoloidalGrid(PoloidalGrid):
         return {
             "dx": ddist[0],
             "dz": ddist[1],  # Grid spacing
-            "gxx": g[..., 0, 0],
-            "g_xx": ginv[..., 0, 0],
-            "gxz": g[..., 0, 1],
-            "g_xz": ginv[..., 0, 1],
-            "gzz": g[..., 1, 1],
-            "g_zz": ginv[..., 1, 1],
+            "gxx": ginv[..., 0, 0],
+            "g_xx": g[..., 0, 0],
+            "gxz": ginv[..., 0, 1],
+            "g_xz": g[..., 0, 1],
+            "gzz": ginv[..., 1, 1],
+            "g_zz": g[..., 1, 1],
         }
 
 
