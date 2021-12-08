@@ -33,11 +33,7 @@ except ImportError:
     warnings.warn("Couldn't import matplotlib, plotting not available.")
     plotting_available = False
 
-try:
-    from . import rzline
-except:
-    # Python 2
-    import rzline
+from . import rzline
 
 
 class PoloidalGrid(object):
