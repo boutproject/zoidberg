@@ -926,7 +926,6 @@ try:
         def Rfunc(self, x, z, phi):
             return np.full(x.shape, x)
 
-
 except ImportError:
 
     class StraightStellarator(MagneticField):
