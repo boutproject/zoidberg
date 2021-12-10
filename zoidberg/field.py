@@ -1,3 +1,5 @@
+from math import gamma
+
 import numpy as np
 
 from . import boundary
@@ -318,7 +320,7 @@ class CurvedSlab(MagneticField):
 
 try:
     from sympy import (And, Piecewise, Sum, Symbol, atan2, cos, diff,
-                       factorial, gamma, lambdify, log, pi, sin, sqrt)
+                       factorial, lambdify, log, pi, sin, sqrt)
 
     class StraightStellarator(MagneticField):
         """A "rotating ellipse" stellarator without curvature
@@ -573,16 +575,16 @@ try:
             self.P = (
                 self.U(self.A)
                 .doit()
-                .subs([(self.R, self.R / self.R_0), (self.Z, self.Z / R_0)])
+                .subs([(self.R, self.R / self.R_0), (self.Z, self.Z / self.R_0)])
             )
             self.P_hat = (
                 self.U_hat(self.A)
                 .doit()
-                .subs([(self.R, self.R / self.R_0), (self.Z, self.Z / R_0)])
+                .subs([(self.R, self.R / self.R_0), (self.Z, self.Z / self.R_0)])
             )
 
             S = 0.5 * (
-                log(self.R / self.R_0) ** 2 + (self.Z / R_0) ** 2
+                log(self.R / self.R_0) ** 2 + (self.Z / self.R_0) ** 2
             ) - self.R / self.R_0 * (
                 log(self.R / self.R_0) * self.R_0 * diff(self.P_hat, self.R)
                 + self.Z * self.R / self.R_0 * diff(self.P_hat, self.Z)
@@ -651,56 +653,46 @@ try:
             Sympy function CD_mk (R) (Dirichlet boudary conditions)
             """
 
-            n = Symbol("n")
-            b = Symbol("b")
-            i = Symbol("i")
-
-            alpha = Piecewise(
-                (
-                    (
-                        ((-1) ** n)
-                        / (gamma(b + n + 1) * gamma(n + 1) * 2 ** (2 * n + b))
-                    ),
-                    n >= 0,
-                ),
-                (0, True),
+            alpha = (
+                lambda n, b: (-1.0) ** n
+                / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+                if (n >= 0)
+                else 0.0
             )
-            alpha_st = Piecewise((alpha * (2 * n + b), n >= 0), (0, True))
+            alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
 
-            beta = Piecewise(
-                (
-                    (gamma(b - n)) / (gamma(n + 1) * 2 ** (2 * n - b + 1)),
-                    And(n >= 0, n < b),
-                ),
-                (0, True),
+            beta = (
+                lambda n, b: gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+                if (n >= 0 and n < b)
+                else 0.0
             )
-            beta_st = Piecewise((beta * (2 * n - b), And(n >= 0, n < b)), (0, True))
+            beta_st = lambda n, b: beta(n, b) * (2 * n - b)
 
-            delta = Piecewise(
-                (alpha / 2 * Sum(1 / i + 1 / (b + i), (i, 1, n + 1)), n > 0), (0, True)
+            delta = (
+                lambda n, b: alpha(n, b)
+                * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
+                / 2
+                if (n > 0)
+                else 0.0
             )
-            delta_st = Piecewise((delta * (2 * n + b), n > 0), (0, True))
+            delta_st = lambda n, b: delta(n, b) * (2 * n + b)
 
-            j = Symbol("j")
-
-            CD = Sum(
-                -(
-                    alpha.subs([(n, j), (b, m)])
+            CD = log(1)
+            for j in range(k + 1):
+                CD += -(
+                    alpha(j, m)
                     * (
-                        alpha_st.subs([(n, k - m - j), (b, m)]) * log(self.R)
-                        + delta_st.subs([(n, k - m - j), (b, m)])
-                        - alpha.subs([(n, k - m - j), (b, m)])
+                        alpha_st(k - m - j, m) * log(self.R)
+                        + delta_st(k - m - j, m)
+                        - alpha(k - m - j, m)
                     )
-                    - delta.subs([(n, j), (b, m)])
-                    * alpha_st.subs([(n, k - m - j), (b, m)])
-                    + alpha.subs([(n, j), (b, m)]) * beta_st.subs([(n, k - j), (b, m)])
+                    - delta(j, m) * alpha_st(k - m - j, m)
+                    + alpha(j, m) * beta_st(k - j, m)
+                ) * self.R ** (2 * j + m) + beta(j, m) * alpha_st(
+                    k - j, m
+                ) * self.R ** (
+                    2 * j - m
                 )
-                * self.R ** (2 * j + m)
-                + beta.subs([(n, j), (b, m)])
-                * alpha_st.subs([(n, k - j), (b, m)])
-                * self.R ** (2 * j - m),
-                (j, 0, k),
-            )
 
             return CD
 
@@ -716,55 +708,40 @@ try:
             Sympy function CN_mk (R) (Neumann boundary conditions)
             """
 
-            n = Symbol("n")
-            b = Symbol("b")
-            i = Symbol("i")
-
-            alpha = Piecewise(
-                (
-                    (
-                        ((-1) ** n)
-                        / (gamma(b + n + 1) * gamma(n + 1) * 2 ** (2 * n + b))
-                    ),
-                    n >= 0,
-                ),
-                (0, True),
+            alpha = (
+                lambda n, b: (-1.0) ** n
+                / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+                if (n >= 0)
+                else 0.0
             )
-            alpha_st = Piecewise((alpha * (2 * n + b), n >= 0), (0, True))
+            alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
 
-            beta = Piecewise(
-                (
-                    (gamma(b - n)) / (gamma(n + 1) * 2 ** (2 * n - b + 1)),
-                    And(n >= 0, n < b),
-                ),
-                (0, True),
+            beta = (
+                lambda n, b: gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+                if (n >= 0 and n < b)
+                else 0.0
             )
-            beta_st = Piecewise((beta * (2 * n - b), And(n >= 0, n < b)), (0, True))
+            beta_st = lambda n, b: beta(n, b) * (2 * n - b)
 
-            delta = Piecewise(
-                (alpha / 2 * Sum(1 / i + 1 / (b + i), (i, 1, n + 1)), n > 0), (0, True)
+            delta = (
+                lambda n, b: alpha(n, b)
+                * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
+                / 2
+                if (n > 0)
+                else 0.0
             )
-            delta_st = Piecewise((delta * (2 * n + b), n > 0), (0, True))
+            delta_st = lambda n, b: delta(n, b) * (2 * n + b)
 
-            j = Symbol("j")
-
-            CN = Sum(
-                (
-                    alpha.subs([(n, j), (b, m)])
-                    * (
-                        alpha.subs([(n, k - m - j), (b, m)]) * log(self.R)
-                        + delta.subs([(n, k - m - j), (b, m)])
-                    )
-                    - delta.subs([(n, j), (b, m)])
-                    * alpha.subs([(n, k - m - j), (b, m)])
-                    + alpha.subs([(n, j), (b, m)]) * beta.subs([(n, k - j), (b, m)])
+            CN = log(1)
+            for j in range(k + 1):
+                CN += (
+                    alpha(j, m)
+                    * (alpha(k - m - j, m) * log(self.R) + delta(k - m - j, m))
+                    - delta(j, m) * alpha(k - m - j, m)
+                    + alpha(j, m) * beta(k - j, m)
+                ) * self.R ** (2 * j + m) - beta(j, m) * alpha(k - j, m) * self.R ** (
+                    2 * j - m
                 )
-                * self.R ** (2 * j + m)
-                - beta.subs([(n, j), (b, m)])
-                * alpha.subs([(n, k - j), (b, m)])
-                * self.R ** (2 * j - m),
-                (j, 0, k),
-            )
 
             return CN
 
@@ -780,13 +757,11 @@ try:
             Sympy function D_mn (R, Z) (Dirichlet boundary conditions)
             """
 
-            i = Symbol("i")
             D = log(1)
             k_arr = np.arange(0, int(n / 2) + 1, 1)
-            CD_f = self.CD(m, i)
 
             for k in k_arr:
-                D += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * CD_f.subs(i, k)
+                D += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CD(m, k)
 
             return D
 
@@ -802,12 +777,11 @@ try:
             Sympy function N_mn (R, Z) (Neumann boundary conditions)
             """
 
-            i = Symbol("i")
             N = log(1)
             k_arr = np.arange(0, int(n / 2) + 1, 1)
-            CN_f = self.CN(m, i)
+
             for k in k_arr:
-                N += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * CN_f.subs(i, k)
+                N += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CN(m, k)
 
             return N
 
@@ -866,11 +840,9 @@ try:
             """
 
             V = (
-                a * cos(m * (self.phi - np.pi / (2 * m)))
-                + b * sin(m * (self.phi - np.pi / (2 * m)))
+                a * cos(m * self.phi - np.pi / 2) + b * sin(m * self.phi - np.pi / 2)
             ) * self.D(m, l) + (
-                c * cos(m * (self.phi - np.pi / (2 * m)))
-                + d * sin(m * (self.phi - np.pi / (2 * m)))
+                c * cos(m * self.phi - np.pi / 2) + d * sin(m * self.phi - np.pi / 2)
             ) * self.N(
                 m, l - 1
             )
@@ -891,11 +863,15 @@ try:
 
             U = log(1)
             for i in range(A.shape[0]):
+                if i != 0:
+                    i_inv = 1 / i
+                else:
+                    i_inv = np.nan
                 for j in range(A.shape[1]):
                     if A[i, j, 0] or A[i, j, 1] or A[i, j, 2] or A[i, j, 3] != 0:
                         U += self.V_hat(
                             i, j, A[i, j, 0], A[i, j, 1], A[i, j, 2], A[i, j, 3]
-                        ) * Piecewise((self.phi, i == 0), (1 / i, i > 0))
+                        ) * Piecewise((self.phi, i == 0), (i_inv, i > 0))
 
             return U
 
@@ -925,7 +901,6 @@ try:
 
         def Rfunc(self, x, z, phi):
             return np.full(x.shape, x)
-
 
 except ImportError:
 
