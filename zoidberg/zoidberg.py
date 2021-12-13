@@ -1,13 +1,14 @@
+import uuid
 from collections import namedtuple
 from itertools import chain
-import uuid
 
 import numpy as np
 from boututils import datafile as bdata
 
+from zoidberg import __version__
+
 from . import fieldtracer
 from .progress import update_progress
-from zoidberg import __version__
 
 # PyEVTK might be called pyevtk or evtk, depending on where it was
 # installed from
@@ -273,7 +274,7 @@ def write_maps(
         f.write_file_attribute("software_name", "zoidberg")
         f.write_file_attribute("software_version", __version__)
         grid_id = str(uuid.uuid1())
-        f.write_file_attribute("id", grid_id)       # conventional name
+        f.write_file_attribute("id", grid_id)  # conventional name
         f.write_file_attribute("grid_id", grid_id)  # BOUT++ specific name
 
         ixseps = nx + 1
