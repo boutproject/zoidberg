@@ -1,8 +1,11 @@
+import uuid
 from collections import namedtuple
 from itertools import chain
 
 import numpy as np
 from boututils import datafile as bdata
+
+from zoidberg import __version__
 
 from . import fieldtracer
 from .progress import update_progress
@@ -267,6 +270,13 @@ def write_maps(
         metric["Bxy"] = Bmag
 
     with bdata.DataFile(gridfile, write=True, create=True, format=format) as f:
+        f.write_file_attribute("title", "BOUT++ grid file")
+        f.write_file_attribute("software_name", "zoidberg")
+        f.write_file_attribute("software_version", __version__)
+        grid_id = str(uuid.uuid1())
+        f.write_file_attribute("id", grid_id)  # conventional name
+        f.write_file_attribute("grid_id", grid_id)  # BOUT++ specific name
+
         ixseps = nx + 1
         f.write("nx", nx)
         f.write("ny", ny)
