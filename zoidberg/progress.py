@@ -2,8 +2,8 @@
 
 # Adapted from http://stackoverflow.com/a/15860757/2043465
 
-from sys import stdout
 import time
+from sys import stdout
 
 
 def update_progress(progress, barLength=10, ascii=False, **kwargs):

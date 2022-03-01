@@ -686,7 +686,7 @@ def grid_elliptic(
         # if len(longer.R) == len(shorter.R):
         dr = shorter.R - longer.R[:, None]
         dz = shorter.Z - longer.Z[:, None]
-        delta = dr ** 2 + dz ** 2
+        delta = dr**2 + dz**2
         sums = []
         fac = len(longer.R) / len(shorter.R)
         for i in range(len(longer.R)):

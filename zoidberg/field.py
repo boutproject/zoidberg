@@ -1,6 +1,6 @@
 from itertools import chain
-from multiprocessing import Pool
 from math import gamma
+from multiprocessing import Pool
 
 import numpy as np
 
@@ -321,21 +321,8 @@ class CurvedSlab(MagneticField):
 
 
 try:
-    from sympy import (
-        And,
-        Piecewise,
-        Sum,
-        Symbol,
-        atan2,
-        cos,
-        diff,
-        factorial,
-        lambdify,
-        log,
-        pi,
-        sin,
-        sqrt,
-    )
+    from sympy import (And, Piecewise, Sum, Symbol, atan2, cos, diff,
+                       factorial, lambdify, log, pi, sin, sqrt)
 
     class StraightStellarator(MagneticField):
         """A "rotating ellipse" stellarator without curvature
@@ -401,7 +388,7 @@ try:
             self.z = Symbol("z")
             self.y = Symbol("y")
             self.r = Symbol("r")
-            self.r = (self.x ** 2 + self.z ** 2) ** (0.5)
+            self.r = (self.x**2 + self.z**2) ** (0.5)
             self.phi = Symbol("phi")
 
             self.xcentre = xcentre
@@ -427,7 +414,7 @@ try:
 
             for c in self.coil_list:
                 xc, zc, Ic = c
-                rc = (xc ** 2 + zc ** 2) ** (0.5)
+                rc = (xc**2 + zc**2) ** (0.5)
                 r2 = (self.x - xc) ** 2 + (self.z - zc) ** 2
                 theta = atan2(self.z - zc, self.x - xc)  # Angle relative to coil
 
@@ -507,7 +494,7 @@ try:
             self.z = Symbol("z")
             self.y = Symbol("y")
             self.r = Symbol("r")
-            self.r = (self.x ** 2 + self.z ** 2) ** (0.5)
+            self.r = (self.x**2 + self.z**2) ** (0.5)
             self.phi = Symbol("phi")
 
             self.xcentre = xcentre
@@ -533,7 +520,7 @@ try:
 
             for c in self.coil_list:
                 xc, zc, Ic = c
-                rc = (xc ** 2 + zc ** 2) ** (0.5)
+                rc = (xc**2 + zc**2) ** (0.5)
                 r2 = (self.x - xc) ** 2 + (self.z - zc) ** 2
                 theta = atan2(self.z - zc, self.x - xc)  # Angle relative to coil
 
@@ -904,7 +891,7 @@ try:
 
             alpha = shear
             self.theta = atan2(self.z - zcentre, self.x - xcentre)
-            A = alpha * self.r ** 2
+            A = alpha * self.r**2
             Bx = -alpha * self.r * self.r * sin(self.theta)
             Bz = alpha * self.r * self.r * cos(self.theta)
             By = Btor / self.x
@@ -916,7 +903,6 @@ try:
 
         def Rfunc(self, x, z, phi):
             return np.full(x.shape, x)
-
 
 except ImportError:
 
@@ -1754,11 +1740,11 @@ class W7X_vacuum(MagneticField):
         )  # (m) -- REAL SPACE from an arbitrary start point
         magnetic_axis_z = np.asarray(res.axis.vertices.x3)  # (m)
         magnetic_axis_rmaj = np.sqrt(
-            magnetic_axis_x ** 2 + magnetic_axis_y ** 2 + magnetic_axis_z ** 2
+            magnetic_axis_x**2 + magnetic_axis_y**2 + magnetic_axis_z**2
         )
 
         magnetic_axis_r = np.sqrt(
-            np.asarray(magnetic_axis_x) ** 2 + np.asarray(magnetic_axis_y ** 2)
+            np.asarray(magnetic_axis_x) ** 2 + np.asarray(magnetic_axis_y**2)
         )
         magnetic_axis_phi = np.arctan(magnetic_axis_y / magnetic_axis_x)
 
