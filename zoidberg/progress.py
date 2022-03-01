@@ -3,6 +3,7 @@
 # Adapted from http://stackoverflow.com/a/15860757/2043465
 
 from sys import stdout
+import time
 
 
 def update_progress(progress, barLength=10, ascii=False, **kwargs):
@@ -27,7 +28,7 @@ def update_progress(progress, barLength=10, ascii=False, **kwargs):
     if ascii:
         cursor = "#"
     else:
-        cursor = u"█"
+        cursor = "█"
 
     status = ""
     if isinstance(progress, int):
@@ -42,7 +43,7 @@ def update_progress(progress, barLength=10, ascii=False, **kwargs):
         progress = 1
         status = "Done...\r\n"
     block = int(round(barLength * progress))
-    text = u"\rPercent: [{prog:-<{len}}] {perc:6.2f}% {stat}".format(
+    text = "\rPercent: [{prog:-<{len}}] {perc:6.2f}% {stat}".format(
         len=barLength, prog=cursor * block, perc=progress * 100, stat=status
     )
 
@@ -55,8 +56,8 @@ def update_progress(progress, barLength=10, ascii=False, **kwargs):
                 face = " (;,,,;) "
                 ink = "#"
             else:
-                face = u" (°,,,°) "
-                ink = u"█"
+                face = " (°,,,°) "
+                ink = "█"
 
             open_claw = "(\\/)"
             closed_claw = "(|)"
@@ -71,7 +72,7 @@ def update_progress(progress, barLength=10, ascii=False, **kwargs):
             zb = left_claw + face + right_claw
             zb_middle = int(len(zb) / 2)
             start = int(round((barLength - zb_middle) * progress))
-            text = u"\rProgress: [{start}{zb}{rest}] {perc:6.2f}% {stat}".format(
+            text = "\rProgress: [{start}{zb}{rest}] {perc:6.2f}% {stat}".format(
                 start=ink * start,
                 zb=zb,
                 perc=progress * 100,
@@ -81,3 +82,37 @@ def update_progress(progress, barLength=10, ascii=False, **kwargs):
 
     stdout.write(text)
     stdout.flush()
+
+
+def format_time(secs):
+    ret = ""
+    out = False
+    for name, val in [("m", 60), ("h", 3600), ("d", 60 * 60 * 24)][::-1]:
+        if secs >= val:
+            out = True
+        if out:
+            cur = int(secs // val)
+            ret += f"{cur:02d}{name}"
+            secs -= cur * val
+    ret += f"{secs:02.0f}s"
+    return ret
+
+
+class Progress(object):
+    def __init__(self):
+        pass
+
+    def update(self, prog):
+        needed = time.time() - self.t0
+        print(
+            f"{prog * 100:6.2f} % ... {format_time(needed)}>{format_time(needed / (prog) - needed) if prog else 0}",
+            end="\r",
+        )
+
+    def __enter__(self):
+        self.t0 = time.time()
+        return self
+
+    def __exit__(self, *args):
+        self.update(1)
+        print()
