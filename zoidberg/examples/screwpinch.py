@@ -1,7 +1,9 @@
-import zoidberg as zb
+import argparse
+
 import numpy as np
 from common import calc_curvilinear_curvature
-import argparse
+
+import zoidberg as zb
 
 
 def screwpinch(

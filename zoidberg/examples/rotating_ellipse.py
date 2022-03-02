@@ -1,8 +1,12 @@
-import zoidberg as zb
+import argparse
+
 import numpy as np
 from boututils.datafile import DataFile
-from .common import get_lines, calc_curvilinear_curvature, calc_iota, smooth_metric
-import argparse
+
+import zoidberg as zb
+
+from .common import (calc_curvilinear_curvature, calc_iota, get_lines,
+                     smooth_metric)
 
 
 def rotating_ellipse(

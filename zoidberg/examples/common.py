@@ -1,7 +1,8 @@
-import zoidberg as zb
+import boututils.calculus as calc
 import numpy as np
 from boututils.datafile import DataFile
-import boututils.calculus as calc
+
+import zoidberg as zb
 
 
 # calculate curvature for curvilinear grids
