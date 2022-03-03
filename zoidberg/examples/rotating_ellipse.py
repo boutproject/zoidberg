@@ -21,7 +21,7 @@ def rotating_ellipse(
     a=0.4,
     curvilinear_inner_aligned=True,
     curvilinear_outer_aligned=True,
-    npoints=421,
+    npoints=2467,
     Btor=2.5,
     show_maps=False,
     calc_curvature=True,
@@ -130,19 +130,19 @@ def main():
         "--npoints",
         "-p",
         help="Number of iterations for surface tracing. Needs to be large enough.",
-        default=421,
+        default=2467,
         type=int,
     )
 
     parser.add_argument("--calc_curvature", help="???", action="store_false")
     parser.add_argument("--smooth_curvature", help="???", action="store_true")
     parser.add_argument(
-        "--write_iota", help="Don't include iota in the grid file", action="store_false"
+        "--write_iota", help="Don't include iota in the grid file", action="store_true"
     )
     parser.add_argument("--show_maps", "-s", help="plot the grid", action="store_true")
 
     args = parser.parse_args()
-    rotating_ellipse(**args.__dict__)
+    rotating_ellipse(return_iota=False, **args.__dict__)
 
 
 if __name__ == "__main__":
