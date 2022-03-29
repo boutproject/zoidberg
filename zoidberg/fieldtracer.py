@@ -444,7 +444,14 @@ class FieldTracerWeb(object):
         self.chunk = chunk
 
     def follow_field_lines(
-        self, x_values, z_values, y_values, rtol=None, stepsize=None
+        self,
+        x_values,
+        z_values,
+        y_values,
+        rtol=None,
+        stepsize=None,
+        timeout=1800,
+        retry=3,
     ):
         """Uses field_direction to follow the magnetic field
         from every grid (x,z) point at toroidal angle y
@@ -460,8 +467,14 @@ class FieldTracerWeb(object):
             y coordinates to follow the field line to. y_values[0] is
             the starting position
         rtol : float, optional
-            The relative tolerance to use for the integrator. If None,
-            use the default value
+            Currently ignored. Use stepsize instead
+        stepsize : float, optional
+            The stepsize for the integrator. Sets accuracy and speed.
+        timeout : float, optional
+            How long to wait. Sometimes the server does not return and
+            the client keeps waiting for ever, otherwise.
+        retry : int, optional
+            How often to retry failed calculations
 
         Returns
         -------
@@ -513,9 +526,9 @@ class FieldTracerWeb(object):
 
         if self.config is None and x_values.size > self.chunk:
             with Pool() as pool:
-                # Start parallel calculation
-                results = [
-                    pool.apply_async(
+
+                def start(i):
+                    return pool.apply_async(
                         self._follow_field_lines,
                         (
                             x_values[i : i + self.chunk],
@@ -525,10 +538,23 @@ class FieldTracerWeb(object):
                             stepsize,
                         ),
                     )
-                    for i in range(0, len(x_values), self.chunk)
-                ]
+
+                # Start parallel calculation
+                results = [start(i) for i in range(0, len(x_values), self.chunk)]
                 # Wait for result and combine
-                results = np.concatenate([res.get() for res in results], axis=1)
+                for j, i in enumerate(range(0, len(x_values), self.chunk)):
+                    this = results[j]
+                    while retry > 0:
+                        try:
+                            results[j] = results[j].get(timeout=timeout)
+                            break
+                        except Exception as e:
+                            print(
+                                f"Fieldlinetracer failed {e} - going to retry {retry} times"
+                            )
+                            retry -= 1
+                            results[j] = start(i)
+                results = np.concatenate(results, axis=1)
         else:
             results = [
                 self._follow_field_lines(
