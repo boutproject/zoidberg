@@ -576,7 +576,7 @@ class FieldTracerWeb(object):
 
         dphi = y_values[1] - y_values[0]
         config = self.getConfig()
-        config.inverseField = not xor(dphi > 0, self.isforward)
+        config.inverseField = xor(dphi > 0, self.isforward)
         result = np.empty((len(y_values), len(p.x1), 2))
         result[0, :, 0] = x_values
         result[0, :, 1] = z_values

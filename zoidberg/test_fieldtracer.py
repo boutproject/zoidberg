@@ -73,14 +73,15 @@ def test_traceweb():
     start = np.linspace(5.7, 6, num), np.zeros(num)
 
     res = web.follow_field_lines(*start, np.linspace(0, 0.1, 10))
-    assert np.all(res[1:, :, 1] < 0)
+    assert np.all(res[1:, :, 1] > 0)
     dist = np.sqrt(np.sum((res[:, 1:, :] - res[:, :-1, :]) ** 2, axis=2))
     assert np.all(dist >= 0)
     assert np.max(dist) < 0.05
 
+
     # Check reverse direction
     res = web.follow_field_lines(*start, -np.linspace(0, 0.1, 10))
-    assert np.all(res[1:, :, 1] > 0)
+    assert np.all(res[1:, :, 1] < 0)
     dist = np.sqrt(np.sum((res[:, 1:, :] - res[:, :-1, :]) ** 2, axis=2))
     assert np.all(dist >= 0)
     # make sure step isn't to large
@@ -89,14 +90,13 @@ def test_traceweb():
     res = web.follow_field_lines(*start, np.linspace(0, 0.1, 10) + np.pi * 4 / 5)
     # import matplotlib.pyplot as plt
     # plt.plot(res[..., 0], res[...,1])
-    # plt.show()
-    assert np.all(res[1:, :, 1] < 0)
+    assert np.all(res[1:, :, 1] > 0)
     dist = np.sqrt(np.sum((res[:, 1:, :] - res[:, :-1, :]) ** 2, axis=2))
     assert np.all(dist >= 0)
     assert np.max(dist) < 0.05
 
     res = web.follow_field_lines(*start, -np.linspace(0, 0.1, 10) + np.pi * 6 / 5)
-    assert np.all(res[1:, :, 1] > 0)
+    assert np.all(res[1:, :, 1] < 0)
     dist = np.sqrt(np.sum((res[:, 1:, :] - res[:, :-1, :]) ** 2, axis=2))
     assert np.all(dist >= 0)
     assert np.max(dist) < 0.05
