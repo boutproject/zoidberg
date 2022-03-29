@@ -137,7 +137,7 @@ def main():
     parser.add_argument("--calc_curvature", help="???", action="store_false")
     parser.add_argument("--smooth_curvature", help="???", action="store_true")
     parser.add_argument(
-        "--write_iota", help="Don't include iota in the grid file", action="store_true"
+        "--write_iota", help="Include iota in the grid file", action="store_true"
     )
     parser.add_argument("--show_maps", "-s", help="plot the grid", action="store_true")
 
