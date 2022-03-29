@@ -1,6 +1,6 @@
 name: linting
 
-on: [push, pull_request]
+on: push
 
 defaults:
   run:
@@ -36,4 +36,4 @@ jobs:
 
     - uses: stefanzweifel/git-auto-commit-action@v4
       with:
-        commit_message: "[skip ci] Apply black/isort changes"
+        commit_message: "Apply black/isort changes"
