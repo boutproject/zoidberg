@@ -7,6 +7,12 @@ import numpy as np
 from . import boundary
 from .progress import Progress
 
+try:
+    import dask.array as da
+    import zarr
+except ImportError:
+    da = None
+
 
 class MagneticField(object):
     """Represents a magnetic field in either Cartesian or cylindrical
@@ -1452,7 +1458,8 @@ class W7X_vacuum(MagneticField):
 
         # return points, br_interp, bphi_interp, bz_interp
 
-    def field_values(self, r, phi, z, configuration=0, plot_poincare=False):
+    @classmethod
+    def field_values(cls, r, phi, z, configuration=0, plot_poincare=False):
         """This uses the webservices field line tracer to get the vacuum
         magnetic field given 3d arrrays for R, phi, and Z. Only works
         on IPP network
@@ -1532,55 +1539,8 @@ class W7X_vacuum(MagneticField):
                 f"Calculating field for Wendelstein 7-X; nx = {nx}, ny = {ny}, nz = {nz}"
             )
 
-            tot = nx * ny * nz
-
-            dar = da.from_array(r)
-            daone = da.ones((nx, ny, nz))
-            daphi = da.from_array(phi)
-            chunk = 10000
-            # x in Cartesian (real-space)
-            x1 = (daone * dar * np.cos(daphi)).flatten().rechunk(chunk)
-            x2 = (daone * dar * np.sin(daphi)).flatten().rechunk(chunk)
-            # z in Cartesian (real-space)
-            x3 = da.from_array(z).flatten().rechunk(chunk)
-
-            Bx = []
-            By = []
-            Bz = []
-            results = []
-            with Pool() as pool:
-                with Progress() as prog:
-                    print(prog)
-                    for i, j in zip(
-                        chain(range(0, tot, chunk), [-1] * 100),
-                        chain([-1] * 100, range(0, tot, chunk)),
-                    ):
-                        if i >= 0:
-                            results.append(
-                                pool.apply_async(
-                                    self._calc_chunk,
-                                    (
-                                        x1[i : i + chunk],
-                                        x2[i : i + chunk],
-                                        x3[i : i + chunk],
-                                        configuration,
-                                    ),
-                                )
-                            )
-                        if j >= 0:
-                            for B, f in zip([Bx, By, Bz], results[j // chunk].get()):
-                                B.append(f)
-                            results[j // chunk] = None
-                            if tot > chunk * 2:
-                                if prog is not None:
-                                    prog.update((j + 1) / tot)
-            Bx = np.concatenate(Bx)
-            By = np.concatenate(By)
-            Bz = np.concatenate(Bz)
-
-            ## Reshape to 3d array
-            for B in Bx, By, Bz:
-                B.shape = (nx, ny, nz)
+            B = cls._calc_B(r, z, phi, configuration)
+            Bx, By, Bz = B
 
             ## Convert to cylindrical coordinates
             Br = Bx * np.cos(phi) + By * np.sin(phi)
@@ -1591,9 +1551,9 @@ class W7X_vacuum(MagneticField):
 
             ## Save so we don't have to do this every time.
             with xr.Dataset() as ds:
-                ds["Br"] = ("x", "y", "z"), Br
-                ds["Bz"] = ("x", "y", "z"), Bz
-                ds["Bphi"] = ("x", "y", "z"), Bphi
+                ds["Br"] = ("x", "y", "z"), Br.compute()
+                ds["Bz"] = ("x", "y", "z"), Bz.compute()
+                ds["Bphi"] = ("x", "y", "z"), Bphi.compute()
                 ds.to_netcdf(fname)
 
         if plot_poincare:
@@ -1774,16 +1734,38 @@ class W7X_vacuum(MagneticField):
         phi = np.mod(phi, 2.0 * np.pi)
         return x
 
-    def _calc_chunk(self, x1, x2, x3, configuration):
+    @classmethod
+    def _calc_B(cls, r, phi, z, configuration):
+        dar = da.from_array(r)
+        daone = da.ones(r.shape)
+        daphi = da.from_array(phi)
+        chunk = 10000
+        # x in Cartesian (real-space)
+        x1 = daone * dar * np.cos(daphi)
+        x2 = daone * dar * np.sin(daphi)
+        # z in Cartesian (real-space)
+        x3 = daone * da.from_array(z)
+
+        x = da.from_array([x1, x2, x3], chunks=(3, 64, 64, 64))
+
+        return da.map_blocks(cls._calc_chunk, x, configuration, dtype=float)
+
+    @classmethod
+    def _calc_chunk(cls, x, configuration):
+        from time import sleep
+
+        from osa import Client
+
         global tracer
         tracer = tracer or Client(
             "http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl"
         )
 
+        assert x.shape[0] == 3
         pos = tracer.types.Points3D()
-        pos.x1 = x1
-        pos.x2 = x2
-        pos.x3 = x3
+        pos.x1 = x[0].flatten()
+        pos.x2 = x[1].flatten()
+        pos.x3 = x[2].flatten()
 
         ## Create configuration objects
         config = tracer.types.MagneticConfig()
@@ -1806,7 +1788,7 @@ class W7X_vacuum(MagneticField):
                 sleep(0.6 - 0.4 * redo)
             else:
                 break
-        return [np.array(x) for x in (res.field.x1, res.field.x2, res.field.x3)]
+        return np.array((res.field.x1, res.field.x2, res.field.x3)).reshape(x.shape)
 
 
 class W7X_vacuum_on_demand(object):
