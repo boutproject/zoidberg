@@ -72,7 +72,7 @@ def setup_ftw(**kw):
         pytest.skip("Failed to initiallise - service not available?")
 
 
-def test_traceweb_forward():
+def test_traceweb():
     web = setup_ftw(configId=0)
 
     num = 10
