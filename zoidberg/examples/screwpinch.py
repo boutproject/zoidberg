@@ -1,8 +1,8 @@
 import argparse
 
 import numpy as np
+
 from .common import calc_curvilinear_curvature
-import argparse
 
 
 def screwpinch(
