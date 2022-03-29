@@ -2,6 +2,8 @@ import argparse
 
 import numpy as np
 
+import zoidberg as zb
+
 from .common import calc_curvilinear_curvature
 
 
