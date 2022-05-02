@@ -419,10 +419,12 @@ class StructuredPoloidalGrid(PoloidalGrid):
                 underrelax = 1.5
             if cnt == 100:
                 underrelax = 2
-            if cnt == 1000:
+            if cnt == 300:
                 underrelax = 2.5
-            if cnt == 10000:
+            if cnt == 700:
                 underrelax = 3
+            if cnt == 1000:
+                raise RuntimeError("Failed to converge")
 
             # Calculate derivatives
             dRdx, dZdx = self.getCoordinate(xind, zind, dx=1)
