@@ -7,12 +7,6 @@ import numpy as np
 from . import boundary
 from .progress import Progress
 
-try:
-    import dask.array as da
-    import zarr
-except ImportError:
-    da = None
-
 
 class MagneticField(object):
     """Represents a magnetic field in either Cartesian or cylindrical
@@ -1550,9 +1544,9 @@ class W7X_vacuum(MagneticField):
 
             ## Save so we don't have to do this every time.
             with xr.Dataset() as ds:
-                ds["Br"] = ("x", "y", "z"), Br.compute()
-                ds["Bz"] = ("x", "y", "z"), Bz.compute()
-                ds["Bphi"] = ("x", "y", "z"), Bphi.compute()
+                ds["Br"] = ("x", "y", "z"), Br
+                ds["Bz"] = ("x", "y", "z"), Bz
+                ds["Bphi"] = ("x", "y", "z"), Bphi
                 ds.to_netcdf(fname)
 
         if plot_poincare:
@@ -1734,20 +1728,10 @@ class W7X_vacuum(MagneticField):
         return x
 
     @classmethod
-    def _calc_B(cls, r, phi, z, configuration):
-        dar = da.from_array(r)
-        daone = da.ones(r.shape)
-        daphi = da.from_array(phi)
-        chunk = 10000
-        # x in Cartesian (real-space)
-        x1 = daone * dar * np.cos(daphi)
-        x2 = daone * dar * np.sin(daphi)
-        # z in Cartesian (real-space)
-        x3 = daone * da.from_array(z)
-
-        x = da.from_array([x1, x2, x3], chunks=(3, 64, 64, 64))
-
-        return da.map_blocks(cls._calc_chunk, x, configuration, dtype=float)
+    def _calc_B(cls, r, z, phi, configuration):
+        x123 = r * np.cos(phi), r * np.sin(phi), z
+        x123 = np.array(x123)
+        return cls._calc_chunk(x123, configuration)
 
     @classmethod
     def _calc_chunk(cls, x, configuration):
@@ -1800,24 +1784,21 @@ class W7X_vacuum_on_demand(object):
         return x
 
     def Bmag(self, x, z, phi):
-        return np.sqrt(np.sum(self.getB(x, z, phi) ** 2, axis=0)).reshape(x.shape)
+        return np.sqrt(np.sum(self.getB(x, z, phi) ** 2, axis=0))
 
     def pressure(self, x, z, phi):
         return np.zeros_like(x)
 
     def getB(self, *pos):
-        shape = pos[0].shape
-        pos = np.atleast_3d(*pos)
-        B = W7X_vacuum._calc_B(*pos, self.configuration)
-        return B.reshape((3,) + shape)
-
-    def Byfunc(self, x, z, phi):
-        B = self.getB(x, z, phi)
-        return -B[0] * np.sin(phi) + B[1] * np.cos(phi)
+        return W7X_vacuum._calc_B(*pos, self.configuration)
 
     def Bxfunc(self, x, z, phi):
         B = self.getB(x, z, phi)
         return B[0] * np.cos(phi) + B[1] * np.sin(phi)
+
+    def Byfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        return -B[0] * np.sin(phi) + B[1] * np.cos(phi)
 
     def Bzfunc(self, *pos):
         return self.getB(*pos)[2]
