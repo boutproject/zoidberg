@@ -90,6 +90,8 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
     maps = {
         "R": R,
         "Z": Z,
+        "MXG": mxg,
+        "MYG": nslice,
     }
 
     # A helper data structure that groups the various field line maps along with the offset
