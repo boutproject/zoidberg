@@ -590,7 +590,7 @@ try:
             ) - self.R / self.R_0 * (
                 log(self.R / self.R_0) * self.R_0 * diff(self.P_hat, self.R)
                 + self.Z * self.R / self.R_0 * diff(self.P_hat, self.Z)
-            )  # .subs([(self.R, self.R/self.R_0), (self.Z, self.Z)])
+            )
 
             Bx = R_0 * diff(self.P, self.R)
             By = R_0 / self.R * diff(self.P, self.phi)
@@ -1856,12 +1856,14 @@ class W7X_VMEC(MagneticField):
 
         pos = vmec.types.Points3D()
 
+        # x in Cartesian (real-space)
         pos.x1 = np.ndarray.flatten(
             np.ones((self.nx, self.ny, self.nz)) * r * np.cos(phi)
-        )  # x in Cartesian (real-space)
+        )
+        # y in Cartesian (real-space)
         pos.x2 = np.ndarray.flatten(
             np.ones((self.nx, self.ny, self.nz)) * r * np.sin(phi)
-        )  # y in Cartesian (real-space)
+        )
         pos.x3 = np.ndarray.flatten(z)  # z in Cartesian (real-space)
         b = vmec.service.magneticField(str(vmec_id), pos)
 

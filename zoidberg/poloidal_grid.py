@@ -858,8 +858,8 @@ def grid_elliptic(
         if plotting_available:
             if not show:
                 # Markers on original points on inner and outer boundaries
-                plt.plot(inner.R, inner.Z, "-o")
-                plt.plot(outer.R, outer.Z, "-o")
+                plt.plot(inner.R, inner.Z, "-o", label="inner")
+                plt.plot(outer.R, outer.Z, "-o", label="outer")
 
                 # Black lines through inner and outer boundaries
                 r, z = inner.position(np.linspace(0, 2 * np.pi, 10 * nz))
