@@ -1741,7 +1741,8 @@ class W7X_vacuum(MagneticField):
 
         global tracer
         tracer = tracer or Client(
-            "http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl"
+            "http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl",
+            osa_timeout=0.1,
         )
 
         assert x.shape[0] == 3
@@ -1758,7 +1759,9 @@ class W7X_vacuum(MagneticField):
         redo = 2
         while redo:
             try:
-                res = tracer.service.magneticField(pos, config)
+                res = tracer.service.magneticField(
+                    pos, config, osa_timeout=(10 + len(pos.x1) / 1000)
+                )
             except:
                 # Catch any error. Different errors might be
                 # reported, but we want to retry anyway.
