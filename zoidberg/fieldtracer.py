@@ -452,6 +452,7 @@ class FieldTracerWeb(object):
         stepsize=None,
         timeout=1800,
         retry=3,
+        chunk=None,
     ):
         """Uses field_direction to follow the magnetic field
         from every grid (x,z) point at toroidal angle y
@@ -475,6 +476,8 @@ class FieldTracerWeb(object):
             the client keeps waiting for ever, otherwise.
         retry : int, optional
             How often to retry failed calculations
+        chunk: int or None, optional
+            Set chunking size, overwrite default if not None
 
         Returns
         -------
@@ -523,16 +526,16 @@ class FieldTracerWeb(object):
         if len(x_values.shape) > 1:
             x_values = x_values.flatten()
             z_values = z_values.flatten()
-
-        if self.config is None and x_values.size > self.chunk:
+        chunk = chunk or self.chunk
+        if self.config is None and x_values.size > chunk:
             with Pool() as pool:
 
                 def start(i):
                     return pool.apply_async(
                         self._follow_field_lines,
                         (
-                            x_values[i : i + self.chunk],
-                            z_values[i : i + self.chunk],
+                            x_values[i : i + chunk],
+                            z_values[i : i + chunk],
                             y_values,
                             rtol,
                             stepsize,
@@ -540,9 +543,9 @@ class FieldTracerWeb(object):
                     )
 
                 # Start parallel calculation
-                results = [start(i) for i in range(0, len(x_values), self.chunk)]
+                results = [start(i) for i in range(0, len(x_values), chunk)]
                 # Wait for result and combine
-                for j, i in enumerate(range(0, len(x_values), self.chunk)):
+                for j, i in enumerate(range(0, len(x_values), chunk)):
                     this = results[j]
                     while retry > 0:
                         try:
@@ -558,13 +561,13 @@ class FieldTracerWeb(object):
         else:
             results = [
                 self._follow_field_lines(
-                    x_values[i : i + self.chunk],
-                    z_values[i : i + self.chunk],
+                    x_values[i : i + chunk],
+                    z_values[i : i + chunk],
                     y_values,
                     rtol,
                     stepsize,
                 )
-                for i in range(0, len(x_values), self.chunk)
+                for i in range(0, len(x_values), chunk)
             ]
             # Wait for result and combine
             results = np.concatenate(results, axis=1)
