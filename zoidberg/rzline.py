@@ -89,11 +89,11 @@ class RZline:
         # Define an angle variable
         self.theta = linspace(0, 2 * pi, n, endpoint=False)
 
-        spline_order = spline_order or 3
+        self.spline_order = spline_order or 3
 
         # Create a spline representation
         # Note that the last point needs to be passed but is not used
-        kw = dict(per=True, k=spline_order)
+        kw = dict(per=True, k=self.spline_order)
         if smooth:
             kw["t"] = np.linspace(
                 0, np.pi * 2, len(r) // 100 + 1, endpoint=False
@@ -204,6 +204,19 @@ class RZline:
         and the last element is the total distance around the loop
 
         """
+
+        if self.spline_order == 1:
+            R = self.R
+            Z = self.Z
+            dr = (R - np.roll(R, -1)) ** 2 + (Z - np.roll(Z, -1)) ** 2
+            dr = np.sqrt(dr)
+            out = np.empty(len(dr) + 1)
+            sum = 0
+            for i, c in enumerate(dr):
+                out[i] = sum
+                sum += c
+            out[-1] = sum
+            return out
 
         sample = int(sample)
         assert sample >= 1
