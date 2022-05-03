@@ -55,7 +55,7 @@ class RZline:
 
     """
 
-    def __init__(self, r, z, anticlockwise=True, spline_order=None):
+    def __init__(self, r, z, anticlockwise=True, spline_order=None, smooth=False):
         r = np.asfarray(r)
         z = np.asfarray(z)
 
@@ -93,12 +93,13 @@ class RZline:
 
         # Create a spline representation
         # Note that the last point needs to be passed but is not used
-        self._rspl = splrep(
-            append(self.theta, 2 * pi), append(r, r[0]), per=True, k=spline_order
-        )
-        self._zspl = splrep(
-            append(self.theta, 2 * pi), append(z, z[0]), per=True, k=spline_order
-        )
+        kw = dict(per=True, k=spline_order)
+        if smooth:
+            kw["t"] = np.linspace(
+                0, np.pi * 2, len(r) // 100 + 1, endpoint=False
+            ) + np.pi / len(r)
+        self._rspl = splrep(append(self.theta, 2 * pi), append(r, r[0]), **kw)
+        self._zspl = splrep(append(self.theta, 2 * pi), append(z, z[0]), **kw)
 
     def Rvalue(self, theta=None, deriv=0):
         """Calculate the value of R at given theta locations
@@ -453,7 +454,9 @@ def line_from_points_poly(rarray, zarray, show=False, spline_order=None):
     return RZline(rvals, zvals, spline_order=spline_order)
 
 
-def line_from_points(rarray, zarray, show=False, spline_order=None, is_sorted=False):
+def line_from_points(
+    rarray, zarray, show=False, spline_order=None, is_sorted=False, smooth=False
+):
     """Find a periodic line which goes through the given (r,z) points
 
     This function starts at a point, and finds the nearest neighbour
@@ -493,7 +496,7 @@ def line_from_points(rarray, zarray, show=False, spline_order=None, is_sorted=Fa
     # and keep the line with the shortest total distance
 
     if is_sorted:
-        return RZline(rarray, zarray, spline_order=spline_order)
+        return RZline(rarray, zarray, spline_order=spline_order, smooth=smooth)
 
     best_line = None  # The best line found so far
     best_dist = 0.0  # Distance around best line
@@ -529,7 +532,7 @@ def line_from_points(rarray, zarray, show=False, spline_order=None, is_sorted=Fa
         rvals.append(rarr[0])
         zvals.append(zarr[0])
 
-        new_line = RZline(rvals, zvals, spline_order=spline_order)
+        new_line = RZline(rvals, zvals, spline_order=spline_order, smooth=smooth)
         new_dist = new_line.distance()[-1]  # Total distance
 
         if (best_line is None) or (new_dist < best_dist):
