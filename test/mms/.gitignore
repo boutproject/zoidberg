@@ -1,0 +1,7 @@
+# Data files
+B*dat
+*.nc
+/.grids_laplace
+/.grids_parallel
+/.grids_poloidal
+/.grids_radial

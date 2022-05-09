@@ -1,0 +1,42 @@
+name: MMS Test
+on: [push]
+
+jobs:
+  standard_tests:
+    name: Tests with ${{ matrix.config.name }}
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    container:
+      image: oi4ai/bout3d:latest-${{ matrix.config.mode }}
+    strategy:
+      fail-fast: true
+      matrix:
+        config:
+          - name: debugging
+            mode: debug
+          - name: optimisations
+            mode: opt
+    steps:
+      - name: Job information
+        run: |
+          echo Build: ${{ matrix.config.name }}
+          cat /etc/os-release
+
+      - name: Checkout hermes-2
+        run: |
+          cd /home/boutuser/
+          git clone ${{ github.server_url }}/${{ github.repository }} -b ${{ github.ref_name }} zoidberg
+          cd zoidberg
+          git checkout ${{ github.sha }}
+          git submodule update --init --recursive
+
+      - name: Build
+        run: |
+          cd /home/boutuser/zoidberg
+          pip install .
+
+      - name: Run
+        run: |
+          cd /home/boutuser/zoidberg/test/mms/
+          # Run test
+          make
