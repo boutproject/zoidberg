@@ -32,6 +32,7 @@ jobs:
 
       - name: Build
         run: |
+          export HOME= /home/boutuser
           cd /home/boutuser/zoidberg
           python3 -m ensurepip
           python3 -m pip install .
