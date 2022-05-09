@@ -66,6 +66,7 @@ def test(fn, inpf, anaf, testfunc):
 
 
 def do_tests(grids, inpf, anaf, testf, expect=2):
+    fail = False
     for mode, todo in grids.items():
         l2 = [test(x[0], inpf, anaf, testf) for x in todo]
         lst = [x[-1] for x in todo]
@@ -74,4 +75,7 @@ def do_tests(grids, inpf, anaf, testf, expect=2):
         difc = np.log(lst[-1] / lst[-2])
         conv = errc / difc
         print(mode, conv, l2)
+        if not np.isclose(conv, l2, atol=0.1):
+            fail = True
         plt.show()
+    assert not fail
