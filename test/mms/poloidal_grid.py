@@ -71,6 +71,8 @@ def gen_grid(*args):
         ds["phi"] = "y", phi
         ds["theta"] = dims, one * theta[:, None, :]
         ds["one"] = dims, one
+        ds["g12"] = dims, one * 0
+        ds["g23"] = dims, one * 0
         ds.to_netcdf(fn)
 
 
