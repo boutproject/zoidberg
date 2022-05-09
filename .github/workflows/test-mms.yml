@@ -9,7 +9,7 @@ jobs:
     container:
       image: oi4ai/bout3d:latest-${{ matrix.config.mode }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         config:
           - name: debugging
