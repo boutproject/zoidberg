@@ -41,6 +41,8 @@ jobs:
       - name: Run
         run: |
           export HOME=/home/boutuser
+          echo $PYTHONPATH
+          export PYTHONPATH=$PYTHONPATH:/home/boutuser/BOUT-dev/build/tools/pylib/
           cd /home/boutuser/zoidberg/test/mms/
           # Run test
           make
