@@ -62,10 +62,10 @@ def gen_grid(*args):
         grid,
         field,
         maps,
-        fn,
+        "tmp.nc",
         metric2d=False,
     )
-    with xr.open_dataset(fn) as ds:
+    with xr.open_dataset("tmp.nc") as ds:
         dims = ds.dz.dims
         ds["r_minor"] = dims, one * r[:, None, :]
         ds["phi"] = "y", phi
@@ -73,6 +73,8 @@ def gen_grid(*args):
         ds["one"] = dims, one
         ds["g12"] = dims, one * 0
         ds["g23"] = dims, one * 0
+        ds["g_12"] = dims, one * 0
+        ds["g_23"] = dims, one * 0
         ds.to_netcdf(fn)
 
 
