@@ -37,12 +37,10 @@ def gen_grid(nx, ny, nz, R0, r0, r1, mode=0):
         grid,
         field,
         maps,
-        fn,
+        "tmp.nc",
         metric2d=False,
     )
-    os.system("ls -l " + fn)
-    os.sync()
-    with xr.open_dataset(fn) as ds:
+    with xr.open_dataset("tmp.nc") as ds:
         for k in "g11,g33,g_11,g_33,nx,ny,nz".split(","):
             assert np.all(ds[k] > 0)
         dims = ds.dz.dims
