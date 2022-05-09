@@ -33,7 +33,8 @@ jobs:
       - name: Build
         run: |
           cd /home/boutuser/zoidberg
-          pip install .
+          python3 -m ensurepip
+          python3 -m pip install .
 
       - name: Run
         run: |
