@@ -30,7 +30,7 @@ def gen_grid(nx, ny, nz, R0, r0, r1, mode=0):
 
     fn = gen_name(*args)
 
-    maps = zb.make_maps(grid, field, quiet=True)
+    maps = zb.make_maps(grid, field, quiet=True, MXG=1)
     zb.write_maps(
         grid,
         field,
