@@ -2,6 +2,7 @@
 
 # Adapted from http://stackoverflow.com/a/15860757/2043465
 
+import time
 from sys import stdout
 
 
@@ -81,3 +82,37 @@ def update_progress(progress, barLength=10, ascii=False, **kwargs):
 
     stdout.write(text)
     stdout.flush()
+
+
+def format_time(secs):
+    ret = ""
+    out = False
+    for name, val in [("m", 60), ("h", 3600), ("d", 60 * 60 * 24)][::-1]:
+        if secs >= val:
+            out = True
+        if out:
+            cur = int(secs // val)
+            ret += f"{cur:02d}{name}"
+            secs -= cur * val
+    ret += f"{secs:02.0f}s"
+    return ret
+
+
+class Progress(object):
+    def __init__(self):
+        pass
+
+    def update(self, prog):
+        needed = time.time() - self.t0
+        print(
+            f"{prog * 100:6.2f} % ... {format_time(needed)}>{format_time(needed / (prog) - needed) if prog else 0}",
+            end="\r",
+        )
+
+    def __enter__(self):
+        self.t0 = time.time()
+        return self
+
+    def __exit__(self, *args):
+        self.update(1)
+        print()
