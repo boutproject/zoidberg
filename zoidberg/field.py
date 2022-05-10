@@ -1777,7 +1777,7 @@ class W7X_vacuum(MagneticField):
         return np.array((res.field.x1, res.field.x2, res.field.x3)).reshape(x.shape)
 
 
-class W7X_vacuum_on_demand():
+class W7X_vacuum_on_demand:
     def __init__(self, configuration):
         self.configuration = configuration
         self.boundary = boundary.NoBoundary()  # An optional Boundary object
