@@ -407,7 +407,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
 
             # Check if close enough
             # Note: only check the points which are not in the boundary
-            val = np.amax(mask * (dR ** 2 + dZ ** 2))
+            val = np.amax(mask * (dR**2 + dZ**2))
             if val < tol:
                 break
             cnt += 1
@@ -477,7 +477,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
             [self.getCoordinate(xind, zind, dx=a, dz=b) for a, b in ((1, 0), (0, 1))]
         )
         # dims: 0 : dx/dz  - 1 : R/z - 2,3 : spatial (r, \theta)
-        ddist = np.sqrt(np.sum(dolddnew ** 2, axis=1))  # sum R + z
+        ddist = np.sqrt(np.sum(dolddnew**2, axis=1))  # sum R + z
         sumdz = np.sum(ddist[1], axis=1)  # sum in r direction
         ddist[1] *= 2 * np.pi / sumdz[..., None]  # normalise theta (0 -> 2 pi)
         # Transform derivatives from index space to real space.
@@ -796,17 +796,17 @@ def grid_elliptic(
         dZdz = (Z_zp - Z_zm) / (2.0 * dz)
         dZdx = (Z_xp - Z_xm) / (2.0 * dx)
 
-        a = dRdz ** 2 + dZdz ** 2
+        a = dRdz**2 + dZdz**2
         b = dRdz * dRdx + dZdx * dZdz
-        c = dRdx ** 2 + dZdx ** 2
+        c = dRdx**2 + dZdx**2
 
         # Now solve a*R_xx - 2*b*R_xz + c*R_zz = 0
         # For now using Jacobi update
 
-        a_dx2 = a / dx ** 2
+        a_dx2 = a / dx**2
         b_dxdz = b / (2.0 * dx * dz)
-        c_dz2 = c / dz ** 2
-        inv_diag = 1.0 / (2 * a / dx ** 2 + 2 * c / dz ** 2)
+        c_dz2 = c / dz**2
+        inv_diag = 1.0 / (2 * a / dx**2 + 2 * c / dz**2)
 
         Rold = R.copy()
         Zold = Z.copy()
