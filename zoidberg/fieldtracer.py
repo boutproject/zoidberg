@@ -397,7 +397,7 @@ def trace_poincare(
     return result, y_slices
 
 
-class FieldTracerWeb(object):
+class FieldTracerWeb():
     """A class for following magnetic field lines
 
     Parameters
