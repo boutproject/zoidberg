@@ -17,7 +17,7 @@ def ana(grid):
 
 
 if __name__ == "__main__":
-    bc.init("-d mms")
+    bc.init("-d mms -q -q -q")
 
     do_tests(grids, inp, ana, bc.DDZ)
 
