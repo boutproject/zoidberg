@@ -1,11 +1,8 @@
-from itertools import chain
 from math import gamma
-from multiprocessing import Pool
 
 import numpy as np
 
 from . import boundary
-from .progress import Progress
 
 
 class MagneticField(object):
@@ -414,7 +411,6 @@ try:
 
             for c in self.coil_list:
                 xc, zc, Ic = c
-                rc = (xc**2 + zc**2) ** (0.5)
                 r2 = (self.x - xc) ** 2 + (self.z - zc) ** 2
                 theta = atan2(self.z - zc, self.x - xc)  # Angle relative to coil
 
@@ -551,8 +547,11 @@ try:
 
         Important Methods
         -----------------
-        Bxfunc/Byfunc/Bzfunc(x,z,y): Returns magnetic field in radial/torodial/z-direction
-        Sfunc(x,z,y): Returns approximate magnetic surface invariant for Dommaschk potentials. Use this to visualize flux surfaces
+        Bxfunc/Byfunc/Bzfunc(x,z,y):
+            Returns magnetic field in radial/torodial/z-direction
+        Sfunc(x,z,y):
+            Returns approximate magnetic surface invariant for Dommaschk potentials.
+            Use this to visualize flux surfaces
 
 
 
@@ -624,7 +623,9 @@ try:
 
             Returns
             -------
-            Approximate magnetic surface invariant S at location (x,z,y). This is from the original Dommaschk paper. Use to visualize flux surfaces
+            Approximate magnetic surface invariant S at location (x,z,y).
+            This is from the original Dommaschk paper.
+            Use to visualize flux surfaces
             """
             return self.Sf(x, y, z)
 
@@ -1464,7 +1465,6 @@ class W7X_vacuum(MagneticField):
         """
         import os.path
         import pickle
-        from time import sleep
 
         import matplotlib.pyplot as plt
         import xarray as xr

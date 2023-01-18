@@ -15,24 +15,28 @@ jobs:
       with:
         ref: ${{ github.head_ref }}
 
-    - name: Install black
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
       run: |
-        sudo apt update -y
-        sudo apt -y install python3-pip python3-setuptools python3-wheel
-        pip3 install black isort
+        python -m pip install --upgrade pip
+        python -m pip install --upgrade black isort
 
     - name: Version
       run: |
         python3 --version
-        $HOME/.local/bin/black --version
-        $HOME/.local/bin/isort --version
+        black --version
+        isort --version
 
     - name: Run black
       run: |
         pwd
         ls
-        $HOME/.local/bin/black zoidberg
-        $HOME/.local/bin/isort zoidberg
+        black zoidberg
+        isort zoidberg
 
     - uses: stefanzweifel/git-auto-commit-action@v4
       with:
