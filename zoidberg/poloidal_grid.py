@@ -419,10 +419,12 @@ class StructuredPoloidalGrid(PoloidalGrid):
                 underrelax = 1.5
             if cnt == 100:
                 underrelax = 2
-            if cnt == 1000:
+            if cnt == 300:
                 underrelax = 2.5
-            if cnt == 10000:
+            if cnt == 700:
                 underrelax = 3
+            if cnt == 1000:
+                raise RuntimeError("Failed to converge")
 
             # Calculate derivatives
             dRdx, dZdx = self.getCoordinate(xind, zind, dx=1)
@@ -587,6 +589,7 @@ def grid_elliptic(
     restrict_size=20,
     restrict_factor=2,
     return_coords=False,
+    nx_outer=0,
 ):
     """Create a structured grid between inner and outer boundaries using
     elliptic method
@@ -656,7 +659,10 @@ def grid_elliptic(
 
     """
 
-    assert nx >= 2
+    if nx_outer:
+        assert nx_outer > 0
+        nx -= nx_outer
+    assert nx > 1
     assert nz > 1
 
     # Generate angle values (y coordinate),
@@ -671,11 +677,34 @@ def grid_elliptic(
         # Align inner and outer boundaries
         # Easiest way is to roll both boundaries
         # so that index 0 is on the outboard midplane
-
-        ind = np.argmax(inner.R)
-        inner = rzline.RZline(np.roll(inner.R, -ind), np.roll(inner.Z, -ind))
-        ind = np.argmax(outer.R)
-        outer = rzline.RZline(np.roll(outer.R, -ind), np.roll(outer.Z, -ind))
+        if len(inner.R) < len(outer.R):
+            shorter = inner
+            longer = outer
+        else:
+            shorter = outer
+            longer = inner
+        ind = np.argmax(shorter.R)
+        shorter = rzline.RZline(np.roll(shorter.R, -ind), np.roll(shorter.Z, -ind))
+        # if len(longer.R) == len(shorter.R):
+        dr = shorter.R - longer.R[:, None]
+        dz = shorter.Z - longer.Z[:, None]
+        delta = dr**2 + dz**2
+        sums = []
+        fac = len(longer.R) / len(shorter.R)
+        for i in range(len(longer.R)):
+            sums.append(
+                np.sum(
+                    [delta[int(round(j * fac)) - i, j] for j in range(len(shorter.R))]
+                )
+            )
+        ind = -np.argmin(sums)
+        longer = rzline.RZline(np.roll(longer.R, -ind), np.roll(longer.Z, -ind))
+        if len(inner.R) < len(outer.R):
+            inner = shorter
+            outer = longer
+        else:
+            outer = shorter
+            inner = longer
 
     if (nx > restrict_size) or (nz > restrict_size):
         # Create a coarse grid first to get a starting guess
@@ -752,9 +781,9 @@ def grid_elliptic(
         plt.plot(outer.R, outer.Z, "-o")
 
         # Black lines through inner and outer boundaries
-        r, z = inner.position(np.linspace(0, 2 * np.pi, 100))
+        r, z = inner.position(np.linspace(0, 2 * np.pi, 10 * nz))
         plt.plot(r, z, "k")
-        r, z = outer.position(np.linspace(0, 2 * np.pi, 100))
+        r, z = outer.position(np.linspace(0, 2 * np.pi, 10 * nz))
         plt.plot(r, z, "k")
 
         # Red dots to mark the inner and outer boundaries
@@ -762,7 +791,7 @@ def grid_elliptic(
         plt.plot(R[-1, :], Z[-1, :], "ro")
 
     # Start solver loop
-    while True:
+    for _ in range(R.size * 2):
         # Calculate coefficients, which exclude boundary points
         # Note that the domain is periodic in y so roll arrays
 
@@ -825,6 +854,37 @@ def grid_elliptic(
 
         if maxchange_sq < tol:
             break
+
+    else:
+        print("Convergence failure, trying to plot ...")
+        if plotting_available:
+            if not show:
+                # Markers on original points on inner and outer boundaries
+                plt.plot(inner.R, inner.Z, "-o", label="inner")
+                plt.plot(outer.R, outer.Z, "-o", label="outer")
+
+                # Black lines through inner and outer boundaries
+                r, z = inner.position(np.linspace(0, 2 * np.pi, 10 * nz))
+                plt.plot(r, z, "k")
+                r, z = outer.position(np.linspace(0, 2 * np.pi, 10 * nz))
+                plt.plot(r, z, "k")
+
+                # Red dots to mark the inner and outer boundaries
+                plt.plot(R[0, :], Z[0, :], "ro")
+                plt.plot(R[-1, :], Z[-1, :], "ro")
+            plt.show()
+
+        raise RuntimeError(
+            f"Failed to converge - grid shape {R.shape}: Error was {maxchange_sq} > {tol}"
+        )
+
+    if nx_outer:
+        nxn = nx + nx_outer
+        dn = np.arange(nx_outer) + 1
+        dR = R[-1] - R[-2]
+        dZ = Z[-1] - Z[-2]
+        R = np.vstack([R, R[-1] + dR[None, :] * dn[:, None]])
+        Z = np.vstack([Z, Z[-1] + dZ[None, :] * dn[:, None]])
 
     if show and plotting_available:
         plt.plot(R, Z)

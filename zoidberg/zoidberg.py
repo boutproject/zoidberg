@@ -38,7 +38,7 @@ def parallel_slice_field_name(field, offset):
     return "{}_{}{}".format(prefix, field, suffix)
 
 
-def make_maps(grid, magnetic_field, nslice=1, quiet=False, **kwargs):
+def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **kwargs):
     """Make the forward and backward FCI maps
 
     Parameters
@@ -82,7 +82,7 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, **kwargs):
         R[:, j, :] = pol.R
         Z[:, j, :] = pol.Z
 
-    field_tracer = fieldtracer.FieldTracer(magnetic_field)
+    field_tracer = field_tracer or fieldtracer.FieldTracer(magnetic_field)
 
     rtol = kwargs.get("rtol", None)
 
@@ -90,6 +90,8 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, **kwargs):
     maps = {
         "R": R,
         "Z": Z,
+        "MXG": mxg,
+        "MYG": nslice,
     }
 
     # A helper data structure that groups the various field line maps along with the offset

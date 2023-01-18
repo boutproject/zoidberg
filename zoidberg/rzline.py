@@ -44,6 +44,9 @@ class RZline:
         Ensure that the line goes anticlockwise in the R-Z plane
         (positive theta)
 
+    spline_order : int, optional
+        Change the spline order for scipy.interpolate.splrep
+
     Note that the last point in (r,z) arrays should not be the same
     as the first point. The (r,z) points are in [0,2pi)
 
@@ -52,7 +55,7 @@ class RZline:
 
     """
 
-    def __init__(self, r, z, anticlockwise=True):
+    def __init__(self, r, z, anticlockwise=True, spline_order=None, smooth=False):
         r = np.asfarray(r)
         z = np.asfarray(z)
 
@@ -64,11 +67,21 @@ class RZline:
 
         if anticlockwise:
             # Ensure that the line is going anticlockwise (positive theta)
-            mid_ind = np.argmax(r)  # Outboard midplane index
-            if z[(mid_ind + 1) % n] < z[mid_ind]:
-                # Line going down at outboard midplane. Need to reverse
+            # The first method is faster, but unreliable.
+            # mid_ind = np.argmax(r)  # Outboard midplane index
+            # ind_next = (mid_ind + 1) % n
+
+            # if z[ind_next] < z[mid_ind]:
+            #     # Line going down at outboard midplane. Need to reverse
+            #     r = r[::-1]  # r = np.flip(r)
+            #     z = z[::-1]  # z = np.flip(z)
+            # Calcculating the area should be much more robust
+            A = np.sum((r - np.roll(r, 1)) * (z + np.roll(z, 1)))
+            assert A != 0
+            if A > 0:
                 r = r[::-1]  # r = np.flip(r)
                 z = z[::-1]  # z = np.flip(z)
+            assert np.sum((r - np.roll(r, 1)) * (z + np.roll(z, 1))) < 0
 
         self.R = r
         self.Z = z
@@ -76,10 +89,17 @@ class RZline:
         # Define an angle variable
         self.theta = linspace(0, 2 * pi, n, endpoint=False)
 
+        self.spline_order = spline_order or 3
+
         # Create a spline representation
         # Note that the last point needs to be passed but is not used
-        self._rspl = splrep(append(self.theta, 2 * pi), append(r, r[0]), per=True)
-        self._zspl = splrep(append(self.theta, 2 * pi), append(z, z[0]), per=True)
+        kw = dict(per=True, k=self.spline_order)
+        if smooth:
+            kw["t"] = np.linspace(
+                0, np.pi * 2, len(r) // 100 + 1, endpoint=False
+            ) + np.pi / len(r)
+        self._rspl = splrep(append(self.theta, 2 * pi), append(r, r[0]), **kw)
+        self._zspl = splrep(append(self.theta, 2 * pi), append(z, z[0]), **kw)
 
     def Rvalue(self, theta=None, deriv=0):
         """Calculate the value of R at given theta locations
@@ -184,6 +204,19 @@ class RZline:
         and the last element is the total distance around the loop
 
         """
+
+        if self.spline_order == 1:
+            R = self.R
+            Z = self.Z
+            dr = (R - np.roll(R, -1)) ** 2 + (Z - np.roll(Z, -1)) ** 2
+            dr = np.sqrt(dr)
+            out = np.empty(len(dr) + 1)
+            sum = 0
+            for i, c in enumerate(dr):
+                out[i] = sum
+                sum += c
+            out[-1] = sum
+            return out
 
         sample = int(sample)
         assert sample >= 1
@@ -358,7 +391,7 @@ def shaped_line(R0=3.0, a=1.0, elong=0.0, triang=0.0, indent=0.0, n=20):
     )
 
 
-def line_from_points_poly(rarray, zarray, show=False):
+def line_from_points_poly(rarray, zarray, show=False, spline_order=None):
     """Find a periodic line which goes through the given (r,z) points
 
     This function starts with a triangle, then adds points
@@ -398,7 +431,7 @@ def line_from_points_poly(rarray, zarray, show=False):
         )  # Starting triangle
 
     for i in range(3, npoints):
-        line = RZline(rvals[:i], zvals[:i])
+        line = RZline(rvals[:i], zvals[:i], spline_order=spline_order)
 
         angle = np.linspace(0, 2 * pi, 100)
         r, z = line.position(angle)
@@ -431,10 +464,12 @@ def line_from_points_poly(rarray, zarray, show=False):
 
     if show and plotting_available:
         plt.show()
-    return RZline(rvals, zvals)
+    return RZline(rvals, zvals, spline_order=spline_order)
 
 
-def line_from_points(rarray, zarray, show=False):
+def line_from_points(
+    rarray, zarray, show=False, spline_order=None, is_sorted=False, smooth=False
+):
     """Find a periodic line which goes through the given (r,z) points
 
     This function starts at a point, and finds the nearest neighbour
@@ -444,6 +479,16 @@ def line_from_points(rarray, zarray, show=False):
     ----------
     rarray, zarray : array_like
         R, Z coordinates. These arrays should be the same length
+
+    show : bool (optional)
+        Whether to plot the found solution (using matplotlib)
+
+    spline_order : integer (optional)
+        Allows to change the spline order
+
+    is_sorted : bool (optional)
+        Avoids sorting the data. Makes it faster, but no checking is
+        performed to ensure that the data is truly sorted.
 
     Returns
     -------
@@ -462,6 +507,9 @@ def line_from_points(rarray, zarray, show=False):
     # we start the line on.
     # Therefore start the line from every point in turn,
     # and keep the line with the shortest total distance
+
+    if is_sorted:
+        return RZline(rarray, zarray, spline_order=spline_order, smooth=smooth)
 
     best_line = None  # The best line found so far
     best_dist = 0.0  # Distance around best line
@@ -497,7 +545,7 @@ def line_from_points(rarray, zarray, show=False):
         rvals.append(rarr[0])
         zvals.append(zarr[0])
 
-        new_line = RZline(rvals, zvals)
+        new_line = RZline(rvals, zvals, spline_order=spline_order, smooth=smooth)
         new_dist = new_line.distance()[-1]  # Total distance
 
         if (best_line is None) or (new_dist < best_dist):
