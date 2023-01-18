@@ -881,7 +881,6 @@ def grid_elliptic(
         )
 
     if nx_outer:
-        nxn = nx + nx_outer
         dn = np.arange(nx_outer) + 1
         dR = R[-1] - R[-2]
         dZ = Z[-1] - Z[-2]
@@ -899,8 +898,6 @@ def grid_elliptic(
 
 
 if __name__ == "__main__":
-
-    import rzline
 
     # inner = circle(R0=1.5, r=1.0, n=100)
     # outer = circle(R0=1.0, r=2.0, n=100)

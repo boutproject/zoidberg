@@ -546,7 +546,6 @@ class FieldTracerWeb:
                 results = [start(i) for i in range(0, len(x_values), chunk)]
                 # Wait for result and combine
                 for j, i in enumerate(range(0, len(x_values), chunk)):
-                    this = results[j]
                     while retry > 0:
                         try:
                             results[j] = results[j].get(timeout=timeout)
