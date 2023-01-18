@@ -2,7 +2,7 @@ import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-import boutcore as bc
+import boutpp as bc
 
 lst = [4, 8, 16, 32, 64]
 

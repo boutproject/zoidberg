@@ -1,4 +1,4 @@
-import boutcore as bc
+import boutpp as bc
 import xarray as xr
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable

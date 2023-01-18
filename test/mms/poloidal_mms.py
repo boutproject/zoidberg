@@ -1,4 +1,4 @@
-import boutcore as bc
+import boutpp as bc
 import matplotlib.pyplot as plt
 import numpy as np
 
