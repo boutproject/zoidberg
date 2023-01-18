@@ -499,10 +499,16 @@ class StructuredPoloidalGrid(PoloidalGrid):
             axis=2,
         )
 
-        assert np.all(g[0, 0] > 0), f"g[0, 0] is expected to be positive, but some values are not (minimum {np.min(g[0, 0])})"
-        assert np.all(g[1, 1] > 0), f"g[1, 1] is expected to be positive, but some values are not (minimum {np.min(g[1, 1])})"
+        assert np.all(
+            g[0, 0] > 0
+        ), f"g[0, 0] is expected to be positive, but some values are not (minimum {np.min(g[0, 0])})"
+        assert np.all(
+            g[1, 1] > 0
+        ), f"g[1, 1] is expected to be positive, but some values are not (minimum {np.min(g[1, 1])})"
         g = g.transpose(2, 3, 0, 1)
-        assert np.all(np.linalg.det(g) > 0), f"All determinants of g should be positive, but some are not (minimum {np.min(np.linalg.det(g))})"
+        assert np.all(
+            np.linalg.det(g) > 0
+        ), f"All determinants of g should be positive, but some are not (minimum {np.min(np.linalg.det(g))})"
         ginv = np.linalg.inv(g)
         return {
             "dx": ddist[0],
