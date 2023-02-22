@@ -35,7 +35,7 @@ def clean(p):
 
 def test(fn, inpf, anaf, testfunc):
     grid = xr.open_dataset(fn)
-    bc.Options().set("mesh:file", fn, force=True)
+    bc.Options.root().set("mesh:file", fn, force=True)
     mesh = bc.Mesh(section="")
 
     f = bc.create3D("0", mesh)
