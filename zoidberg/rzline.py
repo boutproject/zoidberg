@@ -515,7 +515,6 @@ def line_from_points(
     best_dist = 0.0  # Distance around best line
 
     for start_ind in range(rarray.size):
-
         # Create an array of remaining points
         # Make copies since we edit the array later
         rarr = np.roll(rarray, start_ind).copy()
@@ -558,7 +557,6 @@ def line_from_points(
 
 
 if __name__ == "__main__":
-
     import field
     import fieldtracer
     import poloidal_grid

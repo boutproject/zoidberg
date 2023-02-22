@@ -246,7 +246,6 @@ def rectangular_grid(
 
 
 if __name__ == "__main__":
-
     grid = rectangular_grid(10, 10, 10)
 
     p = grid.getPoloidalGrid(-2)

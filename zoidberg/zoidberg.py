@@ -374,7 +374,6 @@ def write_Bfield_to_vtk(
 
 
 def fci_to_vtk(infile, outfile, scale=5):
-
     if not have_evtk:
         return
 
