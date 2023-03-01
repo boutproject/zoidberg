@@ -146,7 +146,6 @@ class FieldTracerReversible(object):
     """
 
     def __init__(self, field, rtol=1e-8, eps=1e-5, nsteps=20):
-
         self.field_direction = field.field_direction
         self.rtol = float(rtol)
         self.eps = float(eps)
@@ -589,7 +588,6 @@ class FieldTracerWeb:
         return Client(self.url)
 
     def _follow_field_lines(self, x_values, z_values, y_values, rtol, stepsize):
-
         p = self.flt.types.Points3D()
         p.x1 = x_values * np.cos(y_values[0])
         p.x2 = x_values * np.sin(y_values[0])

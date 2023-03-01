@@ -238,7 +238,6 @@ class Slab(MagneticField):
     """
 
     def __init__(self, By=1.0, Bz=0.1, xcentre=0.0, Bzprime=1.0):
-
         By = float(By)
         Bz = float(Bz)
         xcentre = float(xcentre)
@@ -285,7 +284,6 @@ class CurvedSlab(MagneticField):
     """
 
     def __init__(self, By=1.0, Bz=0.1, xcentre=0.0, Bzprime=1.0, Rmaj=1.0):
-
         By = float(By)
         Bz = float(Bz)
         xcentre = float(xcentre)
@@ -558,7 +556,6 @@ try:
         """
 
         def __init__(self, A, R_0=1.0, B_0=1.0):
-
             self.R_0 = R_0
             self.B_0 = B_0
 
@@ -602,15 +599,12 @@ try:
             self.Bzf = lambdify((self.R, self.phi, self.Z), Bz, "numpy")
 
         def Bxfunc(self, x, z, phi):
-
             return self.Bxf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
 
         def Byfunc(self, x, z, phi):
-
             return self.Byf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
 
         def Bzfunc(self, x, z, phi):
-
             return self.Bzf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
 
         def Sfunc(self, x, z, y):
@@ -822,7 +816,6 @@ try:
             for i in range(A.shape[0]):
                 for j in range(A.shape[1]):
                     if A[i, j, 0] or A[i, j, 1] or A[i, j, 2] or A[i, j, 3] != 0:
-
                         U += self.V(
                             i, j, A[i, j, 0], A[i, j, 1], A[i, j, 2], A[i, j, 3]
                         )
@@ -1264,7 +1257,6 @@ class GEQDSK(MagneticField):
     """
 
     def __init__(self, gfile):
-
         # Import utility to read G-Eqdsk files
         from boututils import geqdsk
 

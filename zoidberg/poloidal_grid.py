@@ -122,7 +122,6 @@ class RectangularPoloidalGrid(PoloidalGrid):
     """
 
     def __init__(self, nx, nz, Lx, Lz, Rcentre=0.0, Zcentre=0.0, MXG=2):
-
         self.nx = nx
         self.nz = nz
 
@@ -277,7 +276,6 @@ class StructuredPoloidalGrid(PoloidalGrid):
     """
 
     def __init__(self, R, Z):
-
         assert R.shape == Z.shape
 
         self.R = R
@@ -904,7 +902,6 @@ def grid_elliptic(
 
 
 if __name__ == "__main__":
-
     # inner = circle(R0=1.5, r=1.0, n=100)
     # outer = circle(R0=1.0, r=2.0, n=100)
 
