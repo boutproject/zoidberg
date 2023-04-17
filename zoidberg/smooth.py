@@ -112,16 +112,16 @@ def gen_newr(r, z, splitedlist, bounds):
 def smooth(r, z, cutoff=0.75, bounds=10):
     """
     Smooth an ordered set of r-z coordinates to avoid sharp edges.
-    
+
     For all points, where the cos of the angle between the point, and the points ± `bounds` are below `cutoff`, the points within the range are replaced by a smoothed set of points.
-    
+
     r : 1d array
     z : 1d array
     cutoff : float
         cos of angle
     bounds :  integer
         distance of which to smooth
-        
+
     Return:
     tuple of 1d-arrays
     The smoothed values, if there where outliers, or the original data otherwise.
