@@ -456,7 +456,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
 
         return xind.reshape(input_shape), zind.reshape(input_shape)
 
-    def metric(self):
+    def metric(self, _cache={}):
         """Return the metric tensor, dx and dz
 
         Returns
@@ -468,6 +468,9 @@ class StructuredPoloidalGrid(PoloidalGrid):
             - **g_xx, g_xz, g_zz**: Contravariant components
 
         """
+
+        if _cache:
+            return _cache
 
         # Get arrays of indices
         xind, zind = np.meshgrid(np.arange(self.nx), np.arange(self.nz), indexing="ij")
@@ -511,7 +514,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
             np.linalg.det(g) > 0
         ), f"All determinants of g should be positive, but some are not (minimum {np.min(np.linalg.det(g))})"
         ginv = np.linalg.inv(g)
-        return {
+        _cache = {
             "dx": ddist[0],
             "dz": ddist[1],  # Grid spacing
             "gxx": ginv[..., 0, 0],
@@ -521,6 +524,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
             "gzz": ginv[..., 1, 1],
             "g_zz": g[..., 1, 1],
         }
+        return _cache
 
 
 def grid_annulus(inner, outer, nx, nz, show=True, return_coords=False):
