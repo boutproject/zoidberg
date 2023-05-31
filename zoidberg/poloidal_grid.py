@@ -476,7 +476,10 @@ class StructuredPoloidalGrid(PoloidalGrid):
         dolddnew = np.array(
             [self.getCoordinate(xind, zind, dx=a, dz=b) for a, b in ((1, 0), (0, 1))]
         )
-        # dims: 0 : dx/dz  - 1 : R/z - 2,3 : spatial (r, \theta)
+        # dims: 0 : dx or dz?
+        #       1 : R or z?
+        #       2 : spatial: r
+        #       3 : spatial: \theta
         ddist = np.sqrt(np.sum(dolddnew**2, axis=1))  # sum R + z
         sumdz = np.sum(ddist[1], axis=1)  # sum in r direction
         ddist[1] *= 2 * np.pi / sumdz[..., None]  # normalise theta (0 -> 2 pi)
