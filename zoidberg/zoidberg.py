@@ -316,6 +316,9 @@ def write_maps(
                     name = name_changes[name]
                 f.write(name, metric[key])
 
+        if "J" in metric:
+            f.write("J", metric["J"])
+
         # Magnetic field
         f.write("B", Bmag)
 
