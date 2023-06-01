@@ -195,8 +195,7 @@ class Grid(object):
             dy = np.gradient(ycoords[ny : (2 * ny)])
 
         dy3d = np.zeros(self.shape)
-        for i in range(self.shape[1]):
-            dy3d[:, i, :] = dy[i]
+        dy3d[...] = dy[None, :, None]
 
         # Note: These y metrics are for Cartesian coordinates
         # If in cylindrical coordinates then these should be different
