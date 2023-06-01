@@ -1,12 +1,11 @@
 import argparse
 
 import numpy as np
+from boututils.boutarray import BoutArray
 
 import zoidberg as zb
 
 from .common import calc_curvilinear_curvature
-
-from boututils.boutarray import BoutArray
 
 
 def screwpinch(
