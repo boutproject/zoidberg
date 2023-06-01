@@ -456,7 +456,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
 
         return xind.reshape(input_shape), zind.reshape(input_shape)
 
-    def metric(self, _cache={}):
+    def metric(self):
         """Return the metric tensor, dx and dz
 
         Returns
@@ -468,9 +468,6 @@ class StructuredPoloidalGrid(PoloidalGrid):
             - **g_xx, g_xz, g_zz**: Contravariant components
 
         """
-
-        if _cache:
-            return _cache
 
         # Get arrays of indices
         xind, zind = np.meshgrid(np.arange(self.nx), np.arange(self.nz), indexing="ij")
@@ -516,7 +513,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
         ginv = np.linalg.inv(g)
         # Jacobian from BOUT++
         JB = self.R * (J[0, 0] * J[1, 1] - J[0, 1] * J[1, 0])
-        _cache = {
+        return {
             "dx": ddist[0],
             "dz": ddist[1],  # Grid spacing
             "gxx": ginv[..., 0, 0],
@@ -527,7 +524,6 @@ class StructuredPoloidalGrid(PoloidalGrid):
             "g_zz": g[..., 1, 1],
             "J": JB,
         }
-        return _cache
 
 
 def grid_annulus(inner, outer, nx, nz, show=True, return_coords=False):
