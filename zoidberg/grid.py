@@ -133,7 +133,7 @@ class Grid(object):
             return None, 0.0  # Hit the lower end in Y
         return None, self.Ly  # Hit the upper end in Y
 
-    def metric(self):
+    def metric(self, _cache={}):
         """Return the metric tensor, dx and dz
 
         Returns
@@ -145,6 +145,8 @@ class Grid(object):
             - **g_xx, g_xz, g_yy, g_zz**: Contravariant components
         """
 
+        if _cache:
+            return _cache
         # Gather dx,dz and x-z metrics from poloidal slices
         dx = np.zeros(self.shape)
         dz = np.zeros(self.shape)
@@ -191,19 +193,22 @@ class Grid(object):
         g_yy = np.ones(self.shape)
         gyy = np.ones(self.shape)
 
-        return {
-            "dx": dx,
-            "dy": dy3d,
-            "dz": dz,
-            "gyy": gyy,
-            "g_yy": g_yy,
-            "gxx": gxx,
-            "g_xx": g_xx,
-            "gxz": gxz,
-            "g_xz": g_xz,
-            "gzz": gzz,
-            "g_zz": g_zz,
-        }
+        _cache.update(
+            {
+                "dx": dx,
+                "dy": dy3d,
+                "dz": dz,
+                "gyy": gyy,
+                "g_yy": g_yy,
+                "gxx": gxx,
+                "g_xx": g_xx,
+                "gxz": gxz,
+                "g_xz": g_xz,
+                "gzz": gzz,
+                "g_zz": g_zz,
+            }
+        )
+        return _cache
 
 
 def rectangular_grid(
