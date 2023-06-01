@@ -117,7 +117,6 @@ class PolygonBoundaryXZ(object):
 
         nsegments = len(self.xarr)
         for i in range(nsegments):  # Loop over all segments
-
             xp_0 = self.xarr[i]
             zp_0 = self.zarr[i]
 
