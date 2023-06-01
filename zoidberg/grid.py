@@ -159,6 +159,8 @@ class Grid(object):
         g_xz = np.zeros(self.shape)
         g_zz = np.zeros(self.shape)
 
+        J = np.zeros(self.shape)
+        has_J = 0
         # Separate grids for each slice
         for y in range(self.shape[1]):
             pol_metric = self.getPoloidalGrid(y)[0].metric()
@@ -172,6 +174,14 @@ class Grid(object):
             g_xx[:, y, :] = pol_metric["g_xx"]
             g_xz[:, y, :] = pol_metric["g_xz"]
             g_zz[:, y, :] = pol_metric["g_zz"]
+
+            if "J" in pol_metric:
+                J[:, y, :] = pol_metric["J"]
+                has_J += 1
+                assert has_J > 0, "J only in some slices!"
+            else:
+                has_J -= 1
+                assert has_J < 0, "J only in some slices!"
 
         # Calculate the gradient of the y coordinate w.r.t index
         # To avoid edge effects, repeat array three times then take the middle
@@ -208,6 +218,8 @@ class Grid(object):
                 "g_zz": g_zz,
             }
         )
+        if has_J > 0:
+            _cache["J"] = J
         return _cache
 
 
