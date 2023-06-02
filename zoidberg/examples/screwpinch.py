@@ -1,6 +1,7 @@
 import argparse
 
 import numpy as np
+from boututils.boutarray import BoutArray
 
 import zoidberg as zb
 
@@ -30,6 +31,7 @@ def screwpinch(
     poloidal_grid = zb.poloidal_grid.grid_elliptic(inner, outer, nx, nz)
     grid = zb.grid.Grid(poloidal_grid, ycoords, yperiod, yperiodic=True)
     maps = zb.make_maps(grid, field)
+    maps["y_coord"] = BoutArray(ycoords, dict(bout_type="ArrayY"))
     zb.write_maps(grid, field, maps, str(fname), metric2d=False)
     calc_curvilinear_curvature(fname, field, grid, maps)
 

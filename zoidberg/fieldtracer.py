@@ -396,6 +396,13 @@ def trace_poincare(
     return result, y_slices
 
 
+def _get_value(*args):
+    for k in args:
+        if k is not None:
+            return k
+    raise ValueError(f"Expected at least one non-None value in {args}")
+
+
 class FieldTracerWeb:
     """A class for following magnetic field lines
 
@@ -407,14 +414,26 @@ class FieldTracerWeb:
     """
 
     def __init__(
-        self, config=None, configId=None, timeout=0.1, chunk=10000, stepsize=None
+        self,
+        config=None,
+        configId=None,
+        timeout=0.1,
+        chunk=10000,
+        stepsize=None,
+        retry=None,
+        run_timeout=None,
     ):
-        import requests
-
+        try:
+            import requests
+        except ModuleNotFoundError:
+            requests = None
         # First check whether the webservice is available, as the default timeout is rather slow.
-        self.url = "http://esb:8280/services/FieldLineProxy?wsdl"
-        requests.get(self.url, timeout=timeout).raise_for_status()
+        self.url = "http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl"
+        if requests:
+            requests.get(self.url, timeout=timeout).raise_for_status()
 
+        self.timeout = run_timeout
+        self.retry = retry
         self.config = config
         self.configId = configId
         self.stepsize = stepsize
@@ -449,8 +468,8 @@ class FieldTracerWeb:
         y_values,
         rtol=None,
         stepsize=None,
-        timeout=1800,
-        retry=3,
+        timeout=None,
+        retry=None,
         chunk=None,
     ):
         """Uses field_direction to follow the magnetic field
@@ -496,6 +515,8 @@ class FieldTracerWeb:
             [len(y), x.shape[0], x.shape[1], 2].
 
         """
+        retry = _get_value(retry, self.retry, 3)
+        timeout = _get_value(timeout, self.timeout, 1800)
 
         # Ensure all inputs are NumPy arrays
         x_values = np.atleast_1d(x_values)
@@ -550,12 +571,21 @@ class FieldTracerWeb:
                             results[j] = results[j].get(timeout=timeout)
                             break
                         except Exception as e:
+                            retry -= 1
+                            if not retry > 0:
+                                raise
                             print(
                                 f"Fieldlinetracer failed {e} - going to retry {retry} times"
                             )
-                            retry -= 1
                             results[j] = start(i)
-                results = np.concatenate(results, axis=1)
+                try:
+                    results = np.concatenate(results, axis=1)
+                except ValueError:
+                    print(results)
+                    raise
+                    raise ValueError(
+                        f"np.concatenate failed, shapes where {', '.join([str(x.shape) for x in results])}."
+                    )
         else:
             results = [
                 self._follow_field_lines(
@@ -588,6 +618,9 @@ class FieldTracerWeb:
         return Client(self.url)
 
     def _follow_field_lines(self, x_values, z_values, y_values, rtol, stepsize):
+        from time import sleep
+
+        sleep(np.random.random(1)[0])
         p = self.flt.types.Points3D()
         p.x1 = x_values * np.cos(y_values[0])
         p.x2 = x_values * np.sin(y_values[0])
