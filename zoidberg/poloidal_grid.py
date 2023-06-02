@@ -701,14 +701,12 @@ def grid_elliptic(
         dr = shorter.R - longer.R[:, None]
         dz = shorter.Z - longer.Z[:, None]
         delta = dr**2 + dz**2
-        sums = []
         fac = len(longer.R) / len(shorter.R)
-        for i in range(len(longer.R)):
-            sums.append(
-                np.sum(
-                    [delta[int(round(j * fac)) - i, j] for j in range(len(shorter.R))]
-                )
-            )
+        j = np.arange(len(shorter.R), dtype=int)
+        sums = [
+            np.sum(delta[np.round(j * fac).astype(int) - i, j])
+            for i in range(len(longer.R))
+        ]
         ind = -np.argmin(sums)
         longer = rzline.RZline(np.roll(longer.R, -ind), np.roll(longer.Z, -ind))
         if len(inner.R) < len(outer.R):
