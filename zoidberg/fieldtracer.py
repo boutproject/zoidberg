@@ -548,7 +548,7 @@ class FieldTracerWeb:
             z_values = z_values.flatten()
         chunk = chunk or self.chunk
         if self.config is None and x_values.size > chunk:
-            with Pool() as pool:
+            with Pool(12) as pool:
 
                 def start(i):
                     return pool.apply_async(
