@@ -108,3 +108,6 @@ venv.bak/
 
 # SCM versioning
 _version.py
+/test/mms/mms/.BOUT.pid.0
+/test/mms/mms/BOUT.log.0
+/test/mms/mms/BOUT.settings
