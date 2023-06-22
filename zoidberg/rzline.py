@@ -9,6 +9,7 @@ import numpy as np
 from numpy import append, argmin, cos, linspace, pi, sin, sqrt
 from scipy.integrate import cumtrapz
 from scipy.interpolate import interp1d, splev, splrep
+import itertools
 
 try:
     import matplotlib.pyplot as plt
@@ -191,7 +192,7 @@ class RZline:
             rem * self.Z[indp] + (1.0 - rem) * self.Z[ind]
         )
 
-    def distance(self, sample=20):
+    def distance(self, sample=20, weights=None):
         """Integrates the distance along the line.
 
         Parameters
@@ -206,16 +207,25 @@ class RZline:
 
         """
 
+        def interp(dat, n):
+            t1 = np.linspace(0, 1, len(dat) + 1)
+            return interp1d(t1, np.append(dat, dat[0]), assume_sorted=True)(
+                np.linspace(0, 1, n, endpoint=False)
+            )
+
         if self.spline_order == 1:
             R = self.R
             Z = self.Z
             dr = (R - np.roll(R, -1)) ** 2 + (Z - np.roll(Z, -1)) ** 2
             dr = np.sqrt(dr)
+            weights = (
+                interp(weights, len(dr)) if not weights is None else itertools.repeat(1)
+            )
             out = np.empty(len(dr) + 1)
             sum = 0
-            for i, c in enumerate(dr):
+            for i, (c, w) in enumerate(zip(dr, weights)):
                 out[i] = sum
-                sum += c
+                sum += c * w
             out[-1] = sum
             return out
 
@@ -225,16 +235,17 @@ class RZline:
         thetavals = np.linspace(
             0.0, 2.0 * np.pi, sample * len(self.theta) + 1, endpoint=True
         )
-
         # variation of length with angle dl/dtheta
         dldtheta = sqrt(
             self.Rvalue(thetavals, deriv=1) ** 2 + self.Zvalue(thetavals, deriv=1) ** 2
         )
+        if weights is not None:
+            dldtheta *= interp(weights, len(thetavals))
 
         # Integrate cumulatively, then take only the values at the grid points (including end)
         return cumtrapz(dldtheta, thetavals, initial=0.0)[::sample]
 
-    def equallySpaced(self, n=None):
+    def equallySpaced(self, n=None, weights=None):
         """Returns a new RZline which has a theta uniform in distance along
         the line
 
@@ -252,7 +263,7 @@ class RZline:
             n = len(self.theta)
 
         # Distance along the line
-        dist = self.distance()
+        dist = self.distance(weights=weights)
 
         # Positions where points are desired
         positions = linspace(dist[0], dist[-1], n, endpoint=False)
