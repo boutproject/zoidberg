@@ -3,13 +3,13 @@ poloidal planes
 
 """
 
+import itertools
 import warnings
 
 import numpy as np
 from numpy import append, argmin, cos, linspace, pi, sin, sqrt
 from scipy.integrate import cumtrapz
 from scipy.interpolate import interp1d, splev, splrep
-import itertools
 
 try:
     import matplotlib.pyplot as plt
