@@ -1844,7 +1844,7 @@ class W7X_VMEC(MagneticField):
     def field_values(self, r, phi, z, vmec_id="w7x_ref_171"):
         from osa import Client
 
-        vmec = Client("http://esb:8280/services/vmec_v5?wsdl")
+        vmec = Client("http://esb.ipp-hgw.mpg.de:8280/services/vmec_v5?wsdl")
 
         pos = vmec.types.Points3D()
 

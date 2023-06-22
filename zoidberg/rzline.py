@@ -95,9 +95,10 @@ class RZline:
         # Note that the last point needs to be passed but is not used
         kw = dict(per=True, k=self.spline_order)
         if smooth:
-            kw["t"] = np.linspace(
-                0, np.pi * 2, len(r) // 100 + 1, endpoint=False
-            ) + np.pi / len(r)
+            if smooth is True:
+                smooth = 100
+            num = len(r) // smooth + 1
+            kw["t"] = np.linspace(0, np.pi * 2, num, endpoint=False) + np.pi / num
         self._rspl = splrep(append(self.theta, 2 * pi), append(r, r[0]), **kw)
         self._zspl = splrep(append(self.theta, 2 * pi), append(z, z[0]), **kw)
 
