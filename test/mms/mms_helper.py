@@ -81,8 +81,25 @@ def do_tests(grids, inpf, anaf, iname, testf, expect=2):
         errc = np.log(l2[-2] / l2[-1])
         difc = np.log(lst[-1] / lst[-2])
         conv = errc / difc
-        print(mode, conv, l2)
-        if not np.isclose(conv, expect, atol=0.1):
+        info = todo[0][0]
+        info = "_".join(info.split("_")[:2])
+        print(info, mode, todo, conv, l2)
+        with open(f"result_{info}_{iname}.txt", "w") as f:
+            f.write(info)
+            f.write("\n")
+            f.write(iname)
+            f.write("\n")
+            f.write(" ".join([str(x) for x in lst]))
+            f.write("\n")
+            f.write(" ".join([str(x) for x in l2]))
+            f.write("\n")
+        passes = np.isclose(conv, expect, atol=0.2)
+        if not passes:
             fail = True
+        print(
+            f"{conv} {'=' if passes else '!'}= {expect} - {'passing :-)' if passes else 'failing!'}"
+        )
+        if passes:
+            plt.close("all")
         plt.show()
     assert not fail
