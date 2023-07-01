@@ -5,11 +5,13 @@ from radial_grid import grids
 set1 = (
     lambda grid: np.sin(extend(grid.r_minor)),
     lambda grid: np.cos(extend(grid.r_minor)),
+    "sin(r)",
 )
 
 set2 = (
     lambda grid: extend(grid.r_minor) ** 3,
     lambda grid: 3 * extend(grid.r_minor) ** 2,
+    "r³",
 )
 
 

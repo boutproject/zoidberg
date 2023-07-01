@@ -8,20 +8,14 @@ sets = [
     #     lambda grid: -25 * np.sin(extend(grid["one"] * grid.phi) * 5),
     # ),
     (
-        lambda grid: extend(grid.r_minor) ** 3,
-        lambda grid: 6 * extend(grid.r_minor),
-    ),
-    (
-        lambda grid: np.cos(extend(grid.theta)),
-        lambda grid: -np.cos(extend(grid.theta)),
-    ),
-    (
         lambda grid: np.sin(extend(grid.Z)),
         lambda grid: -np.sin(extend(grid.Z)),
+        "sin(Z)",
     ),
     (
         lambda grid: np.sin(extend(grid.R)),
-        lambda grid: -np.sin(extend(grid.R)),
+        lambda grid: -np.sin(extend(grid.R)) + np.cos(extend(grid.R)) / extend(grid.R),
+        "sin(R)",
     ),
 ]
 # set2 = (
