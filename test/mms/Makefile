@@ -7,7 +7,7 @@ radial: do_radial
 do_radial: .grids_radial
 	python3 radial_mms.py
 
-FORCE=force
+FORCE?=force
 .grids_radial: radial_grid.py $(FORCE)
 	python3 $<
 	touch $@
