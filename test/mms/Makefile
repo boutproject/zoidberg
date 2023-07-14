@@ -1,4 +1,4 @@
-all: laplace delp poloidal radial parallel
+all: parallel laplace delp
 
 radial: do_radial
 
