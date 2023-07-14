@@ -1,0 +1,14 @@
+MXG=0
+MYG=1
+[mesh]
+MXG=0
+MYG=1
+#file = "rotating-ellipse.4x4x4.fci.fix.nc"
+file = "poloidal_const_4_2_4_1.fci.nc"
+
+extrapolate_y = false
+extrapolate_x = false
+
+[mesh:paralleltransform]
+type = fci
+
