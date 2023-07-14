@@ -481,9 +481,9 @@ class StructuredPoloidalGrid(PoloidalGrid):
         #       2 : spatial: r
         #       3 : spatial: \theta
         ddist = np.sqrt(np.sum(dolddnew**2, axis=1))  # sum R + z
-        sumdz = np.sum(ddist[1], axis=1)  # sum in r direction
-        ddist[1] *= 2 * np.pi / sumdz[..., None]  # normalise theta (0 -> 2 pi)
-        # Transform derivatives from index space to real space.
+        nx, nz = ddist.shape[1:]
+        ddist[0] = 1 / nx
+        ddist[1] = 1 / nz
         dolddnew /= ddist[:, None, ...]
 
         # g_ij = J_ki J_kj
