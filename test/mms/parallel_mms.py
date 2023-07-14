@@ -18,7 +18,7 @@ set2 = (
 
 
 if __name__ == "__main__":
-    bc.init("-d mms")  # -q -q -q")
+    bc.init("-d mms -q -q -q")
 
     do_tests(grids, *set1, bc.DDY)
     do_tests(grids, *set2, bc.DDY)
