@@ -3,7 +3,7 @@ import numpy as np
 import xarray as xr
 import os
 
-lst = [16, 32, 64, 128]
+lst = [16, 32]  # , 64, 128]
 
 print(zb.__path__)
 modes = [

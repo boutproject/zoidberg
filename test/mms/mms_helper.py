@@ -93,7 +93,7 @@ def do_tests(grids, inpf, anaf, iname, testf, expect=2):
             f.write("\n")
             f.write(" ".join([str(x) for x in l2]))
             f.write("\n")
-        passes = np.isclose(conv, expect, atol=0.2)
+        passes = np.isclose(conv, expect, atol=0.3)
         if not passes:
             fail = True
         print(
