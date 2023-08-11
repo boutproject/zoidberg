@@ -1,5 +1,6 @@
-from . import diff
 import numpy as np
+
+from . import diff
 
 
 def l2(f):
