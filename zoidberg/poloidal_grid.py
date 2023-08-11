@@ -863,10 +863,11 @@ def grid_elliptic(
         Z_zm = Z_zm[1:-1, :]
         Z_zp = Z_zp[1:-1, :]
 
-        dRdz = (R_zp - R_zm) / (2.0 * dz)
+        eps = -0.7
+        dRdz = (R_zp - R_zm) / (2.0 * dz * (1 + eps))
         dRdx = (R_xp - R_xm) / (2.0 * dx)
 
-        dZdz = (Z_zp - Z_zm) / (2.0 * dz)
+        dZdz = (Z_zp - Z_zm) / (2.0 * dz * (1 + eps))
         dZdx = (Z_xp - Z_xm) / (2.0 * dx)
 
         a = dRdz**2 + dZdz**2
