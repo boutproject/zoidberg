@@ -815,11 +815,8 @@ def grid_elliptic(
 
         # Interpolate in x between inner and outer
         # to get starting guess for a grid
-        R = zeros((nx, nz))
-        Z = zeros((nx, nz))
-        for i in range(nx):
-            R[i, :] = xvals[i] * Router + (1.0 - xvals[i]) * Rinner
-            Z[i, :] = xvals[i] * Zouter + (1.0 - xvals[i]) * Zinner
+        R = xvals[:, None] * Router[None, :] + (1 - xvals[:, None]) * Rinner[None, :]
+        Z = xvals[:, None] * Zouter[None, :] + (1 - xvals[:, None]) * Zinner[None, :]
 
     dx = xvals[1] - xvals[0]
     dz = thetavals[1] - thetavals[0]
