@@ -666,7 +666,7 @@ def grid_elliptic(
 
     References
     ----------
-    https://www.nada.kth.se/kurser/kth/2D1263/l2.pdf
+    https://web.archive.org/web/20040530002835/https://www.nada.kth.se/kurser/kth/2D1263/l2.pdf
     https://en.wikipedia.org/wiki/Principles_of_grid_generation
 
     """
