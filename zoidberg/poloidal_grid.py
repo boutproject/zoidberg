@@ -602,6 +602,7 @@ def grid_elliptic(
     restrict_factor=2,
     return_coords=False,
     nx_outer=0,
+    inner_ort=True,
 ):
     """Create a structured grid between inner and outer boundaries using
     elliptic method
@@ -685,10 +686,12 @@ def grid_elliptic(
     # Radial coordinate
     xvals = linspace(0, 1.0, nx, endpoint=True)
 
-    if align:
+    if align and not inner_ort:
         # Align inner and outer boundaries
         # Easiest way is to roll both boundaries
-        # so that index 0 is on the outboard midplane
+        # so that index 0 is on the outboard midplane.
+        # This is useless if inner_ort is used, where the inner points are
+        # based on a project of the outer points.
         if len(inner.R) < len(outer.R):
             shorter = inner
             longer = outer
@@ -715,6 +718,29 @@ def grid_elliptic(
         else:
             outer = shorter
             inner = longer
+
+    def laplace(x):
+        def dx(x, sign):
+            dxv = np.roll(x, sign) - x
+            dxv = np.remainder(dxv + np.pi, 2 * np.pi) - np.pi
+            return dxv
+
+        fac = 0.1 * nz / 192
+        steps = 10
+        while fac > 0.1:
+            fac /= 2
+            steps *= 2
+        x0 = x.copy()
+        for i in range(steps):
+            x += fac * (dx(x, 1) + dx(x, -1))
+        if not np.all(dx(x, -1) > 0):
+            plt.plot(x, label="result")
+            plt.plot(x0, label="init")
+            plt.legend()
+            plt.title("Not monotonic!")
+            plt.show()
+            assert False
+        return x
 
     if (nx > restrict_size) or (nz > restrict_size):
         # Create a coarse grid first to get a starting guess
@@ -760,19 +786,32 @@ def grid_elliptic(
 
         # Make sure that the inner and outer boundaries are on the
         # inner and outer RZline, not interpolated
-        R[0, :] = inner.Rvalue(thetavals)
-        Z[0, :] = inner.Zvalue(thetavals)
-
         R[-1, :] = outer.Rvalue(thetavals)
         Z[-1, :] = outer.Zvalue(thetavals)
 
+        if inner_ort:
+            thetavals_inner = [inner.closestPoint(*x) for x in zip(R[-1], Z[-1])]
+            thetavals_inner = laplace(thetavals_inner)
+
+        else:
+            thetavals_inner = thetavals
+
+        R[0, :] = inner.Rvalue(thetavals_inner)
+        Z[0, :] = inner.Zvalue(thetavals_inner)
+
     else:
         # Interpolate coordinates of inner and outer boundary
-        Rinner = inner.Rvalue(thetavals)
-        Zinner = inner.Zvalue(thetavals)
-
         Router = outer.Rvalue(thetavals)
         Zouter = outer.Zvalue(thetavals)
+
+        if inner_ort:
+            thetavals_inner = [inner.closestPoint(*x) for x in zip(Router, Zouter)]
+            thetavals_inner = laplace(thetavals_inner)
+        else:
+            thetavals_inner = thetavals
+
+        Rinner = inner.Rvalue(thetavals_inner)
+        Zinner = inner.Zvalue(thetavals_inner)
 
         # Interpolate in x between inner and outer
         # to get starting guess for a grid
