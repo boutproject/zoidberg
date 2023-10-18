@@ -603,6 +603,7 @@ def grid_elliptic(
     return_coords=False,
     nx_outer=0,
     inner_ort=True,
+    maxfac_inner=None,
 ):
     """Create a structured grid between inner and outer boundaries using
     elliptic method
@@ -656,6 +657,12 @@ def grid_elliptic(
         The size (nx or nz) above which the grid is coarsened
     restrict_factor : int, optional
         The factor by which the grid is divided if coarsened
+    inner_ort: bool, optional
+        Whether to place the inner points as close as possible to the
+        corresponding outer ones. That increases orthogonality of the grid.
+    maxfac_inner : int, optional
+        If given, ensure the spacing between smalles and largest distance on
+        the inner boundary. Only used with inner_ort. Must be larger than 1.
     return_coords : bool, optional
         If True, return the R, Z coordinates of the grid points,
         instead of a `StructuredPoloidalGrid`
@@ -733,13 +740,24 @@ def grid_elliptic(
         x0 = x.copy()
         for i in range(steps):
             x += fac * (dx(x, 1) + dx(x, -1))
-        extra = 0
-        while not np.all(dx(x, -1) > 0):
-            x += fac * (dx(x, 1) + dx(x, -1))
-            extra += 1
+        if maxfac_inner:
 
-        if extra:
-            print(f"Required {extra} extra steps in smoothing!")
+            def getfac(x):
+                d = dx(x, -1)
+                return np.max(d) / np.min(d)
+
+            print(f"starting fac {getfac(x)}")
+            while getfac(x) > maxfac_inner:
+                x += fac * (dx(x, 1) + dx(x, -1))
+            print(f"finished fac {getfac(x)}")
+        else:
+            extra = 0
+            while not np.all(dx(x, -1) > 0):
+                x += fac * (dx(x, 1) + dx(x, -1))
+                extra += 1
+            if extra:
+                print(f"Required {extra} extra steps in smoothing!")
+
         if not np.all(dx(x, -1) > 0):
             plt.plot(x, label="result")
             plt.plot(x0, label="init")
