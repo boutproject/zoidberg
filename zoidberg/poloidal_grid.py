@@ -733,6 +733,13 @@ def grid_elliptic(
         x0 = x.copy()
         for i in range(steps):
             x += fac * (dx(x, 1) + dx(x, -1))
+        extra = 0
+        while not np.all(dx(x, -1) > 0):
+            x += fac * (dx(x, 1) + dx(x, -1))
+            extra += 1
+
+        if extra:
+            print(f"Required {extra} extra steps in smoothing!")
         if not np.all(dx(x, -1) > 0):
             plt.plot(x, label="result")
             plt.plot(x0, label="init")
