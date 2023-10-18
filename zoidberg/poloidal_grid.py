@@ -602,6 +602,7 @@ def grid_elliptic(
     restrict_factor=2,
     return_coords=False,
     nx_outer=0,
+    nx_inner=0,
     inner_ort=True,
     maxfac_inner=None,
 ):
@@ -657,6 +658,10 @@ def grid_elliptic(
         The size (nx or nz) above which the grid is coarsened
     restrict_factor : int, optional
         The factor by which the grid is divided if coarsened
+    nx_outer: int, optional
+        The number of additional points outside of the outer boundary
+    nx_inner: int, optional
+        The number of additional points outside of the inner boundary
     inner_ort: bool, optional
         Whether to place the inner points as close as possible to the
         corresponding outer ones. That increases orthogonality of the grid.
@@ -682,6 +687,10 @@ def grid_elliptic(
     if nx_outer:
         assert nx_outer > 0
         nx -= nx_outer
+    if nx_inner:
+        assert nx_inner > 0
+        nx -= nx_inner
+
     assert nx > 1
     assert nz > 1
 
@@ -956,6 +965,12 @@ def grid_elliptic(
         dZ = Z[-1] - Z[-2]
         R = np.vstack([R, R[-1] + dR[None, :] * dn[:, None]])
         Z = np.vstack([Z, Z[-1] + dZ[None, :] * dn[:, None]])
+    if nx_inner:
+        dn = np.arange(nx_inner)[::-1] + 1
+        dR = R[0] - R[1]
+        dZ = Z[0] - Z[1]
+        R = np.vstack([R[0] + dR[None, :] * dn[:, None], R])
+        Z = np.vstack([Z[0] + dZ[None, :] * dn[:, None], Z])
 
     if show and plotting_available:
         plt.plot(R, Z)
