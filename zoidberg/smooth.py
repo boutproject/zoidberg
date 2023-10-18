@@ -109,7 +109,7 @@ def gen_newr(r, z, splitedlist, bounds):
     return newr, newz
 
 
-def smooth(r, z, cutoff=0.75, bounds=10, plot=False):
+def smooth(r, z, cutoff=0.75, bounds=10, bounds_find=None, plot=False):
     """
     Smooth an ordered set of r-z coordinates to avoid sharp edges.
 
@@ -121,6 +121,8 @@ def smooth(r, z, cutoff=0.75, bounds=10, plot=False):
         cos of angle
     bounds :  integer
         distance of which to smooth
+    bounds_find : integer (optional)
+        if given, distance in which to check for edges, bounds otherwise
 
     Return:
     tuple of 1d-arrays
@@ -130,7 +132,7 @@ def smooth(r, z, cutoff=0.75, bounds=10, plot=False):
         import matplotlib.pyplot as plt
 
         plt.plot(r, z, "o-", label="input")
-    outliers = find_outliers(r, z, cutoff, bounds)
+    outliers = find_outliers(r, z, cutoff, bounds_find or bounds)
     if plot:
         plt.plot(*np.array([(r[i], z[i]) for i in outliers]).T, "x", label="outlier")
     splitedlist = generate_points_tosmooth(bounds, outliers, len(r))
