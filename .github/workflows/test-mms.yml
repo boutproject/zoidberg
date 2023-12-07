@@ -36,7 +36,7 @@ jobs:
           cd /home/boutuser/zoidberg
           python3 -m ensurepip
           python3 -m pip install .
-          python3 -m pip install xarray matplotlib numpy
+          python3 -m pip install xarray
 
       - name: Run
         run: |

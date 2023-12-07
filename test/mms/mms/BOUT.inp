@@ -7,6 +7,7 @@ MYG=1
 file = "poloidal_const_4_2_4_1.fci.nc"
 
 extrapolate_y = false
+extrapolate_x = false
 
 [mesh:paralleltransform]
 type = fci

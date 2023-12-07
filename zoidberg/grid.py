@@ -58,6 +58,8 @@ class Grid(object):
         self.Ly = Ly
         self.yperiodic = yperiodic
 
+        self._metric_cache = None
+
         # Define the shape of the grid
         self.shape = (nx, len(ycoords), nz)
 
@@ -145,6 +147,8 @@ class Grid(object):
             - **g_xx, g_xz, g_yy, g_zz**: Contravariant components
         """
 
+        if self._metric_cache:
+            return self._metric_cache
         # Gather dx,dz and x-z metrics from poloidal slices
         dx = np.zeros(self.shape)
         dz = np.zeros(self.shape)
@@ -157,6 +161,8 @@ class Grid(object):
         g_xz = np.zeros(self.shape)
         g_zz = np.zeros(self.shape)
 
+        J = np.zeros(self.shape)
+        has_J = 0
         # Separate grids for each slice
         for y in range(self.shape[1]):
             pol_metric = self.getPoloidalGrid(y)[0].metric()
@@ -171,6 +177,14 @@ class Grid(object):
             g_xz[:, y, :] = pol_metric["g_xz"]
             g_zz[:, y, :] = pol_metric["g_zz"]
 
+            if "J" in pol_metric:
+                J[:, y, :] = pol_metric["J"]
+                has_J += 1
+                assert has_J > 0, "J only in some slices!"
+            else:
+                has_J -= 1
+                assert has_J < 0, "J only in some slices!"
+
         # Calculate the gradient of the y coordinate w.r.t index
         # To avoid edge effects, repeat array three times then take the middle
         ycoords = np.concatenate(
@@ -183,15 +197,14 @@ class Grid(object):
             dy = np.gradient(ycoords[ny : (2 * ny)])
 
         dy3d = np.zeros(self.shape)
-        for i in range(self.shape[1]):
-            dy3d[:, i, :] = dy[i]
+        dy3d[...] = dy[None, :, None]
 
         # Note: These y metrics are for Cartesian coordinates
         # If in cylindrical coordinates then these should be different
         g_yy = np.ones(self.shape)
         gyy = np.ones(self.shape)
 
-        return {
+        self._metric_cache = {
             "dx": dx,
             "dy": dy3d,
             "dz": dz,
@@ -204,6 +217,10 @@ class Grid(object):
             "gzz": gzz,
             "g_zz": g_zz,
         }
+
+        if has_J > 0:
+            self._metric_cache["J"] = J
+        return self._metric_cache
 
 
 def rectangular_grid(

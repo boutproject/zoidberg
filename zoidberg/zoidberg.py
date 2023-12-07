@@ -8,7 +8,12 @@ from boututils import datafile as bdata
 from zoidberg import __version__
 
 from . import fieldtracer
-from .progress import update_progress
+
+try:
+    from tqdm.auto import tqdm
+except ModuleNotFoundError:
+    tqdm = None
+    from .progress import update_progress
 
 # PyEVTK might be called pyevtk or evtk, depending on where it was
 # installed from
@@ -123,7 +128,10 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
     # TODO: if axisymmetric, don't loop, do one slice and copy
     # TODO: restart tracing for adjacent offsets
     if (not quiet) and (ny > 1):
-        update_progress(0, **kwargs)
+        if tqdm:
+            prog = tqdm(total=total_work, desc="Tracing")
+        else:
+            update_progress(0, **kwargs)
     for slice_index, parallel_slice in enumerate(parallel_slices):
         for j in range(ny):
             # Get this poloidal grid
@@ -161,7 +169,10 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
             parallel_slice.zt_prime[:, j, :] = zind
 
             if (not quiet) and (ny > 1):
-                update_progress((slice_index * ny + j + 1) / total_work, **kwargs)
+                if tqdm:
+                    prog.update()
+                else:
+                    update_progress((slice_index * ny + j + 1) / total_work, **kwargs)
 
     return maps
 
@@ -225,21 +236,19 @@ def write_maps(
     # Get magnetic field and pressure
     Bmag = np.zeros(grid.shape)
     pressure = np.zeros(grid.shape)
+    print("starting Bfield stuff")
     for yindex in range(grid.numberOfPoloidalGrids()):
         pol_grid, ypos = grid.getPoloidalGrid(yindex)
         Bmag[:, yindex, :] = magnetic_field.Bmag(pol_grid.R, pol_grid.Z, ypos)
         pressure[:, yindex, :] = magnetic_field.pressure(pol_grid.R, pol_grid.Z, ypos)
-
+        By = magnetic_field.Byfunc(pol_grid.R, pol_grid.Z, ypos)
         metric["g_yy"][:, yindex, :] = (
-            metric["g_yy"][:, yindex, :]
-            * (Bmag[:, yindex, :] / magnetic_field.Byfunc(pol_grid.R, pol_grid.Z, ypos))
-            ** 2
+            metric["g_yy"][:, yindex, :] * (Bmag[:, yindex, :] / By) ** 2
         )
         metric["gyy"][:, yindex, :] = (
-            metric["gyy"][:, yindex, :]
-            * (magnetic_field.Byfunc(pol_grid.R, pol_grid.Z, ypos) / Bmag[:, yindex, :])
-            ** 2
+            metric["gyy"][:, yindex, :] * (By / Bmag[:, yindex, :]) ** 2
         )
+    print("done Bfield stuff")
 
     # Get attributes from magnetic field (e.g. psi)
     attributes = {}
@@ -315,6 +324,9 @@ def write_maps(
                 if name in name_changes:
                     name = name_changes[name]
                 f.write(name, metric[key])
+
+        if "J" in metric:
+            f.write("J", metric["J"])
 
         # Magnetic field
         f.write("B", Bmag)

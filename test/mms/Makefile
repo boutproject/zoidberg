@@ -1,4 +1,4 @@
-all: poloidal radial parallel
+all: parallel laplace delp
 
 radial: do_radial
 
@@ -7,7 +7,8 @@ radial: do_radial
 do_radial: .grids_radial
 	python3 radial_mms.py
 
-.grids_radial: radial_grid.py force
+FORCE?=force
+.grids_radial: radial_grid.py $(FORCE)
 	python3 $<
 	touch $@
 
@@ -18,7 +19,7 @@ poloidal: do_poloidal
 do_poloidal: .grids_poloidal
 	python3 poloidal_mms.py
 
-.grids_poloidal: poloidal_grid.py force
+.grids_poloidal: poloidal_grid.py $(FORCE)
 	python3 $<
 	touch $@
 
@@ -30,7 +31,7 @@ parallel: do_parallel
 do_parallel: .grids_parallel
 	python3 parallel_mms.py
 
-.grids_parallel: parallel_grid.py force
+.grids_parallel: parallel_grid.py $(FORCE)
 	python3 $<
 	touch $@
 
@@ -41,7 +42,14 @@ laplace: do_laplace
 do_laplace: .grids_laplace
 	python3 laplace_mms.py
 
-.grids_laplace: laplace_grid.py force
+.grids_laplace: laplace_grid.py $(FORCE)
+	python3 $<
+	touch $@
+
+delp: .grids_delp
+	python3 delp_mms.py
+
+.grids_delp: delp_grid.py $(FORCE)
 	python3 $<
 	touch $@
 

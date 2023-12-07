@@ -5,3 +5,7 @@ B*dat
 /.grids_parallel
 /.grids_poloidal
 /.grids_radial
+/.grids_delp
+/result_*txt
+core*
+.\#*

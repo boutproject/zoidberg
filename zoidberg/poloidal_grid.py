@@ -476,11 +476,14 @@ class StructuredPoloidalGrid(PoloidalGrid):
         dolddnew = np.array(
             [self.getCoordinate(xind, zind, dx=a, dz=b) for a, b in ((1, 0), (0, 1))]
         )
-        # dims: 0 : dx/dz  - 1 : R/z - 2,3 : spatial (r, \theta)
+        # dims: 0 : dx or dz?
+        #       1 : R or z?
+        #       2 : spatial: r
+        #       3 : spatial: \theta
         ddist = np.sqrt(np.sum(dolddnew**2, axis=1))  # sum R + z
-        sumdz = np.sum(ddist[1], axis=1)  # sum in r direction
-        ddist[1] *= 2 * np.pi / sumdz[..., None]  # normalise theta (0 -> 2 pi)
-        # Transform derivatives from index space to real space.
+        nx, nz = ddist.shape[1:]
+        ddist[0] = 1 / nx
+        ddist[1] = 1 / nz
         dolddnew /= ddist[:, None, ...]
 
         # g_ij = J_ki J_kj
@@ -508,6 +511,8 @@ class StructuredPoloidalGrid(PoloidalGrid):
             np.linalg.det(g) > 0
         ), f"All determinants of g should be positive, but some are not (minimum {np.min(np.linalg.det(g))})"
         ginv = np.linalg.inv(g)
+        # Jacobian from BOUT++
+        JB = self.R * (J[0, 0] * J[1, 1] - J[0, 1] * J[1, 0])
         return {
             "dx": ddist[0],
             "dz": ddist[1],  # Grid spacing
@@ -517,6 +522,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
             "g_xz": g[..., 0, 1],
             "gzz": ginv[..., 1, 1],
             "g_zz": g[..., 1, 1],
+            "J": JB,
         }
 
 
@@ -596,6 +602,9 @@ def grid_elliptic(
     restrict_factor=2,
     return_coords=False,
     nx_outer=0,
+    nx_inner=0,
+    inner_ort=True,
+    maxfac_inner=None,
 ):
     """Create a structured grid between inner and outer boundaries using
     elliptic method
@@ -649,6 +658,16 @@ def grid_elliptic(
         The size (nx or nz) above which the grid is coarsened
     restrict_factor : int, optional
         The factor by which the grid is divided if coarsened
+    nx_outer: int, optional
+        The number of additional points outside of the outer boundary
+    nx_inner: int, optional
+        The number of additional points outside of the inner boundary
+    inner_ort: bool, optional
+        Whether to place the inner points as close as possible to the
+        corresponding outer ones. That increases orthogonality of the grid.
+    maxfac_inner : int, optional
+        If given, ensure the spacing between smalles and largest distance on
+        the inner boundary. Only used with inner_ort. Must be larger than 1.
     return_coords : bool, optional
         If True, return the R, Z coordinates of the grid points,
         instead of a `StructuredPoloidalGrid`
@@ -660,7 +679,7 @@ def grid_elliptic(
 
     References
     ----------
-    https://www.nada.kth.se/kurser/kth/2D1263/l2.pdf
+    https://web.archive.org/web/20040530002835/https://www.nada.kth.se/kurser/kth/2D1263/l2.pdf
     https://en.wikipedia.org/wiki/Principles_of_grid_generation
 
     """
@@ -668,6 +687,10 @@ def grid_elliptic(
     if nx_outer:
         assert nx_outer > 0
         nx -= nx_outer
+    if nx_inner:
+        assert nx_inner > 0
+        nx -= nx_inner
+
     assert nx > 1
     assert nz > 1
 
@@ -679,10 +702,12 @@ def grid_elliptic(
     # Radial coordinate
     xvals = linspace(0, 1.0, nx, endpoint=True)
 
-    if align:
+    if align and not inner_ort:
         # Align inner and outer boundaries
         # Easiest way is to roll both boundaries
-        # so that index 0 is on the outboard midplane
+        # so that index 0 is on the outboard midplane.
+        # This is useless if inner_ort is used, where the inner points are
+        # based on a project of the outer points.
         if len(inner.R) < len(outer.R):
             shorter = inner
             longer = outer
@@ -695,14 +720,12 @@ def grid_elliptic(
         dr = shorter.R - longer.R[:, None]
         dz = shorter.Z - longer.Z[:, None]
         delta = dr**2 + dz**2
-        sums = []
         fac = len(longer.R) / len(shorter.R)
-        for i in range(len(longer.R)):
-            sums.append(
-                np.sum(
-                    [delta[int(round(j * fac)) - i, j] for j in range(len(shorter.R))]
-                )
-            )
+        j = np.arange(len(shorter.R), dtype=int)
+        sums = [
+            np.sum(delta[np.round(j * fac).astype(int) - i, j])
+            for i in range(len(longer.R))
+        ]
         ind = -np.argmin(sums)
         longer = rzline.RZline(np.roll(longer.R, -ind), np.roll(longer.Z, -ind))
         if len(inner.R) < len(outer.R):
@@ -711,6 +734,47 @@ def grid_elliptic(
         else:
             outer = shorter
             inner = longer
+
+    def laplace(x):
+        def dx(x, sign):
+            dxv = np.roll(x, sign) - x
+            dxv = np.remainder(dxv + np.pi, 2 * np.pi) - np.pi
+            return dxv
+
+        fac = 0.1 * nz / 192
+        steps = 10
+        while fac > 0.1:
+            fac /= 2
+            steps *= 2
+        x0 = x.copy()
+        for i in range(steps):
+            x += fac * (dx(x, 1) + dx(x, -1))
+        if maxfac_inner:
+
+            def getfac(x):
+                d = dx(x, -1)
+                return np.max(d) / np.min(d)
+
+            print(f"starting fac {getfac(x)}")
+            while getfac(x) > maxfac_inner:
+                x += fac * (dx(x, 1) + dx(x, -1))
+            print(f"finished fac {getfac(x)}")
+        else:
+            extra = 0
+            while not np.all(dx(x, -1) > 0):
+                x += fac * (dx(x, 1) + dx(x, -1))
+                extra += 1
+            if extra:
+                print(f"Required {extra} extra steps in smoothing!")
+
+        if not np.all(dx(x, -1) > 0):
+            plt.plot(x, label="result")
+            plt.plot(x0, label="init")
+            plt.legend()
+            plt.title("Not monotonic!")
+            plt.show()
+            assert False
+        return x
 
     if (nx > restrict_size) or (nz > restrict_size):
         # Create a coarse grid first to get a starting guess
@@ -756,27 +820,37 @@ def grid_elliptic(
 
         # Make sure that the inner and outer boundaries are on the
         # inner and outer RZline, not interpolated
-        R[0, :] = inner.Rvalue(thetavals)
-        Z[0, :] = inner.Zvalue(thetavals)
-
         R[-1, :] = outer.Rvalue(thetavals)
         Z[-1, :] = outer.Zvalue(thetavals)
 
+        if inner_ort:
+            thetavals_inner = [inner.closestPoint(*x) for x in zip(R[-1], Z[-1])]
+            thetavals_inner = laplace(thetavals_inner)
+
+        else:
+            thetavals_inner = thetavals
+
+        R[0, :] = inner.Rvalue(thetavals_inner)
+        Z[0, :] = inner.Zvalue(thetavals_inner)
+
     else:
         # Interpolate coordinates of inner and outer boundary
-        Rinner = inner.Rvalue(thetavals)
-        Zinner = inner.Zvalue(thetavals)
-
         Router = outer.Rvalue(thetavals)
         Zouter = outer.Zvalue(thetavals)
 
+        if inner_ort:
+            thetavals_inner = [inner.closestPoint(*x) for x in zip(Router, Zouter)]
+            thetavals_inner = laplace(thetavals_inner)
+        else:
+            thetavals_inner = thetavals
+
+        Rinner = inner.Rvalue(thetavals_inner)
+        Zinner = inner.Zvalue(thetavals_inner)
+
         # Interpolate in x between inner and outer
         # to get starting guess for a grid
-        R = zeros((nx, nz))
-        Z = zeros((nx, nz))
-        for i in range(nx):
-            R[i, :] = xvals[i] * Router + (1.0 - xvals[i]) * Rinner
-            Z[i, :] = xvals[i] * Zouter + (1.0 - xvals[i]) * Zinner
+        R = xvals[:, None] * Router[None, :] + (1 - xvals[:, None]) * Rinner[None, :]
+        Z = xvals[:, None] * Zouter[None, :] + (1 - xvals[:, None]) * Zinner[None, :]
 
     dx = xvals[1] - xvals[0]
     dz = thetavals[1] - thetavals[0]
@@ -823,10 +897,11 @@ def grid_elliptic(
         Z_zm = Z_zm[1:-1, :]
         Z_zp = Z_zp[1:-1, :]
 
-        dRdz = (R_zp - R_zm) / (2.0 * dz)
+        eps = -0.7
+        dRdz = (R_zp - R_zm) / (2.0 * dz * (1 + eps))
         dRdx = (R_xp - R_xm) / (2.0 * dx)
 
-        dZdz = (Z_zp - Z_zm) / (2.0 * dz)
+        dZdz = (Z_zp - Z_zm) / (2.0 * dz * (1 + eps))
         dZdx = (Z_xp - Z_xm) / (2.0 * dx)
 
         a = dRdz**2 + dZdz**2
@@ -890,6 +965,12 @@ def grid_elliptic(
         dZ = Z[-1] - Z[-2]
         R = np.vstack([R, R[-1] + dR[None, :] * dn[:, None]])
         Z = np.vstack([Z, Z[-1] + dZ[None, :] * dn[:, None]])
+    if nx_inner:
+        dn = np.arange(nx_inner)[::-1] + 1
+        dR = R[0] - R[1]
+        dZ = Z[0] - Z[1]
+        R = np.vstack([R[0] + dR[None, :] * dn[:, None], R])
+        Z = np.vstack([Z[0] + dZ[None, :] * dn[:, None], Z])
 
     if show and plotting_available:
         plt.plot(R, Z)

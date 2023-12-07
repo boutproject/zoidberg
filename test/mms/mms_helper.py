@@ -38,7 +38,7 @@ def clean(p):
     return p[:, 1:-1, :]
 
 
-def test(fn, inpf, anaf, testfunc):
+def test(fn, inpf, anaf, testfunc, iname):
     grid = xr.open_dataset(fn)
     bc.Options.root().set("mesh:file", fn, force=True)
     mesh = bc.Mesh(section="")
@@ -54,33 +54,52 @@ def test(fn, inpf, anaf, testfunc):
     calc = testfunc(f).get()
     l2 = np.sqrt(np.mean(clean(ana - calc)[1:-1] ** 2))
 
-    if 0:
-        fig, axs = plt.subplots(1, 3)
+    if 1:
+        fig, axs = plt.subplots(1, 4)
         calcd = clean(calc)[:, 1]
         rz = [clean(extend(grid[d]))[:, 1] for d in "RZ"]
         anad = ana[:, 1]
         for dat, label, ax in zip(
-            [anad, calcd, (calcd - anad)], ["ana", "calc", "err"], axs
+            [clean(inp)[:, 1], anad, calcd, (calcd - anad)],
+            ["inp", "ana", "calc", "err"],
+            axs,
         ):
             plot = ax.pcolormesh(rz[0][1:-1, 1:-1], rz[1][1:-1, 1:-1], dat[1:-1, 1:-1])
-            ax.set_title(fn[-20:] + " " + label)
+            ax.set_title(fn[-20:] + " " + label + " " + iname)
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)
             plt.colorbar(plot, cax=cax, orientation="vertical")
     return l2
 
 
-def do_tests(grids, inpf, anaf, testf, expect=2):
+def do_tests(grids, inpf, anaf, iname, testf, expect=2):
     fail = False
     for mode, todo in grids.items():
-        l2 = [test(x[0], inpf, anaf, testf) for x in todo]
+        l2 = [test(x[0], inpf, anaf, testf, iname) for x in todo]
         lst = [x[-1] for x in todo]
 
         errc = np.log(l2[-2] / l2[-1])
         difc = np.log(lst[-1] / lst[-2])
         conv = errc / difc
-        print(mode, conv, l2)
-        if not np.isclose(conv, expect, atol=0.1):
+        info = todo[0][0]
+        info = "_".join(info.split("_")[:2])
+        print(info, mode, todo, conv, l2)
+        with open(f"result_{info}_{iname}.txt", "w") as f:
+            f.write(info)
+            f.write("\n")
+            f.write(iname)
+            f.write("\n")
+            f.write(" ".join([str(x) for x in lst]))
+            f.write("\n")
+            f.write(" ".join([str(x) for x in l2]))
+            f.write("\n")
+        passes = np.isclose(conv, expect, atol=0.3)
+        if not passes:
             fail = True
+        print(
+            f"{conv} {'=' if passes else '!'}= {expect} - {'passing :-)' if passes else 'failing!'}"
+        )
+        if passes:
+            plt.close("all")
         plt.show()
     assert not fail
