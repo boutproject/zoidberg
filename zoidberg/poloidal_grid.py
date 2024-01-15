@@ -743,9 +743,9 @@ def grid_elliptic(
 
         fac = 0.1 * nz / 192
         steps = 10
-        while fac > 0.1:
-            fac /= 2
-            steps *= 2
+        if fac > 0.1:
+            steps = int(steps * fac / 0.1)
+            fac = 0.1
         x0 = x.copy()
         for i in range(steps):
             x += fac * (dx(x, 1) + dx(x, -1))
