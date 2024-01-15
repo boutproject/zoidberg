@@ -800,6 +800,7 @@ def grid_elliptic(
             restrict_size=restrict_size,
             restrict_factor=restrict_factor,
             return_coords=True,
+            maxfac_inner=maxfac_inner,
         )
 
         # Note: Lower case x,z are indices
