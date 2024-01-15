@@ -38,8 +38,9 @@ class SpectralLine:
         """
         freq = line.distance()
         freq = freq[:-1] * np.pi * 2 / freq[-1]
-        self.resR = least_squares(_err, np.zeros(num), args=(line.R, freq))
-        self.resZ = least_squares(_err, np.zeros(num), args=(line.Z, freq))
+        n = 2 * num + 1
+        self.resR = least_squares(_err, np.zeros(n), args=(line.R, freq))
+        self.resZ = least_squares(_err, np.zeros(n), args=(line.Z, freq))
 
         self.cost = self.resR.cost + self.resZ.cost
         self.orgLine = line
