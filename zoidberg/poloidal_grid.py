@@ -683,7 +683,6 @@ def grid_elliptic(
     https://en.wikipedia.org/wiki/Principles_of_grid_generation
 
     """
-
     if nx_outer:
         assert nx_outer > 0
         nx -= nx_outer
@@ -749,18 +748,43 @@ def grid_elliptic(
         x0 = x.copy()
         for i in range(steps):
             x += fac * (dx(x, 1) + dx(x, -1))
+
+        extra = 0
         if maxfac_inner:
 
             def getfac(x):
                 d = dx(x, -1)
                 return np.max(d) / np.min(d)
 
-            print(f"starting fac {getfac(x)}")
-            while getfac(x) > maxfac_inner:
+            while not np.all(dx(x, -1) > 0):
                 x += fac * (dx(x, 1) + dx(x, -1))
-            print(f"finished fac {getfac(x)}")
+                extra += 1
+
+            if maxfac_inner == 1:
+                x1 = x.copy()
+                for i in range(1, len(x0)):
+                    if x1[i - 1] > x1[i]:
+                        x1[i] += 2 * np.pi
+                x2 = (
+                    np.mean(x1)
+                    + np.linspace(-np.pi, np.pi, len(x0), endpoint=False)
+                    + np.pi / len(x0)
+                )
+                gf = getfac(x0)
+                ratio = (maxfac_inner - 1) / (gf - 1)
+                x = x2 * (1 - ratio) + np.array(x1) * (ratio)
+                x %= 2 * np.pi
+                # print(getfac(x), ratio, getfac(x2), getfac(x1))
+            else:
+                # print(f"starting fac {getfac(x)}")
+                while getfac(x) > maxfac_inner:
+                    extra += 1
+                    # if extra % 100 == 0:
+                    #    print(extra, fac, getfac(x), 0.1 / (getfac(x) - 1))
+                    #    fac = max(0.05 / (getfac(x) - 1), 0.1)
+                    x += fac * (dx(x, 1) + dx(x, -1))
+                # print(f"finished fac {getfac(x)}")
         else:
-            extra = 0
             while not np.all(dx(x, -1) > 0):
                 x += fac * (dx(x, 1) + dx(x, -1))
                 extra += 1
