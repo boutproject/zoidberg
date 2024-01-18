@@ -1257,36 +1257,35 @@ class GEQDSK(MagneticField):
     """
 
     def __init__(self, gfile):
-        # Import utility to read G-Eqdsk files
-        from boututils import geqdsk
+        from freeqdsk import geqdsk
 
-        g = geqdsk.Geqdsk()
-        g.openFile(gfile)
+        with open(gfile) as f:
+            data = geqdsk.read(f)
 
         # Get the range of major radius
-        self.rmin = g.get("rleft")
-        self.rmax = g.get("rdim") + self.rmin
+        self.rmin = data["rleft"]
+        self.rmax = data["rdim"] + self.rmin
 
         # Range of height
-        self.zmin = g.get("zmid") - 0.5 * g.get("zdim")
-        self.zmax = g.get("zmid") + 0.5 * g.get("zdim")
+        self.zmin = data["zmid"] - 0.5 * data["zdim"]
+        self.zmax = data["zmid"] + 0.5 * data["zdim"]
 
         print("Major radius: {0} -> {1} m".format(self.rmin, self.rmax))
         print("Height: {0} -> {1} m".format(self.zmin, self.zmax))
 
         # Poloidal flux
-        self.psi = np.transpose(g.get("psirz"))
+        self.psi = np.transpose(data["psi"])
         nr, nz = self.psi.shape
 
         # Normalising factors: psi on axis and boundary
-        self.psi_axis = g.get("simag")
-        self.psi_bndry = g.get("sibry")
+        self.psi_axis = data["simagx"]
+        self.psi_bndry = data["sibdry"]
 
         # Current flux function f = R * Bt
-        self.fpol = g.get("fpol")
+        self.fpol = data["fpol"]
 
         # Pressure [Pascals]
-        self.p = g.get("pres")
+        self.p = data["pres"]
 
         self.r = np.linspace(self.rmin, self.rmax, nr)
         self.z = np.linspace(self.zmin, self.zmax, nz)
@@ -1307,8 +1306,8 @@ class GEQDSK(MagneticField):
         # eg. around coils or in the private flux region
         # Create a boundary
 
-        rb = g.get("rbbbs")
-        zb = g.get("zbbbs")
+        rb = data["rbdry"]
+        zb = data["zbdry"]
         core_bndry = boundary.PolygonBoundaryXZ(rb, zb)
 
         # Get the points outside the boundary
@@ -1329,8 +1328,8 @@ class GEQDSK(MagneticField):
         self.p_spl = interpolate.InterpolatedUnivariateSpline(psinorm, self.p, ext=3)
 
         # Set boundary
-        rlim = g.get("rlim")
-        zlim = g.get("zlim")
+        rlim = data["rlim"]
+        zlim = data["zlim"]
         if len(rlim) > 0:
             # Create a boundary in X-Z with a polygon representation
             self.boundary = boundary.PolygonBoundaryXZ(rlim, zlim)
