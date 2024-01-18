@@ -187,7 +187,7 @@ def plot_3d_field_line(magnetic_field, xpos, zpos, yperiod, cycles=20, y_res=50)
     result_hires_mod = result_hires.reshape((cycles, y_res, 2)).transpose(1, 0, 2)
 
     fig = plt.figure()
-    ax = fig.gca(projection="3d")
+    ax = fig.add_subplot(projection="3d")
     for n in range(cycles):
         ax.plot(
             result_hires_mod[:, n, 0],
