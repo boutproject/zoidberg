@@ -824,6 +824,7 @@ def grid_elliptic(
             restrict_size=restrict_size,
             restrict_factor=restrict_factor,
             return_coords=True,
+            inner_ort=inner_ort,
             maxfac_inner=maxfac_inner,
         )
 
