@@ -590,7 +590,7 @@ try:
 
             Bx = R_0 * diff(self.P, self.R)
             By = R_0 / self.R * diff(self.P, self.phi)
-            Bz = diff(self.P, self.Z)
+            Bz = R_0 * diff(self.P, self.Z)
 
             self.Sf = lambdify((self.R, self.phi, self.Z), S, "numpy")
 
@@ -650,23 +650,22 @@ try:
             Sympy function CD_mk (R) (Dirichlet boudary conditions)
             """
 
-            alpha = (
-                lambda n, b: (-1.0) ** n
-                / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+            alpha = lambda n, b: (
+                (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
                 if (n >= 0)
                 else 0.0
             )
             alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
 
-            beta = (
-                lambda n, b: gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+            beta = lambda n, b: (
+                gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
                 if (n >= 0 and n < b)
                 else 0.0
             )
             beta_st = lambda n, b: beta(n, b) * (2 * n - b)
 
-            delta = (
-                lambda n, b: alpha(n, b)
+            delta = lambda n, b: (
+                alpha(n, b)
                 * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
                 / 2
                 if (n > 0)
@@ -705,23 +704,22 @@ try:
             Sympy function CN_mk (R) (Neumann boundary conditions)
             """
 
-            alpha = (
-                lambda n, b: (-1.0) ** n
-                / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+            alpha = lambda n, b: (
+                (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
                 if (n >= 0)
                 else 0.0
             )
             alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
 
-            beta = (
-                lambda n, b: gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+            beta = lambda n, b: (
+                gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
                 if (n >= 0 and n < b)
                 else 0.0
             )
             beta_st = lambda n, b: beta(n, b) * (2 * n - b)
 
-            delta = (
-                lambda n, b: alpha(n, b)
+            delta = lambda n, b: (
+                alpha(n, b)
                 * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
                 / 2
                 if (n > 0)
