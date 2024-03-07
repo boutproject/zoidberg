@@ -590,7 +590,7 @@ try:
 
             Bx = R_0 * diff(self.P, self.R)
             By = R_0 / self.R * diff(self.P, self.phi)
-            Bz = diff(self.P, self.Z)
+            Bz = R_0 * diff(self.P, self.Z)
 
             self.Sf = lambdify((self.R, self.phi, self.Z), S, "numpy")
 
