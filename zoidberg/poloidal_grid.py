@@ -683,7 +683,6 @@ def grid_elliptic(
     https://en.wikipedia.org/wiki/Principles_of_grid_generation
 
     """
-
     if nx_outer:
         assert nx_outer > 0
         nx -= nx_outer
@@ -716,7 +715,6 @@ def grid_elliptic(
             longer = inner
         ind = np.argmax(shorter.R)
         shorter = rzline.RZline(np.roll(shorter.R, -ind), np.roll(shorter.Z, -ind))
-        # if len(longer.R) == len(shorter.R):
         dr = shorter.R - longer.R[:, None]
         dz = shorter.Z - longer.Z[:, None]
         delta = dr**2 + dz**2
@@ -743,24 +741,43 @@ def grid_elliptic(
 
         fac = 0.1 * nz / 192
         steps = 10
-        while fac > 0.1:
-            fac /= 2
-            steps *= 2
+        if fac > 0.1:
+            steps = int(steps * fac / 0.1)
+            fac = 0.1
         x0 = x.copy()
         for i in range(steps):
             x += fac * (dx(x, 1) + dx(x, -1))
+
+        extra = 0
         if maxfac_inner:
 
             def getfac(x):
                 d = dx(x, -1)
                 return np.max(d) / np.min(d)
 
-            print(f"starting fac {getfac(x)}")
-            while getfac(x) > maxfac_inner:
+            while not np.all(dx(x, -1) > 0):
                 x += fac * (dx(x, 1) + dx(x, -1))
-            print(f"finished fac {getfac(x)}")
+                extra += 1
+
+            if maxfac_inner == 1:
+                x1 = x.copy()
+                for i in range(1, len(x0)):
+                    if x1[i - 1] > x1[i]:
+                        x1[i] += 2 * np.pi
+                x2 = (
+                    np.mean(x1)
+                    + np.linspace(-np.pi, np.pi, len(x0), endpoint=False)
+                    + np.pi / len(x0)
+                )
+                gf = getfac(x0)
+                ratio = (maxfac_inner - 1) / (gf - 1)
+                x = x2 * (1 - ratio) + np.array(x1) * (ratio)
+                x %= 2 * np.pi
+            else:
+                while getfac(x) > maxfac_inner:
+                    extra += 1
+                    x += fac * (dx(x, 1) + dx(x, -1))
         else:
-            extra = 0
             while not np.all(dx(x, -1) > 0):
                 x += fac * (dx(x, 1) + dx(x, -1))
                 extra += 1
@@ -770,6 +787,8 @@ def grid_elliptic(
         if not np.all(dx(x, -1) > 0):
             plt.plot(x, label="result")
             plt.plot(x0, label="init")
+            plt.plot(dx(x0, -1))
+            plt.plot(dx(x, -1))
             plt.legend()
             plt.title("Not monotonic!")
             plt.show()
@@ -800,6 +819,8 @@ def grid_elliptic(
             restrict_size=restrict_size,
             restrict_factor=restrict_factor,
             return_coords=True,
+            inner_ort=inner_ort,
+            maxfac_inner=maxfac_inner,
         )
 
         # Note: Lower case x,z are indices
@@ -983,15 +1004,10 @@ def grid_elliptic(
 
 
 if __name__ == "__main__":
-    # inner = circle(R0=1.5, r=1.0, n=100)
-    # outer = circle(R0=1.0, r=2.0, n=100)
-
     inner = rzline.shaped_line(R0=3.0, a=0.5, elong=1.0, triang=0.0, indent=1.0, n=50)
     outer = rzline.shaped_line(R0=2.8, a=1.5, elong=1.0, triang=0.0, indent=0.2, n=50)
-    # outer = shaped_line(R0=3.0, a=1.0, elong=1.0, triang=0.0, indent=1.0, n=50)
 
     grid = grid_elliptic(inner, outer, 100, 100, show=True)
 
-    # grid.findIndex(2.0, 1.5)
     x, z = grid.findIndex([2.0, 1.9], [1.5, 2.0])
     print(x, z)

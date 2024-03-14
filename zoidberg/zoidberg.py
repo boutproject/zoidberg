@@ -184,7 +184,7 @@ def write_maps(
     gridfile="fci.grid.nc",
     new_names=False,
     metric2d=True,
-    format="NETCDF3_64BIT",
+    format="NETCDF4",
     quiet=False,
 ):
     """Write FCI maps to BOUT++ grid file
