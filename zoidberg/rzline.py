@@ -183,9 +183,8 @@ class RZline:
         if theta is None:
             return self.R, self.Z
         n = len(self.R)
-        theta = np.remainder(theta, 2.0 * pi)
         dtheta = 2.0 * np.pi / n
-        ind = np.trunc(theta / dtheta).astype(int)
+        ind = np.trunc(theta / dtheta).astype(int) % n
         rem = np.remainder(theta, dtheta)
         indp = (ind + 1) % n
         return (rem * self.R[indp] + (1.0 - rem) * self.R[ind]), (
