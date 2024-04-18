@@ -456,7 +456,7 @@ def line_from_points_poly(rarray, zarray, show=False, spline_order=None):
 
         rl, zl = line.position(theta)
 
-        ind = np.floor(float(i) * theta / (2.0 * np.pi))
+        ind = int(np.floor(float(i) * theta / (2.0 * np.pi)))
 
         # Insert after this index
 
