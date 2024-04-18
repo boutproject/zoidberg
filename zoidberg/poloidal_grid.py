@@ -605,6 +605,7 @@ def grid_elliptic(
     nx_inner=0,
     inner_ort=True,
     maxfac_inner=None,
+    dz_relax=None,
 ):
     """Create a structured grid between inner and outer boundaries using
     elliptic method
@@ -821,6 +822,7 @@ def grid_elliptic(
             return_coords=True,
             inner_ort=inner_ort,
             maxfac_inner=maxfac_inner,
+            dz_relax=dz_relax,
         )
 
         # Note: Lower case x,z are indices
@@ -918,11 +920,11 @@ def grid_elliptic(
         Z_zm = Z_zm[1:-1, :]
         Z_zp = Z_zp[1:-1, :]
 
-        eps = -0.7
-        dRdz = (R_zp - R_zm) / (2.0 * dz * (1 + eps))
+        dz_relax = dz_relax or 10 / 3
+        dRdz = dz_relax * (R_zp - R_zm) / (2.0 * dz)
         dRdx = (R_xp - R_xm) / (2.0 * dx)
 
-        dZdz = (Z_zp - Z_zm) / (2.0 * dz * (1 + eps))
+        dZdz = dz_relax * (Z_zp - Z_zm) / (2.0 * dz)
         dZdx = (Z_xp - Z_xm) / (2.0 * dx)
 
         a = dRdz**2 + dZdz**2
