@@ -603,6 +603,7 @@ def grid_elliptic(
     return_coords=False,
     nx_outer=0,
     nx_inner=0,
+    legacy_align=False,
     inner_ort=True,
     maxfac_inner=None,
     dz_relax=None,
@@ -716,17 +717,21 @@ def grid_elliptic(
             longer = inner
         ind = np.argmax(shorter.R)
         shorter = rzline.RZline(np.roll(shorter.R, -ind), np.roll(shorter.Z, -ind))
-        dr = shorter.R - longer.R[:, None]
-        dz = shorter.Z - longer.Z[:, None]
-        delta = dr**2 + dz**2
-        fac = len(longer.R) / len(shorter.R)
-        j = np.arange(len(shorter.R), dtype=int)
-        sums = [
-            np.sum(delta[np.round(j * fac).astype(int) - i, j])
-            for i in range(len(longer.R))
-        ]
-        ind = -np.argmin(sums)
-        longer = rzline.RZline(np.roll(longer.R, -ind), np.roll(longer.Z, -ind))
+        if legacy_align:
+            ind = np.argmax(longer.R)
+            longer = rzline.RZline(np.roll(longer.R, -ind), np.roll(longer.Z, -ind))
+        else:
+            dr = shorter.R - longer.R[:, None]
+            dz = shorter.Z - longer.Z[:, None]
+            delta = dr**2 + dz**2
+            fac = len(longer.R) / len(shorter.R)
+            j = np.arange(len(shorter.R), dtype=int)
+            sums = [
+                np.sum(delta[np.round(j * fac).astype(int) - i, j])
+                for i in range(len(longer.R))
+            ]
+            ind = -np.argmin(sums)
+            longer = rzline.RZline(np.roll(longer.R, -ind), np.roll(longer.Z, -ind))
         if len(inner.R) < len(outer.R):
             inner = shorter
             outer = longer
