@@ -3,6 +3,8 @@ from multiprocessing import Pool
 import numpy as np
 from scipy.integrate import odeint
 
+from .field import _set_config
+
 
 class FieldTracer(object):
     """A class for following magnetic field lines
@@ -607,7 +609,7 @@ class FieldTracerWeb:
             self.config.inverseField = False
             return self.config
         config = self.flt.types.MagneticConfig()
-        config.configIds = self.configId
+        config = _set_config(config, self.configId)
         config.inverseField = False
         return config
 
