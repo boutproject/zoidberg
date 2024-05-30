@@ -202,9 +202,6 @@ def gen_newr(r, z, splitedlist, bounds, plot):
             x = linalg.lstsq(A, b)
             x0 = x[0]
         else:
-            bounds = np.empty((2, 8))
-            bounds[0] = -np.inf
-            bounds[1] = np.inf
             signs = (diff_minus_r, diff_minus_z, -diff_plus_r, -diff_plus_z)
             x = least_squares(
                 fun,
