@@ -1,17 +1,16 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+import time
+
+time_start = time.time()
+
 from boututils.datafile import DataFile as DF
 import numpy as np
 import sys
 
-# In[161]:
 
-
-fn = "v13/W7X-conf0-8x36x24.emc3.inner:f.vessel:f.island:f.fci.nc"
-fn = "v13/W7X-conf0-12x36x48.emc3.inner:f.vessel:f.island:f.fci.nc"
-fn = "v13/W7X-conf0-20x36x96.emc3.inner:f.vessel:f.island:f.fci.nc"
-fn = "v13/W7X-conf0-36x36x192.emc3.inner:f.vessel:f.island:f.v2.fci.nc"
+verbose = 1
 
 
 def toCent(RZ):
@@ -24,21 +23,41 @@ def l2(x):
     return np.sqrt(np.sum(x**2, axis=0))
 
 
+org_print = print
+
+
+def my_print(*args):
+    args = f"{time.time() - time_start:10.3f} s: ", *args
+    org_print(*args)
+
+
+def log(*args):
+    if verbose > 1:
+        my_print(*args)
+
+
+def print(*args):
+    if verbose:
+        my_print(*args)
+
+
 def doit(fn):
     with DF(fn) as f:
         RZ = [f[k] for k in "RZ"]
-
+    log("opened")
     RZ = np.array(RZ)
-
-    cent = toCent(RZ)
-
-    # In[150]:
+    log("read")
 
     A = None
-    nx = 50
+    nx = 2
     spc = np.linspace(0, 0.5, nx, endpoint=True)
     spc2 = np.linspace(0.5, 1, nx, endpoint=True)
 
+    ### Go in a line around the cell
+    # xf is the normalised coordinates in x
+    # yf is the normalised coordinates in z
+    # i and j are the offset in x and z
+    # i,j = 0 -> in x and z in lower direction
     for xf, yf, i, j in (
         (spc2, 0.5, 1, 1),
         (0.5, spc2[::-1], 1, 1),
@@ -49,6 +68,7 @@ def doit(fn):
         (spc, 0.5, 0, 1),
         (0.5, spc2, 0, 1),
     ):
+        log(f"doing offset ({i}, {j})")
         dx = np.arange(2) + i
         dy = np.arange(2) + j
 
@@ -75,27 +95,56 @@ def doit(fn):
     volume = Ar
     A.shape, Ar.shape, RZ.shape
 
-    def toCent2(RZ):
-        RZ = toCent(RZ)
-        RZ = np.concatenate((RZ, RZ[..., :1]), axis=-1)
-        return RZ
-
     # AreaXplus
-    nx = 8
+    # Z
+    # Λ
+    # |   a        b          c
+    # |
+    # |       ------------
+    # |       |          X
+    # |       |          X
+    # |   h   |    o     X    d
+    # |       |          X
+    # |       |          X
+    # |       ------------
+    # |
+    # |   g        f          e
+    # |
+    # |------------------------> x
+    #
+    # We are calculating the area of the surface denoted by X
+    # Note that we need to split it in two parts. Maybe?
+    nx = 2
     spc3 = np.linspace(0, 1, nx)
-    cent = toCent(RZ)
     # pos goes in +z direction
-    pos = spc3 * np.roll(cent, -1, axis=-1)[..., None] + (1 - spc3) * cent[..., None]
+    # First segments starts at the centre of b,c,d,o
+    # and goes to centre of o,d
+    startpoint = toCent(RZ)
+    midpoint = (RZ[:, :-1] + RZ[:, 1:]) / 2
+    endpoint = np.roll(startpoint, -1, -1)
+
+    log("calculating pos ...")
+    pos = np.concatenate(
+        [
+            (1 - spc3[:-1]) * startpoint[..., None] + spc3[:-1] * midpoint[..., None],
+            (1 - spc3) * midpoint[..., None] + spc3 * endpoint[..., None],
+        ],
+        axis=-1,
+    )
+    log("done")
     # direction of edge, length ~ 1/nx
-    dR = pos[..., 0] - pos[..., 1]
+    dR = pos[..., :-1] - pos[..., 1:]
     dX = np.sqrt(np.sum(dR**2, axis=0))
-    area = np.sum(dX[..., None] * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5, axis=-1)
+    area = dX * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5
     assert area.shape[0] > 2
     # Vector in normal direction
     assert dR.shape[0] == 2
     dRr = np.array((-dR[1], dR[0]))
     dRr /= np.sqrt(np.sum(dRr**2, axis=0))
+    print(dRr.shape, area.shape)
     dRr *= area
+    dRr = np.sum(dRr, axis=-1)
+    print(np.nanmean(dRr))
 
     # vector in derivative direction
     dxR = RZ[:, 1:] - RZ[:, :-1]
@@ -105,8 +154,10 @@ def doit(fn):
 
     # dxR /= (np.sum(dxR**2, axis=0))
     # dzR /= (np.sum(dzR**2, axis=0))
+    log("starting solve")
     dxzR = np.array((dxR, dzR)).transpose(2, 3, 4, 1, 0)
     coefs = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0))
+    log("done")
 
     areaX = area
     coefsX = coefs
@@ -114,25 +165,52 @@ def doit(fn):
     # In[154]:
 
     # AreaZplus
-    nx = 8
+    # Z
+    # Λ
+    # |   a        b          c
+    # |
+    # |       -XXXXXXXXXX-
+    # |       |          |
+    # |       |          |
+    # |   h   |    o     |    d
+    # |       |          |
+    # |       |          |
+    # |       ------------
+    # |
+    # |   g        f          e
+    # |
+    # |------------------------> x
+    nx = 3
     spc3 = np.linspace(0, 1, nx)
-    pos = (
-        spc3 * np.roll(cent, -1, axis=-1)[:, 1:, ..., None]
-        + (1 - spc3) * np.roll(cent, -1, axis=-1)[:, :-1][..., None]
+    cent = np.roll(toCent(RZ), -1, -1)
+    startpoint = cent[:, :-1]
+    midpoint = (RZ[:, 1:-1] + np.roll(RZ[:, 1:-1], -1, -1)) / 2
+    endpoint = cent[:, 1:]
+    log("concatenate")
+    pos = np.concatenate(
+        [
+            (1 - spc3[:-1]) * startpoint[..., None] + spc3[:-1] * midpoint[..., None],
+            (1 - spc3) * midpoint[..., None] + spc3 * endpoint[..., None],
+        ],
+        axis=-1,
     )
-    dR = pos[..., 0] - pos[..., 1]
+    dR = pos[..., :-1] - pos[..., 1:]
     dX = np.sqrt(np.sum(dR**2, axis=0))
-    area = np.sum(dX[..., None] * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5, axis=-1)
+    area = dX * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5
+    log("get normal vector")
     # Vector in normal direction
     dRr = np.array((dR[1], -dR[0]))
     dRr /= np.sqrt(np.sum(dRr**2, axis=0))
     dRr *= area
+    dRr = np.sum(dRr, axis=-1)
     # vector in derivative direction
     dxR = RZ[:, 2:] - RZ[:, :-2]
     dxR = 0.5 * (np.roll(dxR, -1, axis=-1) + dxR)
     dzR = (np.roll(RZ, -1, axis=-1) - RZ)[:, 1:-1]
     dxzR = np.array((dxR, dzR)).transpose(2, 3, 4, 1, 0)
+    log("solving again")
     coefs = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0))
+    log("done")
     coefs.shape
 
     areaZ = area
@@ -169,6 +247,7 @@ def doit(fn):
     def zm(i, j, k):
         return (i, j, (k - 1) % zmax)
 
+    log("testing")
     result = np.zeros(inp.shape)
     results = [np.zeros(inp.shape) for _ in range(4)]
     # dx =
@@ -211,8 +290,10 @@ def doit(fn):
             c1[1:] = d
         else:
             c1[1:-1] = d
+        # c1 = np.roll(c1, -1, -1)
         return c1
 
+    log("writing")
     with DF(fn, write=True) as f:
         for d, x1 in zip((coefsX, coefsZ), "XZ"):
             for i, x2 in enumerate("XZ"):
@@ -220,9 +301,15 @@ def doit(fn):
                 f.write(key, fixup(d[..., i]))
         key = "dagp_fv_volume"
         f.write(key, fixup(volume))
+    log("done")
 
 
 if __name__ == "__main__":
+    for flag, step in (("-v", +1), ("-q", -1)):
+        while flag in sys.argv:
+            verbose += step
+            sys.argv.remove(flag)
+
     for fn in sys.argv[1:]:
         print(fn)
         doit(fn)
