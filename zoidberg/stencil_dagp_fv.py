@@ -287,7 +287,7 @@ def doit(fn):
     def fixup(d):
         c1 = np.zeros(RZ[0].shape)
         if c1.shape[0] == d.shape[0] + 1:
-            c1[1:] = d
+            c1[:-1] = d
         else:
             c1[1:-1] = d
         # c1 = np.roll(c1, -1, -1)
