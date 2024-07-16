@@ -261,11 +261,10 @@ def doit(fn):
     this = -(coefsX[..., 0] * dx + coefsX[..., 1] * dz)
     result[:-1] -= this
     result[1:] += this
-    for r, t in zip(results, (coefsX[..., 0] * dx, coefsX[..., 1] * dz)):
+    for r, t in zip(results, (-coefsX[..., 0] * dx, -coefsX[..., 1] * dz)):
         r[:-1] -= t
         r[1:] += t
-    results[0]
-
+    print("expect 0:", np.max(np.abs((result - results[0] - results[1]))))
     if 1:
         dx2 = inp[2:] - inp[:-2]
         dx2 = 0.5 * (np.roll(dx2, -1, axis=-1) + dx2)
@@ -275,11 +274,13 @@ def doit(fn):
         this = -(t1 + t2)
         result[1:-1] -= this
         result[1:-1] += np.roll(this, 1, -1)
-        for r, t in zip(results[2:], (t1, t2)):
+        for r, t in zip(results[2:], (-t1, -t2)):
             r[1:-1] -= t
-            np.roll(r, -1, -1)[1:-1] += t
+            # np.roll(r, -1, -1)[1:-1] += t
+            r[1:-1] += np.roll(t, 1, -1)
 
     result[0] = 0
+    result[-1] = 0
     for r in results:
         r[0] = 0
         r[-1] = 0
