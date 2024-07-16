@@ -53,6 +53,8 @@ def doit(fn):
     spc = np.linspace(0, 0.5, nx, endpoint=True)
     spc2 = np.linspace(0.5, 1, nx, endpoint=True)
 
+    ### Calculate Volume of the cell
+    #
     ### Go in a line around the cell
     # xf is the normalised coordinates in x
     # yf is the normalised coordinates in z
@@ -183,9 +185,9 @@ def doit(fn):
     nx = 3
     spc3 = np.linspace(0, 1, nx)
     cent = np.roll(toCent(RZ), -1, -1)
-    startpoint = cent[:, :-1]
-    midpoint = (RZ[:, 1:-1] + np.roll(RZ[:, 1:-1], -1, -1)) / 2
-    endpoint = cent[:, 1:]
+    startpoint = cent[:, :-1]  # a
+    midpoint = (RZ[:, 1:-1] + np.roll(RZ[:, 1:-1], -1, -1)) / 2  # b
+    endpoint = cent[:, 1:]  # c
     log("concatenate")
     pos = np.concatenate(
         [
