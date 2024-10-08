@@ -35,8 +35,8 @@ rzcoord, ycoords = zoidberg.fieldtracer.trace_poincare(
 
 inner_lines = []
 for i in range(nslices):
-    r = rzcoord[:, i, 0]
-    z = rzcoord[:, i, 1]
+    r = rzcoord[:, i, 0, 0]
+    z = rzcoord[:, i, 0, 1]
     line = zoidberg.rzline.line_from_points(r, z)
     # Re-map the points so they're approximately uniform in distance along the surface
     # Note that this results in some motion of the line
@@ -76,7 +76,7 @@ filename = "stellarator.fci.nc"
 
 print("Writing to grid file '{0}'".format(filename))
 zoidberg.write_maps(
-    grid, magnetic_field, maps, gridfile=filename, new_names=False, metric2d=True
+    grid, magnetic_field, maps, gridfile=filename, new_names=False, metric2d=False
 )
 
 #############################################################################
