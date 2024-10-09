@@ -1,21 +1,8 @@
 from math import gamma
 
 import numpy as np
-from sympy import (
-    And,
-    Piecewise,
-    Sum,
-    Symbol,
-    atan2,
-    cos,
-    diff,
-    factorial,
-    lambdify,
-    log,
-    pi,
-    sin,
-    sqrt,
-)
+from sympy import (And, Piecewise, Sum, Symbol, atan2, cos, diff, factorial,
+                   lambdify, log, pi, sin, sqrt)
 
 from . import boundary
 

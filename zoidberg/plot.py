@@ -242,7 +242,7 @@ def plot_streamlines(grid, magnetic_field, y_slice=0, width=None, **kwargs):
         magnetic_field.bx[full_slice].T,
         magnetic_field.bz[full_slice].T,
         linewidth=linewidth,
-        **kwargs
+        **kwargs,
     )
 
     ax.set_xlabel("Radius [m]", fontsize=20)
