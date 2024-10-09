@@ -1,11 +1,53 @@
 [build-system]
 requires = [
-    "setuptools >= 42",
+    "setuptools >= 61.0.0",
     "setuptools_scm[toml] >= 6.2",
-    "setuptools_scm_git_archive",
-    "wheel >= 0.29.0",
 ]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "zoidberg"
+readme = "README.md"
+authors = [{name = "Peter Hill", email = "peter.hill@york.ac.uk"}, {name = "BOUT++ team"}]
+description = "Generate flux-coordinate independent (FCI) grids for BOUT++"
+license = {text = "GNU Lesser General Public License v3 or later (LGPLv3+)"}
+classifiers = [
+    "Programming Language :: Python",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
+    "Natural Language :: English",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+keywords = [
+    "bout++",
+    "bout",
+    "plasma",
+    "physics",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "boututils ~= 0.1.10",
+    "numpy ~= 1.24",
+    "sympy ~= 1.7",
+    "scipy ~= 1.10",
+    "matplotlib ~= 3.7",
+    "netCDF4 ~= 1.7",
+    "freeqdsk >= 0.4.0",
+]
+dynamic = ["version"]
+
+[project.urls]
+Documentation = "https://bout-dev.readthedocs.io/en/latest"
+Repository = "https://github.com/boutproject/zoidberg"
+Tracker = "https://github.com/boutproject/zoidberg/issues"
+
+[project.optional-dependencies]
+tests = ["pytest >= 3.3.0"]
+
+[project.scripts]
+zoidberg-rotating-ellipse = "zoidberg.examples.rotating_ellipse:main"
+zoidberg-screwpinch = "zoidberg.examples.screwpinch:main"
 
 [tool.setuptools_scm]
 write_to = "zoidberg/_version.py"
