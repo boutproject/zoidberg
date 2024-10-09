@@ -8,13 +8,7 @@ import warnings
 
 import numpy as np
 from numpy import append, argmin, cos, linspace, pi, sin, sqrt
-
-try:
-    # New scipy changed the name
-    from scipy.integrate import cumulative_trapezoid as cumtrapz
-except ImportError:
-    from scipy.integrate import cumtrapz
-
+from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.interpolate import interp1d, splev, splrep
 
 try:
