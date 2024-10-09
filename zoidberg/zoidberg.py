@@ -303,12 +303,8 @@ def write_maps(
         # Metric tensor
 
         if new_names:
-            for key, val in metric.items():
-                f.write(key, val)
+            name_changes = {}
         else:
-            # Translate between output variable names and metric names
-            # Map from new to old names. Anything not in this dict
-            # is output unchanged
             name_changes = {
                 "g_yy": "g_22",
                 "gyy": "g22",
@@ -319,14 +315,15 @@ def write_maps(
                 "g_xz": "g_13",
                 "g_zz": "g_33",
             }
-            for key in metric:
-                name = key
-                if name in name_changes:
-                    name = name_changes[name]
-                f.write(name, metric[key])
 
-        if "J" in metric:
-            f.write("J", metric["J"])
+        # Translate between output variable names and metric names
+        # Map from new to old names. Anything not in this dict
+        # is output unchanged
+        for key in metric:
+            name = key
+            if name in name_changes:
+                name = name_changes[name]
+            f.write(name, metric[key])
 
         # Magnetic field
         f.write("B", Bmag)
