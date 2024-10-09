@@ -1,6 +1,21 @@
 from math import gamma
 
 import numpy as np
+from sympy import (
+    And,
+    Piecewise,
+    Sum,
+    Symbol,
+    atan2,
+    cos,
+    diff,
+    factorial,
+    lambdify,
+    log,
+    pi,
+    sin,
+    sqrt,
+)
 
 from . import boundary
 
@@ -315,624 +330,574 @@ class CurvedSlab(MagneticField):
         return np.full(x.shape, self.Rmaj)
 
 
-try:
-    from sympy import (And, Piecewise, Sum, Symbol, atan2, cos, diff,
-                       factorial, lambdify, log, pi, sin, sqrt)
+class StraightStellarator(MagneticField):
+    """A "rotating ellipse" stellarator without curvature
 
-    class StraightStellarator(MagneticField):
-        """A "rotating ellipse" stellarator without curvature
+    Parameters
+    ----------
+    xcentre : float, optional
+        Middle of the domain in x [m]
+    zcentre : float, optional
+        Middle of the domain in z [m]
+    radius : float, optional
+        Radius of coils [meters]
+    yperiod : float, optional
+        The period over which the coils return to their original position
+    I_coil : float, optional
+        Current in each coil
+
+    """
+
+    def coil(self, xcentre, zcentre, radius, angle, iota, I):
+        """Defines a single coil
 
         Parameters
         ----------
-        xcentre : float, optional
-            Middle of the domain in x [m]
-        zcentre : float, optional
-            Middle of the domain in z [m]
-        radius : float, optional
-            Radius of coils [meters]
-        yperiod : float, optional
-            The period over which the coils return to their original position
-        I_coil : float, optional
-            Current in each coil
+        radius : float
+            Radius to coil
+        angle : float
+            Initial angle of coil
+        iota : float
+            Rotational transform of coil
+        I : float
+            Current through coil
 
+        Returns
+        -------
+        (x, z) - x, z coordinates of coils along phi
         """
 
-        def coil(self, xcentre, zcentre, radius, angle, iota, I):
-            """Defines a single coil
+        return (
+            xcentre + radius * cos(angle + iota * self.phi),
+            zcentre + radius * sin(angle + iota * self.phi),
+            I,
+        )
 
-            Parameters
-            ----------
-            radius : float
-                Radius to coil
-            angle : float
-                Initial angle of coil
-            iota : float
-                Rotational transform of coil
-            I : float
-                Current through coil
+    def __init__(
+        self,
+        xcentre=0.0,
+        zcentre=0.0,
+        radius=0.8,
+        yperiod=np.pi,
+        I_coil=0.05,
+        smooth=False,
+        smooth_args={},
+    ):
+        xcentre = float(xcentre)
+        zcentre = float(zcentre)
+        radius = float(radius)
+        yperiod = float(yperiod)
 
-            Returns
-            -------
-            (x, z) - x, z coordinates of coils along phi
-            """
+        iota = 2.0 * np.pi / yperiod
 
-            return (
-                xcentre + radius * cos(angle + iota * self.phi),
-                zcentre + radius * sin(angle + iota * self.phi),
-                I,
+        self.x = Symbol("x")
+        self.z = Symbol("z")
+        self.y = Symbol("y")
+        self.r = Symbol("r")
+        self.r = (self.x**2 + self.z**2) ** (0.5)
+        self.phi = Symbol("phi")
+
+        self.xcentre = xcentre
+        self.zcentre = zcentre
+        self.radius = radius
+
+        # Four coils equally spaced, alternating direction for current
+        self.coil_list = [
+            self.coil(
+                xcentre,
+                zcentre,
+                radius,
+                n * pi,
+                iota,
+                ((-1) ** np.mod(i, 2)) * I_coil,
             )
+            for i, n in enumerate(np.arange(4) / 2.0)
+        ]
 
-        def __init__(
-            self,
-            xcentre=0.0,
-            zcentre=0.0,
-            radius=0.8,
-            yperiod=np.pi,
-            I_coil=0.05,
-            smooth=False,
-            smooth_args={},
-        ):
-            xcentre = float(xcentre)
-            zcentre = float(zcentre)
-            radius = float(radius)
-            yperiod = float(yperiod)
+        A = 0.0
+        Bx = 0.0
+        Bz = 0.0
 
-            iota = 2.0 * np.pi / yperiod
+        for c in self.coil_list:
+            xc, zc, Ic = c
+            r2 = (self.x - xc) ** 2 + (self.z - zc) ** 2
+            theta = atan2(self.z - zc, self.x - xc)  # Angle relative to coil
 
-            self.x = Symbol("x")
-            self.z = Symbol("z")
-            self.y = Symbol("y")
-            self.r = Symbol("r")
-            self.r = (self.x**2 + self.z**2) ** (0.5)
-            self.phi = Symbol("phi")
+            A -= Ic * 0.1 * log(r2)
 
-            self.xcentre = xcentre
-            self.zcentre = zcentre
-            self.radius = radius
+            B = Ic * 0.2 / sqrt(r2)
 
-            # Four coils equally spaced, alternating direction for current
-            self.coil_list = [
-                self.coil(
-                    xcentre,
-                    zcentre,
-                    radius,
-                    n * pi,
-                    iota,
-                    ((-1) ** np.mod(i, 2)) * I_coil,
-                )
-                for i, n in enumerate(np.arange(4) / 2.0)
-            ]
+            Bx += B * sin(theta)
+            Bz -= B * cos(theta)
 
-            A = 0.0
-            Bx = 0.0
-            Bz = 0.0
+        self.Afunc = lambdify((self.x, self.z, self.phi), A, "numpy")
 
-            for c in self.coil_list:
-                xc, zc, Ic = c
-                r2 = (self.x - xc) ** 2 + (self.z - zc) ** 2
-                theta = atan2(self.z - zc, self.x - xc)  # Angle relative to coil
+        self.Bxfunc = lambdify((self.x, self.z, self.phi), Bx, "numpy")
+        self.Bzfunc = lambdify((self.x, self.z, self.phi), Bz, "numpy")
 
-                A -= Ic * 0.1 * log(r2)
 
-                B = Ic * 0.2 / sqrt(r2)
+class RotatingEllipse(MagneticField):
+    """A "rotating ellipse" stellarator
+    Parameters
+    ----------
+    xcentre : float, optional
+        Middle of the domain in x [m]
+    zcentre : float, optional
+        Middle of the domain in z [m]
+    radius : float, optional
+        Radius of coils [meters]
+    yperiod : float, optional
+        The period over which the coils return to their original position
+    I_coil : float, optional
+        Current in each coil
+    Btor : float, optional
+        Toroidal magnetic field strength
+    """
 
-                Bx += B * sin(theta)
-                Bz -= B * cos(theta)
-
-            self.Afunc = lambdify((self.x, self.z, self.phi), A, "numpy")
-
-            self.Bxfunc = lambdify((self.x, self.z, self.phi), Bx, "numpy")
-            self.Bzfunc = lambdify((self.x, self.z, self.phi), Bz, "numpy")
-
-    class RotatingEllipse(MagneticField):
-        """A "rotating ellipse" stellarator
+    def coil(self, xcentre, zcentre, radius, angle, iota, I):
+        """Defines a single coil
         Parameters
         ----------
-        xcentre : float, optional
-            Middle of the domain in x [m]
-        zcentre : float, optional
-            Middle of the domain in z [m]
-        radius : float, optional
-            Radius of coils [meters]
-        yperiod : float, optional
-            The period over which the coils return to their original position
-        I_coil : float, optional
-            Current in each coil
-        Btor : float, optional
-            Toroidal magnetic field strength
+        radius : float
+            Radius to coil
+        angle : float
+            Initial angle of coil
+        iota : float
+            Rotational transform of coil
+        I : float
+            Current through coil
+        Returns
+        -------
+        (x, z) - x, z coordinates of coils along phi
         """
 
-        def coil(self, xcentre, zcentre, radius, angle, iota, I):
-            """Defines a single coil
-            Parameters
-            ----------
-            radius : float
-                Radius to coil
-            angle : float
-                Initial angle of coil
-            iota : float
-                Rotational transform of coil
-            I : float
-                Current through coil
-            Returns
-            -------
-            (x, z) - x, z coordinates of coils along phi
-            """
+        return (
+            xcentre + radius * cos(angle + iota * self.phi),
+            zcentre + radius * sin(angle + iota * self.phi),
+            I,
+        )
 
-            return (
-                xcentre + radius * cos(angle + iota * self.phi),
-                zcentre + radius * sin(angle + iota * self.phi),
-                I,
+    def __init__(
+        self,
+        xcentre=0.0,
+        zcentre=0.0,
+        radius=0.8,
+        yperiod=np.pi,
+        I_coil=0.05,
+        Btor=1.0,
+        smooth=False,
+        smooth_args={},
+    ):
+        xcentre = float(xcentre)
+        zcentre = float(zcentre)
+        radius = float(radius)
+        yperiod = float(yperiod)
+        Btor = float(Btor)
+
+        iota = 2.0 * np.pi / yperiod
+
+        self.x = Symbol("x")
+        self.z = Symbol("z")
+        self.y = Symbol("y")
+        self.r = Symbol("r")
+        self.r = (self.x**2 + self.z**2) ** (0.5)
+        self.phi = Symbol("phi")
+
+        self.xcentre = xcentre
+        self.zcentre = zcentre
+        self.radius = radius
+
+        # Four coils equally spaced, alternating direction for current
+        self.coil_list = [
+            self.coil(
+                xcentre,
+                zcentre,
+                radius,
+                n * pi,
+                iota,
+                ((-1) ** np.mod(i, 2)) * I_coil,
+            )
+            for i, n in enumerate(np.arange(4) / 2.0)
+        ]
+
+        A = 0.0
+        Bx = 0.0
+        Bz = 0.0
+
+        for c in self.coil_list:
+            xc, zc, Ic = c
+            rc = (xc**2 + zc**2) ** (0.5)
+            r2 = (self.x - xc) ** 2 + (self.z - zc) ** 2
+            theta = atan2(self.z - zc, self.x - xc)  # Angle relative to coil
+
+            A -= Ic * 0.1 * log(r2)
+
+            B = Ic * 0.2 / sqrt(r2)
+
+            Bx += B * sin(theta)
+            Bz -= B * cos(theta)
+
+        By = Btor / self.x
+        self.Afunc = lambdify((self.x, self.z, self.phi), A, "numpy")
+
+        self.Bxfunc = lambdify((self.x, self.z, self.phi), Bx, "numpy")
+        self.Bzfunc = lambdify((self.x, self.z, self.phi), Bz, "numpy")
+        self.Byfunc = lambdify((self.x, self.z, self.phi), By, "numpy")
+
+    def Rfunc(self, x, z, phi):
+        return np.full(x.shape, x)
+
+
+class DommaschkPotentials(MagneticField):
+    """A magnetic field generator using the Dommaschk potentials.
+    Parameters
+    ----------
+    A: Coefficient matrix for the torodial and polidial harmonics. Form: (m,l,(a,b,c,d))
+    R_0: major radius [m]
+    B_0: magnetic field on axis [T]
+
+    Important Methods
+    -----------------
+    Bxfunc/Byfunc/Bzfunc(x,z,y):
+        Returns magnetic field in radial/torodial/z-direction
+    Sfunc(x,z,y):
+        Returns approximate magnetic surface invariant for Dommaschk potentials.
+        Use this to visualize flux surfaces
+
+
+
+    """
+
+    def __init__(self, A, R_0=1.0, B_0=1.0):
+        self.R_0 = R_0
+        self.B_0 = B_0
+
+        self.R = Symbol("R")
+        self.phi = Symbol("phi")
+        self.Z = Symbol("Z")
+
+        self.m = Symbol("m")
+        self.l = Symbol("l")
+        self.n = Symbol("n")
+        self.k = Symbol("k")
+
+        self.A = A
+
+        self.P = (
+            self.U(self.A)
+            .doit()
+            .subs([(self.R, self.R / self.R_0), (self.Z, self.Z / self.R_0)])
+        )
+        self.P_hat = (
+            self.U_hat(self.A)
+            .doit()
+            .subs([(self.R, self.R / self.R_0), (self.Z, self.Z / self.R_0)])
+        )
+
+        S = 0.5 * (
+            log(self.R / self.R_0) ** 2 + (self.Z / self.R_0) ** 2
+        ) - self.R / self.R_0 * (
+            log(self.R / self.R_0) * self.R_0 * diff(self.P_hat, self.R)
+            + self.Z * self.R / self.R_0 * diff(self.P_hat, self.Z)
+        )
+
+        Bx = R_0 * diff(self.P, self.R)
+        By = R_0 / self.R * diff(self.P, self.phi)
+        Bz = R_0 * diff(self.P, self.Z)
+
+        self.Sf = lambdify((self.R, self.phi, self.Z), S, "numpy")
+
+        self.Bxf = lambdify((self.R, self.phi, self.Z), Bx, "numpy")
+        self.Byf = lambdify((self.R, self.phi, self.Z), By, "numpy")
+        self.Bzf = lambdify((self.R, self.phi, self.Z), Bz, "numpy")
+
+    def Bxfunc(self, x, z, phi):
+        return self.Bxf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
+
+    def Byfunc(self, x, z, phi):
+        return self.Byf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
+
+    def Bzfunc(self, x, z, phi):
+        return self.Bzf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
+
+    def Sfunc(self, x, z, y):
+        """
+        Parameters
+        ----------
+        x: radial coordinates normalized to R_0
+        z: binormal coordinate
+        y: torodial angle normalized to 2*pi
+
+        Returns
+        -------
+        Approximate magnetic surface invariant S at location (x,z,y).
+        This is from the original Dommaschk paper.
+        Use to visualize flux surfaces
+        """
+        return self.Sf(x, y, z)
+
+    def Rfunc(self, x, z, phi):
+        """
+        Parameters
+        ----------
+        x: radial coordinates normalized to R_0
+        z: binormal coordinate
+        y: torodial angle normalized to 2*pi
+
+        Returns
+        -------
+        Radial coordinate x
+        """
+
+        return x
+
+    def CD(self, m, k):
+        """
+        Parameters
+        ----------
+        m: torodial harmonic
+        k: summation index in D
+
+        Returns:
+        --------
+        Sympy function CD_mk (R) (Dirichlet boudary conditions)
+        """
+
+        alpha = lambda n, b: (
+            (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+            if (n >= 0)
+            else 0.0
+        )
+        alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
+
+        beta = lambda n, b: (
+            gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+            if (n >= 0 and n < b)
+            else 0.0
+        )
+        beta_st = lambda n, b: beta(n, b) * (2 * n - b)
+
+        delta = lambda n, b: (
+            alpha(n, b) * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)]) / 2
+            if (n > 0)
+            else 0.0
+        )
+        delta_st = lambda n, b: delta(n, b) * (2 * n + b)
+
+        CD = log(1)
+        for j in range(k + 1):
+            CD += -(
+                alpha(j, m)
+                * (
+                    alpha_st(k - m - j, m) * log(self.R)
+                    + delta_st(k - m - j, m)
+                    - alpha(k - m - j, m)
+                )
+                - delta(j, m) * alpha_st(k - m - j, m)
+                + alpha(j, m) * beta_st(k - j, m)
+            ) * self.R ** (2 * j + m) + beta(j, m) * alpha_st(k - j, m) * self.R ** (
+                2 * j - m
             )
 
-        def __init__(
-            self,
-            xcentre=0.0,
-            zcentre=0.0,
-            radius=0.8,
-            yperiod=np.pi,
-            I_coil=0.05,
-            Btor=1.0,
-            smooth=False,
-            smooth_args={},
-        ):
-            xcentre = float(xcentre)
-            zcentre = float(zcentre)
-            radius = float(radius)
-            yperiod = float(yperiod)
-            Btor = float(Btor)
+        return CD
 
-            iota = 2.0 * np.pi / yperiod
+    def CN(self, m, k):
+        """
+        Parameters
+        ----------
+        m: torodial harmonic
+        k: summation index in N
 
-            self.x = Symbol("x")
-            self.z = Symbol("z")
-            self.y = Symbol("y")
-            self.r = Symbol("r")
-            self.r = (self.x**2 + self.z**2) ** (0.5)
-            self.phi = Symbol("phi")
+        Returns:
+        --------
+        Sympy function CN_mk (R) (Neumann boundary conditions)
+        """
 
-            self.xcentre = xcentre
-            self.zcentre = zcentre
-            self.radius = radius
+        alpha = lambda n, b: (
+            (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+            if (n >= 0)
+            else 0.0
+        )
+        alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
 
-            # Four coils equally spaced, alternating direction for current
-            self.coil_list = [
-                self.coil(
-                    xcentre,
-                    zcentre,
-                    radius,
-                    n * pi,
-                    iota,
-                    ((-1) ** np.mod(i, 2)) * I_coil,
-                )
-                for i, n in enumerate(np.arange(4) / 2.0)
-            ]
+        beta = lambda n, b: (
+            gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+            if (n >= 0 and n < b)
+            else 0.0
+        )
+        beta_st = lambda n, b: beta(n, b) * (2 * n - b)
 
-            A = 0.0
-            Bx = 0.0
-            Bz = 0.0
+        delta = lambda n, b: (
+            alpha(n, b) * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)]) / 2
+            if (n > 0)
+            else 0.0
+        )
+        delta_st = lambda n, b: delta(n, b) * (2 * n + b)
 
-            for c in self.coil_list:
-                xc, zc, Ic = c
-                rc = (xc**2 + zc**2) ** (0.5)
-                r2 = (self.x - xc) ** 2 + (self.z - zc) ** 2
-                theta = atan2(self.z - zc, self.x - xc)  # Angle relative to coil
+        CN = log(1)
+        for j in range(k + 1):
+            CN += (
+                alpha(j, m) * (alpha(k - m - j, m) * log(self.R) + delta(k - m - j, m))
+                - delta(j, m) * alpha(k - m - j, m)
+                + alpha(j, m) * beta(k - j, m)
+            ) * self.R ** (2 * j + m) - beta(j, m) * alpha(k - j, m) * self.R ** (
+                2 * j - m
+            )
 
-                A -= Ic * 0.1 * log(r2)
+        return CN
 
-                B = Ic * 0.2 / sqrt(r2)
+    def D(self, m, n):
+        """
+        Parameters
+        ----------
+        m: torodial mode number
+        n: summation index in  V
 
-                Bx += B * sin(theta)
-                Bz -= B * cos(theta)
+        Returns:
+        --------
+        Sympy function D_mn (R, Z) (Dirichlet boundary conditions)
+        """
 
-            By = Btor / self.x
-            self.Afunc = lambdify((self.x, self.z, self.phi), A, "numpy")
+        D = log(1)
+        k_arr = np.arange(0, int(n / 2) + 1, 1)
 
-            self.Bxfunc = lambdify((self.x, self.z, self.phi), Bx, "numpy")
-            self.Bzfunc = lambdify((self.x, self.z, self.phi), Bz, "numpy")
-            self.Byfunc = lambdify((self.x, self.z, self.phi), By, "numpy")
+        for k in k_arr:
+            D += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CD(m, k)
 
-        def Rfunc(self, x, z, phi):
-            return np.full(x.shape, x)
+        return D
 
-    class DommaschkPotentials(MagneticField):
-        """A magnetic field generator using the Dommaschk potentials.
+    def N(self, m, n):
+        """
+        Parameters
+        ----------
+        m: torodial mode number
+        n: summation index in V
+
+        Returns:
+        --------
+        Sympy function N_mn (R, Z) (Neumann boundary conditions)
+        """
+
+        N = log(1)
+        k_arr = np.arange(0, int(n / 2) + 1, 1)
+
+        for k in k_arr:
+            N += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CN(m, k)
+
+        return N
+
+    def V(self, m, l, a, b, c, d):
+        """
+        Parameters
+        ----------
+        m: torodial mode number
+        l: polodial mode number
+        a,b,c,d: Coefficients for m,l-th Dommaschk potential (elements of matrix A)
+
+        Returns:
+        --------
+        Sympy function V_ml
+        """
+
+        V = (a * cos(m * self.phi) + b * sin(m * self.phi)) * self.D(m, l) + (
+            c * cos(m * self.phi) + d * sin(m * self.phi)
+        ) * self.N(m, l - 1)
+
+        return V
+
+    def U(self, A):
+        """
         Parameters
         ----------
         A: Coefficient matrix for the torodial and polidial harmonics. Form: (m,l,(a,b,c,d))
-        R_0: major radius [m]
-        B_0: magnetic field on axis [T]
 
-        Important Methods
+        Returns
         -----------------
-        Bxfunc/Byfunc/Bzfunc(x,z,y):
-            Returns magnetic field in radial/torodial/z-direction
-        Sfunc(x,z,y):
-            Returns approximate magnetic surface invariant for Dommaschk potentials.
-            Use this to visualize flux surfaces
+        U: Superposition of all modes given in A
 
+        """
+        U = self.phi
+        for i in range(A.shape[0]):
+            for j in range(A.shape[1]):
+                if A[i, j, 0] or A[i, j, 1] or A[i, j, 2] or A[i, j, 3] != 0:
+                    U += self.V(i, j, A[i, j, 0], A[i, j, 1], A[i, j, 2], A[i, j, 3])
 
+        return U
+
+    def V_hat(self, m, l, a, b, c, d):
+        """
+        Parameters
+        ----------
+        m: torodial mode number
+        l: polodial mode number
+        a,b,c,d: Coefficients for m,l-th Dommaschk potential (elements of matrix A)
+
+        Returns:
+        --------
+        Sympy function V_hat_ml; Similar to V; needed for calculation of magnetic surface invariant S
+        """
+
+        V = (
+            a * cos(m * self.phi - np.pi / 2) + b * sin(m * self.phi - np.pi / 2)
+        ) * self.D(m, l) + (
+            c * cos(m * self.phi - np.pi / 2) + d * sin(m * self.phi - np.pi / 2)
+        ) * self.N(
+            m, l - 1
+        )
+
+        return V
+
+    def U_hat(self, A):
+        """
+        Parameters
+        ----------
+        A: Coefficient matrix for the torodial and polidial harmonics. Form: (m,l,(a,b,c,d))
+
+        Returns
+        -----------------
+        U: Superposition of all modes given in A
 
         """
 
-        def __init__(self, A, R_0=1.0, B_0=1.0):
-            self.R_0 = R_0
-            self.B_0 = B_0
-
-            self.R = Symbol("R")
-            self.phi = Symbol("phi")
-            self.Z = Symbol("Z")
-
-            self.m = Symbol("m")
-            self.l = Symbol("l")
-            self.n = Symbol("n")
-            self.k = Symbol("k")
-
-            self.A = A
-
-            self.P = (
-                self.U(self.A)
-                .doit()
-                .subs([(self.R, self.R / self.R_0), (self.Z, self.Z / self.R_0)])
-            )
-            self.P_hat = (
-                self.U_hat(self.A)
-                .doit()
-                .subs([(self.R, self.R / self.R_0), (self.Z, self.Z / self.R_0)])
-            )
-
-            S = 0.5 * (
-                log(self.R / self.R_0) ** 2 + (self.Z / self.R_0) ** 2
-            ) - self.R / self.R_0 * (
-                log(self.R / self.R_0) * self.R_0 * diff(self.P_hat, self.R)
-                + self.Z * self.R / self.R_0 * diff(self.P_hat, self.Z)
-            )
-
-            Bx = R_0 * diff(self.P, self.R)
-            By = R_0 / self.R * diff(self.P, self.phi)
-            Bz = R_0 * diff(self.P, self.Z)
-
-            self.Sf = lambdify((self.R, self.phi, self.Z), S, "numpy")
-
-            self.Bxf = lambdify((self.R, self.phi, self.Z), Bx, "numpy")
-            self.Byf = lambdify((self.R, self.phi, self.Z), By, "numpy")
-            self.Bzf = lambdify((self.R, self.phi, self.Z), Bz, "numpy")
-
-        def Bxfunc(self, x, z, phi):
-            return self.Bxf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
-
-        def Byfunc(self, x, z, phi):
-            return self.Byf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
-
-        def Bzfunc(self, x, z, phi):
-            return self.Bzf(x, phi, z) / self.Byf(self.R_0, 0, 0) * self.B_0
-
-        def Sfunc(self, x, z, y):
-            """
-            Parameters
-            ----------
-            x: radial coordinates normalized to R_0
-            z: binormal coordinate
-            y: torodial angle normalized to 2*pi
-
-            Returns
-            -------
-            Approximate magnetic surface invariant S at location (x,z,y).
-            This is from the original Dommaschk paper.
-            Use to visualize flux surfaces
-            """
-            return self.Sf(x, y, z)
-
-        def Rfunc(self, x, z, phi):
-            """
-            Parameters
-            ----------
-            x: radial coordinates normalized to R_0
-            z: binormal coordinate
-            y: torodial angle normalized to 2*pi
-
-            Returns
-            -------
-            Radial coordinate x
-            """
-
-            return x
-
-        def CD(self, m, k):
-            """
-            Parameters
-            ----------
-            m: torodial harmonic
-            k: summation index in D
-
-            Returns:
-            --------
-            Sympy function CD_mk (R) (Dirichlet boudary conditions)
-            """
-
-            alpha = lambda n, b: (
-                (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
-                if (n >= 0)
-                else 0.0
-            )
-            alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
-
-            beta = lambda n, b: (
-                gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
-                if (n >= 0 and n < b)
-                else 0.0
-            )
-            beta_st = lambda n, b: beta(n, b) * (2 * n - b)
-
-            delta = lambda n, b: (
-                alpha(n, b)
-                * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
-                / 2
-                if (n > 0)
-                else 0.0
-            )
-            delta_st = lambda n, b: delta(n, b) * (2 * n + b)
-
-            CD = log(1)
-            for j in range(k + 1):
-                CD += -(
-                    alpha(j, m)
-                    * (
-                        alpha_st(k - m - j, m) * log(self.R)
-                        + delta_st(k - m - j, m)
-                        - alpha(k - m - j, m)
-                    )
-                    - delta(j, m) * alpha_st(k - m - j, m)
-                    + alpha(j, m) * beta_st(k - j, m)
-                ) * self.R ** (2 * j + m) + beta(j, m) * alpha_st(
-                    k - j, m
-                ) * self.R ** (
-                    2 * j - m
-                )
-
-            return CD
-
-        def CN(self, m, k):
-            """
-            Parameters
-            ----------
-            m: torodial harmonic
-            k: summation index in N
-
-            Returns:
-            --------
-            Sympy function CN_mk (R) (Neumann boundary conditions)
-            """
-
-            alpha = lambda n, b: (
-                (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
-                if (n >= 0)
-                else 0.0
-            )
-            alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
-
-            beta = lambda n, b: (
-                gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
-                if (n >= 0 and n < b)
-                else 0.0
-            )
-            beta_st = lambda n, b: beta(n, b) * (2 * n - b)
-
-            delta = lambda n, b: (
-                alpha(n, b)
-                * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
-                / 2
-                if (n > 0)
-                else 0.0
-            )
-            delta_st = lambda n, b: delta(n, b) * (2 * n + b)
-
-            CN = log(1)
-            for j in range(k + 1):
-                CN += (
-                    alpha(j, m)
-                    * (alpha(k - m - j, m) * log(self.R) + delta(k - m - j, m))
-                    - delta(j, m) * alpha(k - m - j, m)
-                    + alpha(j, m) * beta(k - j, m)
-                ) * self.R ** (2 * j + m) - beta(j, m) * alpha(k - j, m) * self.R ** (
-                    2 * j - m
-                )
-
-            return CN
-
-        def D(self, m, n):
-            """
-            Parameters
-            ----------
-            m: torodial mode number
-            n: summation index in  V
-
-            Returns:
-            --------
-            Sympy function D_mn (R, Z) (Dirichlet boundary conditions)
-            """
-
-            D = log(1)
-            k_arr = np.arange(0, int(n / 2) + 1, 1)
-
-            for k in k_arr:
-                D += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CD(m, k)
-
-            return D
-
-        def N(self, m, n):
-            """
-            Parameters
-            ----------
-            m: torodial mode number
-            n: summation index in V
-
-            Returns:
-            --------
-            Sympy function N_mn (R, Z) (Neumann boundary conditions)
-            """
-
-            N = log(1)
-            k_arr = np.arange(0, int(n / 2) + 1, 1)
-
-            for k in k_arr:
-                N += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CN(m, k)
-
-            return N
-
-        def V(self, m, l, a, b, c, d):
-            """
-            Parameters
-            ----------
-            m: torodial mode number
-            l: polodial mode number
-            a,b,c,d: Coefficients for m,l-th Dommaschk potential (elements of matrix A)
-
-            Returns:
-            --------
-            Sympy function V_ml
-            """
-
-            V = (a * cos(m * self.phi) + b * sin(m * self.phi)) * self.D(m, l) + (
-                c * cos(m * self.phi) + d * sin(m * self.phi)
-            ) * self.N(m, l - 1)
-
-            return V
-
-        def U(self, A):
-            """
-            Parameters
-            ----------
-            A: Coefficient matrix for the torodial and polidial harmonics. Form: (m,l,(a,b,c,d))
-
-            Returns
-            -----------------
-            U: Superposition of all modes given in A
-
-            """
-            U = self.phi
-            for i in range(A.shape[0]):
-                for j in range(A.shape[1]):
-                    if A[i, j, 0] or A[i, j, 1] or A[i, j, 2] or A[i, j, 3] != 0:
-                        U += self.V(
-                            i, j, A[i, j, 0], A[i, j, 1], A[i, j, 2], A[i, j, 3]
-                        )
-
-            return U
-
-        def V_hat(self, m, l, a, b, c, d):
-            """
-            Parameters
-            ----------
-            m: torodial mode number
-            l: polodial mode number
-            a,b,c,d: Coefficients for m,l-th Dommaschk potential (elements of matrix A)
-
-            Returns:
-            --------
-            Sympy function V_hat_ml; Similar to V; needed for calculation of magnetic surface invariant S
-            """
-
-            V = (
-                a * cos(m * self.phi - np.pi / 2) + b * sin(m * self.phi - np.pi / 2)
-            ) * self.D(m, l) + (
-                c * cos(m * self.phi - np.pi / 2) + d * sin(m * self.phi - np.pi / 2)
-            ) * self.N(
-                m, l - 1
-            )
-
-            return V
-
-        def U_hat(self, A):
-            """
-            Parameters
-            ----------
-            A: Coefficient matrix for the torodial and polidial harmonics. Form: (m,l,(a,b,c,d))
-
-            Returns
-            -----------------
-            U: Superposition of all modes given in A
-
-            """
-
-            U = log(1)
-            for i in range(A.shape[0]):
-                if i != 0:
-                    i_inv = 1 / i
-                else:
-                    i_inv = np.nan
-                for j in range(A.shape[1]):
-                    if A[i, j, 0] or A[i, j, 1] or A[i, j, 2] or A[i, j, 3] != 0:
-                        U += self.V_hat(
-                            i, j, A[i, j, 0], A[i, j, 1], A[i, j, 2], A[i, j, 3]
-                        ) * Piecewise((self.phi, i == 0), (i_inv, i > 0))
-
-            return U
-
-    class Screwpinch(MagneticField):
-        def __init__(
-            self, xcentre=1.5, zcentre=0.0, shear=0, yperiod=2 * np.pi, Btor=1.0
-        ):
-            self.x = Symbol("x")
-            self.z = Symbol("z")
-            self.y = Symbol("y")
-            self.r = Symbol("r")
-            self.r = ((self.x - xcentre) ** 2 + (self.z - zcentre) ** 2) ** (0.5)
-
-            self.phi = Symbol("phi")
-
-            alpha = shear
-            self.theta = atan2(self.z - zcentre, self.x - xcentre)
-            A = alpha * self.r**2
-            Bx = -alpha * self.r * self.r * sin(self.theta)
-            Bz = alpha * self.r * self.r * cos(self.theta)
-            By = Btor / self.x
-
-            self.Afunc = lambdify((self.x, self.z, self.phi), A, "numpy")
-            self.Bxfunc = lambdify((self.x, self.z, self.phi), Bx, "numpy")
-            self.Bzfunc = lambdify((self.x, self.z, self.phi), Bz, "numpy")
-            self.Byfunc = lambdify((self.x, self.z, self.phi), By, "numpy")
-
-        def Rfunc(self, x, z, phi):
-            return np.full(x.shape, x)
-
-except ImportError:
-
-    class StraightStellarator(MagneticField):
-        """
-        Invalid StraightStellarator, since no Sympy module.
-
-        Rather than printing an error on startup, which may
-        be missed or ignored, this raises
-        an exception if StraightStellarator is ever used.
-        """
-
-        def __init__(self, *args, **kwargs):
-            raise ImportError(
-                "No Sympy module: Can't generate StraightStellarator fields"
-            )
-
-    class RotatingEllipse(MagneticField):
-        """
-        Invalid RotatingEllipse, since no Sympy module.
-        Rather than printing an error on startup, which may
-        be missed or ignored, this raises
-        an exception if StraightStellarator is ever used.
-        """
-
-        def __init__(self, *args, **kwargs):
-            raise ImportError("No Sympy module: Can't generate RotatingEllipse fields")
-
-    class Screwpinch(MagneticField):
-        """
-        Invalid screwpinch, since no Sympy module.
-        Rather than printing an error on startup, which may
-        be missed or ignored, this raises
-        an exception if StraightStellarator is ever used.
-        """
-
-        def __init__(self, *args, **kwargs):
-            raise ImportError("No Sympy module: Can't generate screwpinch fields")
+        U = log(1)
+        for i in range(A.shape[0]):
+            if i != 0:
+                i_inv = 1 / i
+            else:
+                i_inv = np.nan
+            for j in range(A.shape[1]):
+                if A[i, j, 0] or A[i, j, 1] or A[i, j, 2] or A[i, j, 3] != 0:
+                    U += self.V_hat(
+                        i, j, A[i, j, 0], A[i, j, 1], A[i, j, 2], A[i, j, 3]
+                    ) * Piecewise((self.phi, i == 0), (i_inv, i > 0))
+
+        return U
+
+
+class Screwpinch(MagneticField):
+    def __init__(self, xcentre=1.5, zcentre=0.0, shear=0, yperiod=2 * np.pi, Btor=1.0):
+        self.x = Symbol("x")
+        self.z = Symbol("z")
+        self.y = Symbol("y")
+        self.r = Symbol("r")
+        self.r = ((self.x - xcentre) ** 2 + (self.z - zcentre) ** 2) ** (0.5)
+
+        self.phi = Symbol("phi")
+
+        alpha = shear
+        self.theta = atan2(self.z - zcentre, self.x - xcentre)
+        A = alpha * self.r**2
+        Bx = -alpha * self.r * self.r * sin(self.theta)
+        Bz = alpha * self.r * self.r * cos(self.theta)
+        By = Btor / self.x
+
+        self.Afunc = lambdify((self.x, self.z, self.phi), A, "numpy")
+        self.Bxfunc = lambdify((self.x, self.z, self.phi), Bx, "numpy")
+        self.Bzfunc = lambdify((self.x, self.z, self.phi), Bz, "numpy")
+        self.Byfunc = lambdify((self.x, self.z, self.phi), By, "numpy")
+
+    def Rfunc(self, x, z, phi):
+        return np.full(x.shape, x)
 
 
 class VMEC(MagneticField):
