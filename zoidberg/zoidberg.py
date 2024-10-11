@@ -242,12 +242,8 @@ def write_maps(
         Bmag[:, yindex, :] = magnetic_field.Bmag(pol_grid.R, pol_grid.Z, ypos)
         pressure[:, yindex, :] = magnetic_field.pressure(pol_grid.R, pol_grid.Z, ypos)
         By = magnetic_field.Byfunc(pol_grid.R, pol_grid.Z, ypos)
-        metric["g_yy"][:, yindex, :] = (
-            metric["g_yy"][:, yindex, :] * (Bmag[:, yindex, :] / By) ** 2
-        )
-        metric["gyy"][:, yindex, :] = (
-            metric["gyy"][:, yindex, :] * (By / Bmag[:, yindex, :]) ** 2
-        )
+        metric["g_yy"][:, yindex, :] *= (Bmag[:, yindex, :] / By) ** 2
+        metric["gyy"][:, yindex, :] *= (By / Bmag[:, yindex, :]) ** 2
     print("done Bfield stuff")
 
     # Get attributes from magnetic field (e.g. psi)
