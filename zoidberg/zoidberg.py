@@ -177,6 +177,23 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
     return maps
 
 
+def update_metric_names(metric):
+    # Translate between output variable names and metric names
+    # Map from new to old names. Anything not in this dict
+    # is unchanged
+    name_changes = {
+        "g_yy": "g_22",
+        "gyy": "g22",
+        "gxx": "g11",
+        "gxz": "g13",
+        "gzz": "g33",
+        "g_xx": "g_11",
+        "g_xz": "g_13",
+        "g_zz": "g_33",
+    }
+    return {name_changes.get(key, key): value for key, value in metric.items()}
+
+
 def write_maps(
     grid,
     magnetic_field,
@@ -274,6 +291,9 @@ def write_maps(
         # Make dz a constant
         metric["dz"] = metric["dz"][0, 0]
 
+    if not new_names:
+        metric = update_metric_names(metric)
+
     with bdata.DataFile(gridfile, write=True, create=True, format=format) as f:
         f.write_file_attribute("title", "BOUT++ grid file")
         f.write_file_attribute("software_name", "zoidberg")
@@ -295,29 +315,8 @@ def write_maps(
         f.write("ixseps2", ixseps)
 
         # Metric tensor
-
-        if new_names:
-            name_changes = {}
-        else:
-            name_changes = {
-                "g_yy": "g_22",
-                "gyy": "g22",
-                "gxx": "g11",
-                "gxz": "g13",
-                "gzz": "g33",
-                "g_xx": "g_11",
-                "g_xz": "g_13",
-                "g_zz": "g_33",
-            }
-
-        # Translate between output variable names and metric names
-        # Map from new to old names. Anything not in this dict
-        # is output unchanged
         for key in metric:
-            name = key
-            if name in name_changes:
-                name = name_changes[name]
-            f.write(name, metric[key])
+            f.write(key, metric[key])
 
         # Magnetic field
         f.write("B", Bmag)
