@@ -257,6 +257,10 @@ def write_maps(
             )
             attributes[name] = attribute
 
+    # Add Rxy, Bxy
+    metric["Rxy"] = maps["R"]
+    metric["Bxy"] = Bmag
+
     # Metric is now 3D
     if metric2d:
         # Remove the Z dimension from metric components
@@ -269,12 +273,6 @@ def write_maps(
                 pass
         # Make dz a constant
         metric["dz"] = metric["dz"][0, 0]
-        # Add Rxy, Bxy
-        metric["Rxy"] = maps["R"][:, :, 0]
-        metric["Bxy"] = Bmag[:, :, 0]
-    else:
-        metric["Rxy"] = maps["R"]
-        metric["Bxy"] = Bmag
 
     with bdata.DataFile(gridfile, write=True, create=True, format=format) as f:
         f.write_file_attribute("title", "BOUT++ grid file")
