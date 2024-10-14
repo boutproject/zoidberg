@@ -9,9 +9,7 @@ except PackageNotFoundError:
 
     __version__ = get_version(root="..", relative_to=__file__)
 
-import zoidberg
-
-from . import field, fieldtracer, grid, plot
+from . import field, fieldtracer, grid, plot, zoidberg
 from .zoidberg import make_maps, write_maps
 
 __all__ = [

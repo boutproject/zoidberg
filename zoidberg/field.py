@@ -1545,7 +1545,7 @@ class W7X_vacuum(MagneticField):
             print("Making poincare plot (only works on IPP network)...")
             ## Create configuration objects
             config = tracer.types.MagneticConfig()
-            config.configIds = configuration
+            config = _set_config(config, configuration)
             pos = tracer.types.Points3D()
 
             pos.x1 = np.linspace(5.6, 6.2, 80)
@@ -1673,7 +1673,7 @@ class W7X_vacuum(MagneticField):
         )
 
         config = tracer.types.MagneticConfig()
-        config.configIds = configuration
+        config = _set_config(config, configuration)
         settings = tracer.types.AxisSettings()
         res = tracer.service.findAxis(0.05, config, settings)
 
@@ -1742,7 +1742,7 @@ class W7X_vacuum(MagneticField):
 
         ## Create configuration objects
         config = tracer.types.MagneticConfig()
-        config.configIds = configuration
+        config = _set_config(config, configuration)
 
         ## Call tracer service
         redo = 2
@@ -1764,6 +1764,57 @@ class W7X_vacuum(MagneticField):
             else:
                 break
         return np.array((res.field.x1, res.field.x2, res.field.x3)).reshape(x.shape)
+
+
+def _set_config(config, configuration):
+    if isinstance(configuration, int):
+        if configuration >= 0:
+            config.configIds = configuration
+            return config
+    known = {
+        -1: [1, 1, 1, 1, 1, 1, 1],
+        "FMM002": [13423, 13423, 13423, 13423, 13423, -3544, -3544],
+    }
+    currents = known[configuration]
+    currents = np.array([108] * 5 + [36] * 2) * np.array(currents)
+    print(currents)
+    coils = (
+        [160, 165, 170, 175, 180, 185, 190, 195, 200, 205]
+        + [161, 166, 171, 176, 181, 186, 191, 196, 201, 206]
+        + [162, 167, 172, 177, 182, 187, 192, 197, 202, 207]
+        + [163, 168, 173, 178, 183, 188, 193, 198, 203, 208]
+        + [164, 169, 174, 179, 184, 189, 194, 199, 204, 209]
+        + [210, 212, 214, 216, 218, 220, 222, 224, 226, 228]
+        + [211, 213, 215, 217, 219, 221, 223, 225, 227, 229]
+        + [230, 231, 232, 233, 234, 235, 236, 237, 238, 239]
+        + [350, 241, 351, 352, 353]
+    )
+
+    if len(currents) == 7:
+        currents = np.array([[x] * 10 for x in currents]).flatten()
+    elif len(currents) == 7 + 10 + 5:
+        currents = np.append(
+            np.array([[x] * 10 for x in currents[:7]]).flatten(), currents[7:]
+        )
+    elif len(currents) == 10:
+        currents = np.append(
+            np.array([[x] * 10 for x in currents[:7]]).flatten(),
+            np.append(np.array([currents[7:9]] * 5), [currents[9]] * 5),
+        )
+    if len(currents) == 70:
+        coils = coils[:70]
+    # I1, I1, I1, I1, I1, I1, I1, I1, I1, I1,
+    # I2, I2, I2, I2, I2, I2, I2, I2, I2, I2,
+    # I3, I3, I3, I3, I3, I3, I3, I3, I3, I3,
+    # I4, I4, I4, I4, I4, I4, I4, I4, I4, I4,
+    # I5, I5, I5, I5, I5, I5, I5, I5, I5, I5,
+    # IA, IA, IA, IA, IA, IA, IA, IA, IA, IA,
+    # IB, IB, IB, IB, IB, IB, IB, IB, IB, IB,
+    # Icc1, Icc2, Icc3, Icc4, Icc5, Icc6, Icc7, Icc8, Icc9, Icc10,
+    # Itc1, Itc2, Itc3, Itc4, Itc5]
+    config.coilsIds = coils
+    config.coilsIdsCurrents = np.array(currents)
+    return config
 
 
 class W7X_vacuum_on_demand:
