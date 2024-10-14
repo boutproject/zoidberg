@@ -522,7 +522,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
             "g_xz": g[..., 0, 1],
             "gzz": ginv[..., 1, 1],
             "g_zz": g[..., 1, 1],
-            "J": JB,
+            # "J": JB,
         }
 
 
