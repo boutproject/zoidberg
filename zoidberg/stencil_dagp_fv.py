@@ -61,12 +61,6 @@ def load(fn):
 
 
 def doit(pols, plot=False):
-    # with DF(fn) as f:
-    #    RZ = [f[k] for k in "RZ"]
-    # log("opened")
-    # RZ = np.array(RZ)
-    # log("read")
-
     RZs = []
 
     ### Calculate Volume of the cell
@@ -188,8 +182,6 @@ def doit(pols, plot=False):
     coefsX = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0))
     log("done")
 
-    # In[154]:
-
     # AreaZplus
     # Z
     # Λ
@@ -238,12 +230,11 @@ def doit(pols, plot=False):
     test(RZ, volume, coefsX, coefsZ, plot=plot)
 
     return write(RZ, volume, coefsX, coefsZ)
-    # In[155]:
 
 
 def test(RZ, volume, coefsX, coefsZ, plot=False):
     inp = np.sin(RZ[1])
-    ana = -np.sin(RZ[1])  # + np.cos(RZ[0])/RZ[0]
+    ana = -np.sin(RZ[1])
     if 0:
         inp = RZ[1] ** 2
         ana = RZ[1] ** 0
@@ -253,12 +244,6 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
     if 0:
         inp = RZ[0] ** 3
         ana = 6 * np.sin(RZ[0])
-
-    # print("Fuck it up!!!")
-    # coefsX[..., 1] *= -1
-    # coefsZ[..., 0] *= -1
-
-    # In[156]:
 
     def xp(ijk):
         return (ijk[0] + 1, *ijk[1:])
@@ -373,5 +358,4 @@ if __name__ == "__main__":
 
     for fn in sys.argv[1:]:
         print(fn)
-        # doit(fn)
         test(*load(fn), plot=plot)
