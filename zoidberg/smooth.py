@@ -214,14 +214,10 @@ def gen_newr(r, z, splitedlist, bounds, plot):
             # if np.max(np.abs(x.fun)) > 1e-5:
             if x.optimality > 1e-8:
                 have_failed = True
-                # print(x.cost, x.optimality, np.max(np.abs(x.fun)), x.fun)  # x.fun)
                 deb += [[x.cost, x.optimality, np.max(np.abs(x.fun))]]
                 continue
             x0 = x.x
             newsigns = (x0[0], x0[1], np.sum(x0[:3]), np.sum(x0[3:]))
-            # print(f"oldsigns: {signs}\nnewsigns: {newsigns}")
-        # print("b", b)
-        # print("x", x)
 
         S = np.linspace(0, 1, num=len(alist))
 
@@ -253,6 +249,19 @@ def gen_newr(r, z, splitedlist, bounds, plot):
                 + (x0[6] * S**3) / 3 / fac
                 + x0[7] * S**4 / 4
             )
+
+        # Check spacing at beginning and end
+        dstart = (X[0] - newr[start_index - 1]) ** 2 + (
+            Y[0] - newz[start_index - 1]
+        ) ** 2
+        dend = (X[-1] - newr[start_index + len(alist)]) ** 2 + (
+            Y[-1] - newz[start_index + len(alist)]
+        ) ** 2
+        maxfac = 3
+        if not (maxfac**-2 < dstart / dend < maxfac**2):
+            print(f"dstart / dend is {dstart/dend} - check has failed")
+            deb += [[dstart, dend, 3]]
+            have_failed = True
 
         if start_index < 0:
             newr = rollup(newr, start_index, len(alist), X)
