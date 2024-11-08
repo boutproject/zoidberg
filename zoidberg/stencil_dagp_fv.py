@@ -5,10 +5,10 @@ import time
 
 time_start = time.time()  # noqa
 
-from boututils.datafile import DataFile as DF
-import numpy as np
 import sys
 
+import numpy as np
+from boututils.datafile import DataFile as DF
 
 verbose = 1
 
