@@ -15,6 +15,11 @@ modes = [
 ]
 
 
+class FixedCurvedSlab(zb.field.CurvedSlab):
+    def Rfunc(self, x, z, phi):
+        return x
+
+
 def gen_name(*args):
     nx, ny, nz, R0, r0, r1, mode = args
     return f"laplace_{modes[mode][0]}_{nx}_{ny}_{nz}_{R0}.fci.nc"
@@ -40,7 +45,7 @@ def gen_grid(nx, ny, nz, R0, r0, r1, mode=0):
         plt.show()
     pol_grid = zb.poloidal_grid.StructuredPoloidalGrid(R, Z)
 
-    field = zb.field.CurvedSlab(Bz=0, Bzprime=0, Rmaj=R0)
+    field = FixedCurvedSlab(Bz=0, Bzprime=0, Rmaj=R0)
     grid = zb.grid.Grid(pol_grid, phi, 5, yperiodic=True)
 
     fn = gen_name(*args)
