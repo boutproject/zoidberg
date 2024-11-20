@@ -189,9 +189,8 @@ class RZline:
         if theta is None:
             return self.R, self.Z
         n = len(self.R)
-        theta = np.remainder(theta, 2.0 * pi)
         dtheta = 2.0 * np.pi / n
-        ind = np.trunc(theta / dtheta).astype(int)
+        ind = np.trunc(theta / dtheta).astype(int) % n
         rem = np.remainder(theta, dtheta)
         indp = (ind + 1) % n
         return (rem * self.R[indp] + (1.0 - rem) * self.R[ind]), (
@@ -462,7 +461,7 @@ def line_from_points_poly(rarray, zarray, show=False, spline_order=None):
 
         rl, zl = line.position(theta)
 
-        ind = np.floor(float(i) * theta / (2.0 * np.pi))
+        ind = int(np.floor(float(i) * theta / (2.0 * np.pi)))
 
         # Insert after this index
 
@@ -483,6 +482,107 @@ def line_from_points_poly(rarray, zarray, show=False, spline_order=None):
     if show and plotting_available:
         plt.show()
     return RZline(rvals, zvals, spline_order=spline_order)
+
+
+def line_from_points_fast(rarray, zarray, **kw):
+    """
+    Find a periodic line which goes through the given (r,z) points.
+
+    This version is particularly fast, but fails if the points are not
+    sufficiently close to a circle.
+    """
+    rz = rarray, zarray
+    cent = [np.mean(x) for x in rz]
+    dist = [a - b for (a, b) in zip(rz, cent)]
+    angle = np.arctan2(*dist)
+    ind = np.argsort(angle)
+    return RZline(*[x[ind] for x in rz], **kw)
+
+
+def line_from_points_two_opt(rarray, zarray, opt=1e-3, **kwargs):
+    """This is probably way to slow.
+
+    Use the two opt algorithm:
+    From https://stackoverflow.com/a/44080908
+    License: CC-BY-SA 4.0
+    """
+    # Calculate the euclidian distance in n-space of the route r traversing cities c, ending at the path start.
+    path_distance = lambda r, c: np.sum(
+        [np.linalg.norm(c[r[p]] - c[r[p - 1]]) for p in range(len(r))]
+    )
+    # Reverse the order of all elements from element i to element k in array r.
+    two_opt_swap = lambda r, i, k: np.concatenate(
+        (r[0:i], r[k : -len(r) + i - 1 : -1], r[k + 1 : len(r)])
+    )
+
+    # 2-opt Algorithm adapted from https://en.wikipedia.org/wiki/2-opt
+    def two_opt(cities, improvement_threshold):
+        # Make an array of row numbers corresponding to cities.
+        route = np.arange(cities.shape[0])
+        improvement_factor = 1
+        best_distance = path_distance(route, cities)
+        while improvement_factor > improvement_threshold:
+            # Record the distance at the beginning of the loop.
+            distance_to_beat = best_distance
+            # From each city except the first and last,
+            for swap_first in range(1, len(route) - 2):
+                # to each of the cities following,
+                for swap_last in range(swap_first + 1, len(route)):
+                    # try reversing the order of these cities
+                    new_route = two_opt_swap(route, swap_first, swap_last)
+                    # and check the total distance with this modification.
+                    new_distance = path_distance(new_route, cities)
+                    # If the path distance is an improvement,
+                    if new_distance < best_distance:
+                        route = new_route
+                        best_distance = new_distance
+                # Calculate how much the route has improved.
+                improvement_factor = 1 - best_distance / distance_to_beat
+        return route
+
+    l = line_from_points_fast(rarray, zarray, **kwargs)
+    cities = np.array([l.R, l.Z]).T
+    route = two_opt(cities, opt)
+    R, Z = cities[route].T
+    return RZline(R, Z, **kwargs)
+
+
+def line_from_points_convex_hull(rarray, zarray, **kwargs):
+    """
+    Find a periodic line which goes through the given (r,z) points
+
+    This function uses an alphashape to find the boundary, and then projects
+    the points on the boundary for sorting.
+
+    This requires shapely
+    """
+    import shapely as sg
+
+    rz = np.array((rarray, zarray)).T
+    shape = sg.MultiPoint(rz).convex_hull.exterior
+    theta = [shape.project(sg.Point(*p)) for p in rz]
+    ind = np.argsort(theta)
+    return RZline(*rz[ind].T)
+
+
+def line_from_points_alphashape(rarray, zarray, alpha=2.0, **kwargs):
+    """
+    Find a periodic line which goes through the given (r,z) points
+
+    This function uses an alphashape to find the boundary, and then projects
+    the points on the boundary for sorting.
+
+    This requires shapely and alphashape
+    """
+    import alphashape
+    import shapely as sg
+
+    rz = np.array((rarray, zarray)).T
+    shape = alphashape.alphashape(rz, alpha)
+    shape = shape.exterior
+    theta = [shape.project(sg.Point(*p)) for p in rz]
+    ind = np.argsort(theta)
+    return RZline(*rz[ind].T)
 
 
 def line_from_points(

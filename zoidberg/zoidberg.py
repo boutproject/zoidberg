@@ -8,6 +8,8 @@ from boututils import datafile as bdata
 from zoidberg import __version__
 
 from . import fieldtracer
+from .grid import Grid
+from .poloidal_grid import StructuredPoloidalGrid
 
 try:
     from tqdm.auto import tqdm
@@ -177,6 +179,57 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
     return maps
 
 
+def update_metric_names(metric):
+    # Translate between output variable names and metric names
+    # Map from new to old names. Anything not in this dict
+    # is unchanged
+    name_changes = {
+        "g_yy": "g_22",
+        "gyy": "g22",
+        "gxx": "g11",
+        "gxz": "g13",
+        "gzz": "g33",
+        "g_xx": "g_11",
+        "g_xz": "g_13",
+        "g_zz": "g_33",
+    }
+    return {name_changes.get(key, key): value for key, value in metric.items()}
+
+
+def get_metric(grid, magnetic_field):
+    nx, ny, nz = grid.shape
+    # Get metric tensor
+    metric = grid.metric()
+
+    # Check if the magnetic field is in cylindrical coordinates
+    # If so, we need to change the gyy and g_yy metrics
+    pol_grid, ypos = grid.getPoloidalGrid(0)
+    Rmaj = magnetic_field.Rfunc(pol_grid.R, pol_grid.Z, ypos)
+    if Rmaj is not None:
+        # In cylindrical coordinates
+        Rmaj = np.zeros(grid.shape)
+        for yindex in range(grid.numberOfPoloidalGrids()):
+            pol_grid, ypos = grid.getPoloidalGrid(yindex)
+            Rmaj[:, yindex, :] = magnetic_field.Rfunc(pol_grid.R, pol_grid.Z, ypos)
+        metric["gyy"] = 1.0 / Rmaj**2
+        metric["g_yy"] = Rmaj**2
+
+    # Get magnetic field and pressure
+    Bmag = np.zeros(grid.shape)
+    pressure = np.zeros(grid.shape)
+    print("starting Bfield stuff")
+    for yindex in range(grid.numberOfPoloidalGrids()):
+        pol_grid, ypos = grid.getPoloidalGrid(yindex)
+        Bmag[:, yindex, :] = magnetic_field.Bmag(pol_grid.R, pol_grid.Z, ypos)
+        pressure[:, yindex, :] = magnetic_field.pressure(pol_grid.R, pol_grid.Z, ypos)
+        By = magnetic_field.Byfunc(pol_grid.R, pol_grid.Z, ypos)
+        metric["g_yy"][:, yindex, :] *= (Bmag[:, yindex, :] / By) ** 2
+        metric["gyy"][:, yindex, :] *= (By / Bmag[:, yindex, :]) ** 2
+    print("done Bfield stuff")
+
+    return metric, Bmag, pressure
+
+
 def write_maps(
     grid,
     magnetic_field,
@@ -215,40 +268,36 @@ def write_maps(
 
 
     """
+    metric, Bmag, pressure = get_metric(grid, magnetic_field)
 
     nx, ny, nz = grid.shape
-    # Get metric tensor
-    metric = grid.metric()
 
-    # Check if the magnetic field is in cylindrical coordinates
-    # If so, we need to change the gyy and g_yy metrics
-    pol_grid, ypos = grid.getPoloidalGrid(0)
-    Rmaj = magnetic_field.Rfunc(pol_grid.R, pol_grid.Z, ypos)
-    if Rmaj is not None:
-        # In cylindrical coordinates
-        Rmaj = np.zeros(grid.shape)
-        for yindex in range(grid.numberOfPoloidalGrids()):
-            pol_grid, ypos = grid.getPoloidalGrid(yindex)
-            Rmaj[:, yindex, :] = magnetic_field.Rfunc(pol_grid.R, pol_grid.Z, ypos)
-        metric["gyy"] = 1.0 / Rmaj**2
-        metric["g_yy"] = Rmaj**2
+    # Add Rxy, Bxy
+    metric["Rxy"] = maps["R"]
+    metric["Bxy"] = Bmag
 
-    # Get magnetic field and pressure
-    Bmag = np.zeros(grid.shape)
-    pressure = np.zeros(grid.shape)
-    print("starting Bfield stuff")
-    for yindex in range(grid.numberOfPoloidalGrids()):
-        pol_grid, ypos = grid.getPoloidalGrid(yindex)
-        Bmag[:, yindex, :] = magnetic_field.Bmag(pol_grid.R, pol_grid.Z, ypos)
-        pressure[:, yindex, :] = magnetic_field.pressure(pol_grid.R, pol_grid.Z, ypos)
-        By = magnetic_field.Byfunc(pol_grid.R, pol_grid.Z, ypos)
-        metric["g_yy"][:, yindex, :] = (
-            metric["g_yy"][:, yindex, :] * (Bmag[:, yindex, :] / By) ** 2
+    nslice = maps["MYG"]
+    # Loop over offsets {1, ... nslice, -1, ... -nslice}
+    for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
+        par_pgrids, ypar = np.array(
+            [grid.getPoloidalGrid(i + offset) for i in range(ny)], dtype=object
+        ).T
+        par_pgrids = [StructuredPoloidalGrid(p.R, p.Z) for p in par_pgrids]
+        par_grid = Grid(
+            par_pgrids,
+            ypar,
+            Ly=grid.Ly,
+            yperiodic=grid.yperiodic,
         )
-        metric["gyy"][:, yindex, :] = (
-            metric["gyy"][:, yindex, :] * (By / Bmag[:, yindex, :]) ** 2
-        )
-    print("done Bfield stuff")
+
+        par_metric, _, _ = get_metric(par_grid, magnetic_field)
+        if not new_names:
+            par_metric = update_metric_names(par_metric)
+
+        for k, v in par_metric.items():
+            name = parallel_slice_field_name(k, offset)
+            assert name not in metric
+            metric[name] = v
 
     # Get attributes from magnetic field (e.g. psi)
     attributes = {}
@@ -273,12 +322,9 @@ def write_maps(
                 pass
         # Make dz a constant
         metric["dz"] = metric["dz"][0, 0]
-        # Add Rxy, Bxy
-        metric["Rxy"] = maps["R"][:, :, 0]
-        metric["Bxy"] = Bmag[:, :, 0]
-    else:
-        metric["Rxy"] = maps["R"]
-        metric["Bxy"] = Bmag
+
+    if not new_names:
+        metric = update_metric_names(metric)
 
     with bdata.DataFile(gridfile, write=True, create=True, format=format) as f:
         f.write_file_attribute("title", "BOUT++ grid file")
@@ -301,32 +347,8 @@ def write_maps(
         f.write("ixseps2", ixseps)
 
         # Metric tensor
-
-        if new_names:
-            for key, val in metric.items():
-                f.write(key, val)
-        else:
-            # Translate between output variable names and metric names
-            # Map from new to old names. Anything not in this dict
-            # is output unchanged
-            name_changes = {
-                "g_yy": "g_22",
-                "gyy": "g22",
-                "gxx": "g11",
-                "gxz": "g13",
-                "gzz": "g33",
-                "g_xx": "g_11",
-                "g_xz": "g_13",
-                "g_zz": "g_33",
-            }
-            for key in metric:
-                name = key
-                if name in name_changes:
-                    name = name_changes[name]
-                f.write(name, metric[key])
-
-        if "J" in metric:
-            f.write("J", metric["J"])
+        for key in metric:
+            f.write(key, metric[key])
 
         # Magnetic field
         f.write("B", Bmag)

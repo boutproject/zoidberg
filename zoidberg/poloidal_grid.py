@@ -522,7 +522,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
             "g_xz": g[..., 0, 1],
             "gzz": ginv[..., 1, 1],
             "g_zz": g[..., 1, 1],
-            "J": JB,
+            # "J": JB,
         }
 
 
@@ -603,8 +603,10 @@ def grid_elliptic(
     return_coords=False,
     nx_outer=0,
     nx_inner=0,
+    legacy_align=False,
     inner_ort=True,
     maxfac_inner=None,
+    dz_relax=None,
 ):
     """Create a structured grid between inner and outer boundaries using
     elliptic method
@@ -715,17 +717,21 @@ def grid_elliptic(
             longer = inner
         ind = np.argmax(shorter.R)
         shorter = rzline.RZline(np.roll(shorter.R, -ind), np.roll(shorter.Z, -ind))
-        dr = shorter.R - longer.R[:, None]
-        dz = shorter.Z - longer.Z[:, None]
-        delta = dr**2 + dz**2
-        fac = len(longer.R) / len(shorter.R)
-        j = np.arange(len(shorter.R), dtype=int)
-        sums = [
-            np.sum(delta[np.round(j * fac).astype(int) - i, j])
-            for i in range(len(longer.R))
-        ]
-        ind = -np.argmin(sums)
-        longer = rzline.RZline(np.roll(longer.R, -ind), np.roll(longer.Z, -ind))
+        if legacy_align:
+            ind = np.argmax(longer.R)
+            longer = rzline.RZline(np.roll(longer.R, -ind), np.roll(longer.Z, -ind))
+        else:
+            dr = shorter.R - longer.R[:, None]
+            dz = shorter.Z - longer.Z[:, None]
+            delta = dr**2 + dz**2
+            fac = len(longer.R) / len(shorter.R)
+            j = np.arange(len(shorter.R), dtype=int)
+            sums = [
+                np.sum(delta[np.round(j * fac).astype(int) - i, j])
+                for i in range(len(longer.R))
+            ]
+            ind = -np.argmin(sums)
+            longer = rzline.RZline(np.roll(longer.R, -ind), np.roll(longer.Z, -ind))
         if len(inner.R) < len(outer.R):
             inner = shorter
             outer = longer
@@ -821,6 +827,7 @@ def grid_elliptic(
             return_coords=True,
             inner_ort=inner_ort,
             maxfac_inner=maxfac_inner,
+            dz_relax=dz_relax,
         )
 
         # Note: Lower case x,z are indices
@@ -918,11 +925,11 @@ def grid_elliptic(
         Z_zm = Z_zm[1:-1, :]
         Z_zp = Z_zp[1:-1, :]
 
-        eps = -0.7
-        dRdz = (R_zp - R_zm) / (2.0 * dz * (1 + eps))
+        dz_relax = dz_relax or 10 / 3
+        dRdz = dz_relax * (R_zp - R_zm) / (2.0 * dz)
         dRdx = (R_xp - R_xm) / (2.0 * dx)
 
-        dZdz = (Z_zp - Z_zm) / (2.0 * dz * (1 + eps))
+        dZdz = dz_relax * (Z_zp - Z_zm) / (2.0 * dz)
         dZdx = (Z_xp - Z_xm) / (2.0 * dx)
 
         a = dRdz**2 + dZdz**2
