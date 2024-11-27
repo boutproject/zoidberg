@@ -183,7 +183,13 @@ class MagneticField(object):
         else:
             x, z = pos
 
-        By = self.Byfunc(x, z, ycoord)
+        if hasattr("Bxyzfunc"):
+            Bx, By, Bz = self.Bxyzfunc(x, z, ycoord)
+        else:
+            Bx = self.Bxfunc(x, z, ycoord)
+            By = self.Byfunc(x, z, ycoord)
+            Bz = self.Bzfunc(x, z, ycoord)
+
         Rmaj = self.Rfunc(x, z, ycoord)  # Major radius. None if Cartesian
         if Rmaj is None:
             Rmaj = 1
@@ -196,9 +202,9 @@ class MagneticField(object):
 
         R_By = Rmaj / By
         # Rate of change of x location [m] with y angle [radians]
-        dxdphi = R_By * self.Bxfunc(x, z, ycoord)
+        dxdphi = R_By * Bx
         # Rate of change of z location [m] with y angle [radians]
-        dzdphi = R_By * self.Bzfunc(x, z, ycoord)
+        dzdphi = R_By * Bz
 
         if flatten:
             result = np.column_stack((dxdphi, dzdphi)).flatten()
@@ -1833,6 +1839,12 @@ class W7X_vacuum_on_demand:
     def Byfunc(self, x, z, phi):
         B = self.getB(x, z, phi)
         return -B[0] * np.sin(phi) + B[1] * np.cos(phi)
+
+    def Bxyzfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        Bx = B[0] * np.cos(phi) + B[1] * np.sin(phi)
+        By = -B[0] * np.sin(phi) + B[1] * np.cos(phi)
+        return Bx, By, B[2]
 
     def Bzfunc(self, *pos):
         return self.getB(*pos)[2]
