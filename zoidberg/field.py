@@ -185,29 +185,20 @@ class MagneticField(object):
 
         By = self.Byfunc(x, z, ycoord)
         Rmaj = self.Rfunc(x, z, ycoord)  # Major radius. None if Cartesian
+        if Rmaj is None:
+            Rmaj = 1
 
-        if Rmaj is not None:
-            # In cylindrical coordinates
+        if np.amin(np.abs(By)) < 1e-8:
+            # Very small By
+            raise ValueError(
+                "Small By ({}) at (x={}, y={}, z={})".format(By, x, ycoord, z)
+            )
 
-            if np.amin(np.abs(By)) < 1e-8:
-                # Very small By
-                print(x, z, ycoord, By)
-                raise ValueError(
-                    "Small By ({}) at (x={}, y={}, z={})".format(By, x, ycoord, z)
-                )
-
-            R_By = Rmaj / By
-            # Rate of change of x location [m] with y angle [radians]
-            dxdphi = R_By * self.Bxfunc(x, z, ycoord)
-            # Rate of change of z location [m] with y angle [radians]
-            dzdphi = R_By * self.Bzfunc(x, z, ycoord)
-        else:
-            # In Cartesian coordinates
-
-            # Rate of change of x location [m] with y angle [radians]
-            dxdphi = self.Bxfunc(x, z, ycoord) / By
-            # Rate of change of z location [m] with y angle [radians]
-            dzdphi = self.Bzfunc(x, z, ycoord) / By
+        R_By = Rmaj / By
+        # Rate of change of x location [m] with y angle [radians]
+        dxdphi = R_By * self.Bxfunc(x, z, ycoord)
+        # Rate of change of z location [m] with y angle [radians]
+        dzdphi = R_By * self.Bzfunc(x, z, ycoord)
 
         if flatten:
             result = np.column_stack((dxdphi, dzdphi)).flatten()
