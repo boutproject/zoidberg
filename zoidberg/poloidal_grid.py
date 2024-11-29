@@ -293,10 +293,10 @@ class StructuredPoloidalGrid(PoloidalGrid):
         self.nz = nz
 
         xinds = np.arange(nx)
-        zinds = np.arange(nz + 1)
+        zinds = np.arange(nz * 3)
         # Repeat the final point in y since periodic in y
-        R_ext = np.concatenate((R, np.reshape(R[:, 0], (nx, 1))), axis=1)
-        Z_ext = np.concatenate((Z, np.reshape(Z[:, 0], (nx, 1))), axis=1)
+        R_ext = np.concatenate((R, R, R), axis=1)
+        Z_ext = np.concatenate((Z, Z, Z), axis=1)
 
         self._spl_r = RectBivariateSpline(xinds, zinds, R_ext)
         self._spl_z = RectBivariateSpline(xinds, zinds, Z_ext)
@@ -330,8 +330,8 @@ class StructuredPoloidalGrid(PoloidalGrid):
         # Periodic in y
         zind = np.remainder(zind, nz)
 
-        R = self._spl_r(xind, zind, dx=dx, dy=dz, grid=False)
-        Z = self._spl_z(xind, zind, dx=dx, dy=dz, grid=False)
+        R = self._spl_r(xind, zind + self.nz, dx=dx, dy=dz, grid=False)
+        Z = self._spl_z(xind, zind + self.nz, dx=dx, dy=dz, grid=False)
 
         return R, Z
 
