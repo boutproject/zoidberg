@@ -183,7 +183,7 @@ class MagneticField(object):
         else:
             x, z = pos
 
-        if hasattr("Bxyzfunc"):
+        if hasattr(self, "Bxyzfunc"):
             Bx, By, Bz = self.Bxyzfunc(x, z, ycoord)
         else:
             Bx = self.Bxfunc(x, z, ycoord)
