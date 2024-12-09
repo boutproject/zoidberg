@@ -294,7 +294,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
 
         xinds = np.arange(nx)
         zinds = np.arange(nz * 3)
-        # Repeat the final point in y since periodic in y
+        # Repeat the data in z, to approximate periodicity
         R_ext = np.concatenate((R, R, R), axis=1)
         Z_ext = np.concatenate((Z, Z, Z), axis=1)
 
