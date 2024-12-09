@@ -878,16 +878,7 @@ def grid_elliptic(
             thetavals_inner = [inner.closestPoint(*x) for x in zip(R[-1], Z[-1])]
             thetavals_inner = laplace(thetavals_inner)
             if inner_maxmode:
-                thetavals_inner_new = fft_smooth(thetavals_inner, inner_maxmode)
-                if 0:
-                    plt.figure()
-                    plt.plot(thetavals_inner, label="original")
-                    plt.plot(thetavals_inner_new, label="smoothed")
-                    plt.title(f"grid.shape = {R.shape}")
-                    plt.legend()
-                    plt.show()
-                thetavals_inner = thetavals_inner_new
-
+                thetavals_inner = fft_smooth(thetavals_inner, inner_maxmode)
         else:
             thetavals_inner = thetavals
 
@@ -902,6 +893,8 @@ def grid_elliptic(
         if inner_ort:
             thetavals_inner = [inner.closestPoint(*x) for x in zip(Router, Zouter)]
             thetavals_inner = laplace(thetavals_inner)
+            if inner_maxmode:
+                thetavals_inner = fft_smooth(thetavals_inner, inner_maxmode)
         else:
             thetavals_inner = thetavals
 
