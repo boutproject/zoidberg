@@ -605,6 +605,7 @@ def grid_elliptic(
     nx_inner=0,
     legacy_align=False,
     inner_ort=True,
+    inner_maxmode=None,
     maxfac_inner=None,
     dz_relax=None,
 ):
@@ -801,6 +802,27 @@ def grid_elliptic(
             assert False
         return x
 
+    def fft_smooth(x, maxmode=None):
+        dx = x - np.roll(x, 1)
+        # print("dx = np.array([", end="")
+        # print(*dx, sep=", ", end="])\n")
+        dx[dx < -np.pi] += np.pi * 2
+        dx[dx > np.pi] -= np.pi * 2
+        # print("dx = np.array([", end="")
+        # print(*dx, sep=", ", end="])\n")
+        f = np.fft.fft(dx)
+        n = len(f)
+        nh = n // 2
+        nq = maxmode
+        f[nq:nh] = 0
+        f[nh + 1 : -nq] = 0
+        dxn = np.real(np.fft.ifft(f))
+        xnew = np.empty_like(x)
+        xnew[0] = x[0]
+        for i in range(len(x) - 1):
+            xnew[i + 1] = xnew[i] + dxn[i]
+        return xnew % (np.pi * 2)
+
     if (nx > restrict_size) or (nz > restrict_size):
         # Create a coarse grid first to get a starting guess
         # Only restrict the dimensions which exceed restrict_size
@@ -826,6 +848,7 @@ def grid_elliptic(
             restrict_factor=restrict_factor,
             return_coords=True,
             inner_ort=inner_ort,
+            inner_maxmode=inner_maxmode,
             maxfac_inner=maxfac_inner,
             dz_relax=dz_relax,
         )
@@ -854,7 +877,8 @@ def grid_elliptic(
         if inner_ort:
             thetavals_inner = [inner.closestPoint(*x) for x in zip(R[-1], Z[-1])]
             thetavals_inner = laplace(thetavals_inner)
-
+            if inner_maxmode:
+                thetavals_inner = fft_smooth(thetavals_inner, inner_maxmode)
         else:
             thetavals_inner = thetavals
 
@@ -869,6 +893,8 @@ def grid_elliptic(
         if inner_ort:
             thetavals_inner = [inner.closestPoint(*x) for x in zip(Router, Zouter)]
             thetavals_inner = laplace(thetavals_inner)
+            if inner_maxmode:
+                thetavals_inner = fft_smooth(thetavals_inner, inner_maxmode)
         else:
             thetavals_inner = thetavals
 
