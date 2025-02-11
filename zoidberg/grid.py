@@ -54,7 +54,7 @@ class Grid(object):
 
         self.poloidal_grids = poloidal_grids
         self._ngrids = ngrids  # This is an implementation detail, whether we have one or multiple separate grids
-        self.ycoords = np.asfarray(ycoords)
+        self.ycoords = np.asarray(ycoords)
         self.Ly = Ly
         self.yperiodic = yperiodic
 

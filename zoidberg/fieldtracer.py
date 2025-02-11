@@ -351,7 +351,7 @@ def trace_poincare(
         raise ValueError("nplot and y_slices cannot both be None")
 
     if y_slices is not None:
-        y_slices = np.asfarray(y_slices)
+        y_slices = np.asarray(y_slices)
 
         if np.amin(y_slices) < 0.0 or np.amax(y_slices) > yperiod:
             raise ValueError(
@@ -384,8 +384,8 @@ def trace_poincare(
         ) * y_values[:-1]
 
     # Starting location
-    xpos = np.asfarray(xpos)
-    zpos = np.asfarray(zpos)
+    xpos = np.asarray(xpos)
+    zpos = np.asarray(zpos)
 
     field_tracer = FieldTracer(magnetic_field)
     result = field_tracer.follow_field_lines(xpos, zpos, y_values_over)

@@ -172,8 +172,8 @@ class RectangularPoloidalGrid(PoloidalGrid):
         """
 
         # Convert to NumPy arrays if not already
-        xind = np.asfarray(xind)
-        zind = np.asfarray(zind)
+        xind = np.asarray(xind)
+        zind = np.asarray(zind)
         # Make sure dx and dz are integers
         dx = int(dx)
         dz = int(dz)
@@ -213,8 +213,8 @@ class RectangularPoloidalGrid(PoloidalGrid):
         """
 
         # Make sure inputs are NumPy arrays
-        R = np.asfarray(R)
-        Z = np.asfarray(Z)
+        R = np.asarray(R)
+        Z = np.asarray(Z)
 
         # Check that they have the same shape
         assert R.shape == Z.shape
@@ -353,8 +353,8 @@ class StructuredPoloidalGrid(PoloidalGrid):
         """
 
         # Make sure inputs are NumPy arrays
-        R = np.asfarray(R)
-        Z = np.asfarray(Z)
+        R = np.asarray(R)
+        Z = np.asarray(Z)
 
         # Check that they have the same shape
         assert R.shape == Z.shape
@@ -378,8 +378,8 @@ class StructuredPoloidalGrid(PoloidalGrid):
         zind = ind - xind * nz
 
         # Convert indices to float
-        xind = np.asfarray(xind)
-        zind = np.asfarray(zind)
+        xind = np.asarray(xind, dtype=float)
+        zind = np.asarray(zind, dtype=float)
 
         # Create a mask for the positions
         mask = np.ones(xind.shape)

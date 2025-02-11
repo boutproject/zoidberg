@@ -8,13 +8,7 @@ import warnings
 
 import numpy as np
 from numpy import append, argmin, cos, linspace, pi, sin, sqrt
-
-try:
-    # New scipy changed the name
-    from scipy.integrate import cumulative_trapezoid as cumtrapz
-except ImportError:
-    from scipy.integrate import cumtrapz
-
+from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.interpolate import interp1d, splev, splrep
 
 try:
@@ -63,8 +57,8 @@ class RZline:
     """
 
     def __init__(self, r, z, anticlockwise=True, spline_order=None, smooth=False):
-        r = np.asfarray(r)
-        z = np.asfarray(z)
+        r = np.asarray(r)
+        z = np.asarray(z)
 
         # Check the sizes of the variables
         n = len(r)
@@ -427,8 +421,8 @@ def line_from_points_poly(rarray, zarray, show=False, spline_order=None):
 
     """
 
-    rarray = np.asfarray(rarray)
-    zarray = np.asfarray(zarray)
+    rarray = np.asarray(rarray)
+    zarray = np.asarray(zarray)
 
     assert rarray.size >= 3
     assert rarray.shape == zarray.shape
@@ -616,8 +610,8 @@ def line_from_points(
     """
 
     # Make sure we have Numpy arrays
-    rarray = np.asfarray(rarray)
-    zarray = np.asfarray(zarray)
+    rarray = np.asarray(rarray)
+    zarray = np.asarray(zarray)
 
     assert rarray.size == zarray.size
 

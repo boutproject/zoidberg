@@ -172,8 +172,8 @@ def plot_3d_field_line(magnetic_field, xpos, zpos, yperiod, cycles=20, y_res=50)
     # Go round toroidally cycles times
     phivals_hires = np.linspace(0, cycles * yperiod, num=y_res * cycles, endpoint=False)
 
-    xpos = np.asfarray(xpos)
-    zpos = np.asfarray(zpos)
+    xpos = np.asarray(xpos)
+    zpos = np.asarray(zpos)
 
     field_tracer = fieldtracer.FieldTracer(magnetic_field)
     result_hires = field_tracer.follow_field_lines(xpos, zpos, phivals_hires)
@@ -242,7 +242,7 @@ def plot_streamlines(grid, magnetic_field, y_slice=0, width=None, **kwargs):
         magnetic_field.bx[full_slice].T,
         magnetic_field.bz[full_slice].T,
         linewidth=linewidth,
-        **kwargs
+        **kwargs,
     )
 
     ax.set_xlabel("Radius [m]", fontsize=20)
