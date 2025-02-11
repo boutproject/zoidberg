@@ -52,3 +52,6 @@ zoidberg-screwpinch = "zoidberg.examples.screwpinch:main"
 [tool.setuptools_scm]
 write_to = "zoidberg/_version.py"
 git_describe_command = "git describe --dirty --tags --first-parent"
+
+[tool.setuptools]
+py-modules = ["zoidberg"]
