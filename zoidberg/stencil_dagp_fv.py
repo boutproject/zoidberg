@@ -107,10 +107,8 @@ def doit(pols, plot=False):
 
         RZs += [RZ]
     RZs = np.array(RZs)
-    print(RZs.shape)
     # 3.160 s:  (4, 2, 6, 32, 200)
     RZs = RZs.transpose(1, 2, 0, 3, 4)
-    print(RZs.shape)
 
     volume = Ar
     # f =
@@ -160,8 +158,7 @@ def doit(pols, plot=False):
         indexing="ij",
     )
     tmp[1] += tmp[2]
-    print(tmp[0])
-    print(tmp[1])
+
     pos = np.array([g.getCoordinate(*tmp[:2]) for g in pols]).transpose(1, 2, 0, 3, 4)
     log("done")
     # direction of edge, length ~ 1/nx
@@ -175,11 +172,9 @@ def doit(pols, plot=False):
     dRr /= np.sqrt(np.sum(dRr**2, axis=0))
     dRr *= area
     dRr = np.sum(dRr, axis=-1)
-    print(np.nanmean(dRr))
 
     # vector in derivative direction
     dxR = RZ[:, 1:] - RZ[:, :-1]
-    print("Maximum radial grid distance:", np.max(l2(dxR)))
     dzR = np.roll(RZ, -1, axis=-1) - np.roll(RZ, 1, axis=-1)
     dzR = 0.5 * (dzR[:, 1:] + dzR[:, :-1])
 
@@ -316,7 +311,7 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
         ):
             slc = slice(1, -1), 1
             per = np.percentile(d[slc], [0, 2, 98, 100])
-            print(per)
+            print("Percentiles", per)
             p = ax.pcolormesh(*[k[slc] for k in RZ], d[slc], vmin=per[1], vmax=per[2])
             ax.set_title(t)
             plt.colorbar(p, ax=ax)
