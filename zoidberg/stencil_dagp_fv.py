@@ -10,6 +10,11 @@ import sys
 import numpy as np
 from boututils.datafile import DataFile as DF
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = None
+
 verbose = 1
 
 
@@ -69,8 +74,11 @@ def doit(pols, plot=False):
 
     A = np.empty((pols[0].nx, len(pols), pols[0].nz))
     Ar = np.empty_like(A)
+    todo = enumerate(pols)
+    if tqdm:
+        todo = tqdm(todo, total=len(pols))
 
-    for gi, g in enumerate(pols):
+    for gi, g in todo:
         n = 50
         x0 = np.arange(g.nx)[1:-1, None, None]
         y0 = np.arange(g.nz)[None, :, None]
