@@ -151,11 +151,13 @@ def doit(pols, plot=False):
 
     log("calculating pos ...")
     # pos = RZs[..., :n]
-    tmp = np.meshgrid(
-        np.arange(g.nx - 1) + 0.5,
-        np.arange(g.nz) - 0.5,
-        np.linspace(0, 1, n),
-        indexing="ij",
+    tmp = list(
+        np.meshgrid(
+            np.arange(g.nx - 1) + 0.5,
+            np.arange(g.nz) - 0.5,
+            np.linspace(0, 1, n),
+            indexing="ij",
+        )
     )
     tmp[1] += tmp[2]
 
@@ -182,7 +184,7 @@ def doit(pols, plot=False):
     # dzR /= (np.sum(dzR**2, axis=0))
     log("starting solve")
     dxzR = np.array((dxR, dzR)).transpose(2, 3, 4, 1, 0)
-    coefsX = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0))
+    coefsX = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0)[..., None])[..., 0]
     log("done")
 
     # AreaZplus
@@ -203,11 +205,13 @@ def doit(pols, plot=False):
     # |------------------------> x
 
     log("concatenate")
-    tmp = np.meshgrid(
-        np.arange(g.nx - 2) + 0.5,
-        np.arange(g.nz) + 0.5,
-        np.linspace(0, 1, n),
-        indexing="ij",
+    tmp = list(
+        np.meshgrid(
+            np.arange(g.nx - 2) + 0.5,
+            np.arange(g.nz) + 0.5,
+            np.linspace(0, 1, n),
+            indexing="ij",
+        )
     )
     tmp[0] += tmp[2]
     pos = np.array([g.getCoordinate(*tmp[:2]) for g in pols]).transpose(1, 2, 0, 3, 4)
@@ -227,7 +231,7 @@ def doit(pols, plot=False):
     dzR = (np.roll(RZ, -1, axis=-1) - RZ)[:, 1:-1]
     dxzR = np.array((dxR, dzR)).transpose(2, 3, 4, 1, 0)
     log("solving again")
-    coefsZ = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0))
+    coefsZ = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0)[..., None])[..., 0]
     log("done")
 
     test(RZ, volume, coefsX, coefsZ, plot=plot)
