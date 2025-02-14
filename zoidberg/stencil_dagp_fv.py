@@ -79,7 +79,7 @@ def doit(pols, plot=False):
         todo = tqdm(todo, total=len(pols))
 
     for gi, g in todo:
-        n = 50
+        n = 12
         x0 = np.arange(g.nx)[1:-1, None, None]
         y0 = np.arange(g.nz)[None, :, None]
         x1 = x0[:, :, 0]
