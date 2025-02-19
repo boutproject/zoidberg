@@ -994,6 +994,7 @@ def grid_elliptic(
         print("Convergence failure, trying to plot ...")
         if plotting_available:
             if not show:
+                plt.figure()
                 # Markers on original points on inner and outer boundaries
                 plt.plot(inner.R, inner.Z, "-o", label="inner")
                 plt.plot(outer.R, outer.Z, "-o", label="outer")
