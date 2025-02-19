@@ -283,6 +283,7 @@ class MapWriter:
         self.grid = grid
         self.nxyz = grid.shape
 
+        shape = self.nxyz
         R = np.zeros(shape)
         Z = np.zeros(shape)
         for j in range(shape[1]):
@@ -309,7 +310,6 @@ class MapWriter:
         if self.metric_done:
             return
 
-        shape = self.nxyz
         metric, Bmag, pressure = get_metric(self.grid, self.field)
 
         # Add Rxy, Bxy
@@ -341,9 +341,9 @@ class MapWriter:
     def writeDict(self, metric, always3d=True):
         assert self.open
         # Metric is now 3D
-        if self.metric2d and not alwayd3d:
+        if self.metric2d and not always3d:
             # Remove the Z dimension from metric components
-            if not quiet:
+            if not self.quiet:
                 print("WARNING: Outputting 2D metrics, discarding metric information.")
             for key in metric:
                 try:

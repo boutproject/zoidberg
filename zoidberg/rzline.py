@@ -218,7 +218,7 @@ class RZline:
             dr = (R - np.roll(R, -1)) ** 2 + (Z - np.roll(Z, -1)) ** 2
             dr = np.sqrt(dr)
             weights = (
-                interp(weights, len(dr)) if not weights is None else itertools.repeat(1)
+                interp(weights, len(dr)) if weights is not None else itertools.repeat(1)
             )
             out = np.empty(len(dr) + 1)
             sum = 0
@@ -500,14 +500,14 @@ def line_from_points_two_opt(rarray, zarray, opt=1e-3, **kwargs):
     From https://stackoverflow.com/a/44080908
     License: CC-BY-SA 4.0
     """
+
     # Calculate the euclidian distance in n-space of the route r traversing cities c, ending at the path start.
-    path_distance = lambda r, c: np.sum(
-        [np.linalg.norm(c[r[p]] - c[r[p - 1]]) for p in range(len(r))]
-    )
+    def path_distance(r, c):
+        return np.sum([np.linalg.norm(c[r[p]] - c[r[p - 1]]) for p in range(len(r))])
+
     # Reverse the order of all elements from element i to element k in array r.
-    two_opt_swap = lambda r, i, k: np.concatenate(
-        (r[0:i], r[k : -len(r) + i - 1 : -1], r[k + 1 : len(r)])
-    )
+    def two_opt_swap(r, i, k):
+        return np.concatenate((r[0:i], r[k : -len(r) + i - 1 : -1], r[k + 1 : len(r)]))
 
     # 2-opt Algorithm adapted from https://en.wikipedia.org/wiki/2-opt
     def two_opt(cities, improvement_threshold):
@@ -534,8 +534,8 @@ def line_from_points_two_opt(rarray, zarray, opt=1e-3, **kwargs):
                 improvement_factor = 1 - best_distance / distance_to_beat
         return route
 
-    l = line_from_points_fast(rarray, zarray, **kwargs)
-    cities = np.array([l.R, l.Z]).T
+    ln = line_from_points_fast(rarray, zarray, **kwargs)
+    cities = np.array([ln.R, ln.Z]).T
     route = two_opt(cities, opt)
     R, Z = cities[route].T
     return RZline(R, Z, **kwargs)

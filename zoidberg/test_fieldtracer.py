@@ -1,3 +1,5 @@
+from importlib.util import find_spec
+
 import numpy as np
 import pytest
 
@@ -60,9 +62,7 @@ def test_poincare():
 
 
 def setup_ftw(**kw):
-    try:
-        import osa
-    except ImportError:
+    if find_spec("osa") is None:
         pytest.skip("osa not installed")
     import requests
 

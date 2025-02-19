@@ -3,7 +3,6 @@
 
 import time
 
-time_start = time.time()  # noqa
 
 import sys
 
@@ -15,6 +14,7 @@ try:
 except ImportError:
     tqdm = None
 
+time_start = time.time()  # noqa
 verbose = 1
 
 
