@@ -1,10 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-import time
-
-
 import sys
+import time
 
 import numpy as np
 from boututils.datafile import DataFile as DF
