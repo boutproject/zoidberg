@@ -1680,7 +1680,7 @@ class W7X_vacuum(MagneticField):
         global tracer
         tracer = tracer or Client(
             "http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl",
-            osa_timeout=0.1,
+            osa_timeout=1,
         )
 
         assert x.shape[0] == 3

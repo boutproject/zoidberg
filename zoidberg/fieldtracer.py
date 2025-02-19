@@ -419,7 +419,7 @@ class FieldTracerWeb:
         self,
         config=None,
         configId=None,
-        timeout=0.1,
+        timeout=1,
         chunk=10000,
         stepsize=None,
         retry=None,
