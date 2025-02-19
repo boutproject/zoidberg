@@ -925,7 +925,8 @@ def grid_elliptic(
         plt.plot(R[-1, :], Z[-1, :], "ro")
 
     # Start solver loop
-    for _ in range(R.size * 2):
+    maxit = max(max(R.shape) * 10, 300)
+    for _ in range(maxit):
         # Calculate coefficients, which exclude boundary points
         # Note that the domain is periodic in y so roll arrays
 
