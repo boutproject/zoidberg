@@ -282,6 +282,17 @@ class MapWriter:
     def addGrid(self, grid):
         self.grid = grid
         self.nxyz = grid.shape
+
+        R = np.zeros(shape)
+        Z = np.zeros(shape)
+        for j in range(shape[1]):
+            pol, _ = self.grid.getPoloidalGrid(j)
+            R[:, j, :] = pol.R
+            Z[:, j, :] = pol.Z
+        self.writeDict(dict(R=R, Z=Z))
+        del R
+        del Z
+
         if self.field:
             self.writeMetric()
 
@@ -299,16 +310,6 @@ class MapWriter:
             return
 
         shape = self.nxyz
-        R = np.zeros(shape)
-        Z = np.zeros(shape)
-        for j in range(shape[1]):
-            pol, _ = self.grid.getPoloidalGrid(j)
-            R[:, j, :] = pol.R
-            Z[:, j, :] = pol.Z
-        self.writeDict(dict(R=R, Z=Z))
-        del R
-        del Z
-
         metric, Bmag, pressure = get_metric(self.grid, self.field)
 
         # Add Rxy, Bxy
