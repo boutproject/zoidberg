@@ -409,14 +409,14 @@ class MapWriter:
         }
         if update:
             oldattrs = f.list_file_attributes()
-            for k in attrs.keys():
+            for k in list(attrs.keys()):
                 if k in oldattrs:
                     oldattr = f"old_{k}"
                     j = 0
                     while oldattr in oldattrs:
                         oldattr = f"old{j}_{k}"
                         j += 1
-                    attrs[oldattr] = oldattrs[k]
+                    attrs[oldattr] = f.read_file_attribute(k)
         for kv in attrs.items():
             f.write_file_attribute(*kv)
 
