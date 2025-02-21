@@ -267,8 +267,8 @@ class MapWriter:
         self.f = f.__enter__()
         self.isOpen = True
         if not self.create:
-            B = self.f["B"]
-            if B is not None:
+            if "B" in self.f.list():
+                B = self.f["B"]
                 self.nxyz = B.shape
         return self
 
