@@ -106,26 +106,29 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
         "ParallelSlice", ["offset", "R", "Z", "xt_prime", "zt_prime"]
     )
     # A list of the above data structures for each offset we want
-    parallel_slices = []
+    parallel_slicess = []
 
     # Loop over offsets {1, ... nslice, -1, ... -nslice}
-    for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
-        # Unique names of the field line maps for this offset
-        field_names = [
-            parallel_slice_field_name(field, offset)
-            for field in ["R", "Z", "xt_prime", "zt_prime"]
-        ]
+    for direction in 1, -1:
+        parallel_slicess.append([])
+        for absoffset in range(1, nslice + 1):
+            offset = absoffset * direction
+            # Unique names of the field line maps for this offset
+            field_names = [
+                parallel_slice_field_name(field, offset)
+                for field in ["R", "Z", "xt_prime", "zt_prime"]
+            ]
 
-        # Initialise the field arrays -- puts them straight into the result dict
-        for field in field_names:
-            maps[field] = np.zeros(shape)
+            # Initialise the field arrays -- puts them straight into the result dict
+            for field in field_names:
+                maps[field] = np.zeros(shape)
 
-        # Get the field arrays we just made and wrap them up in our helper tuple
-        fields = map(lambda x: maps[x], field_names)
-        parallel_slices.append(ParallelSlice(offset, *fields))
+            # Get the field arrays we just made and wrap them up in our helper tuple
+            fields = map(lambda x: maps[x], field_names)
+            parallel_slicess[-1].append(ParallelSlice(offset, *fields))
 
     # Total size of the progress bar
-    total_work = len(parallel_slices) * ny
+    total_work = len(parallel_slicess) * ny
 
     # TODO: if axisymmetric, don't loop, do one slice and copy
     # TODO: restart tracing for adjacent offsets
@@ -134,41 +137,49 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
             prog = tqdm(total=total_work, desc="Tracing")
         else:
             update_progress(0, **kwargs)
-    for slice_index, parallel_slice in enumerate(parallel_slices):
+    for slice_index, parallel_slices in enumerate(parallel_slicess):
         for j in range(ny):
             # Get this poloidal grid
             pol, ycoord = grid.getPoloidalGrid(j)
 
             # Get the next poloidal grid
-            pol_slice, y_slice = grid.getPoloidalGrid(j + parallel_slice.offset)
+            pol_slices = []
+            y_slices = [ycoord]
+            for parallel_slice in parallel_slices:
+                pol_slice, y_slice = grid.getPoloidalGrid(j + parallel_slice.offset)
+                pol_slices.append(pol_slice)
+                y_slices.append(y_slice)
 
             # We only want the end point, as [0,...] is the initial position
-            coord = field_tracer.follow_field_lines(
-                pol.R, pol.Z, [ycoord, y_slice], rtol=rtol
-            )[1, ...]
+            coords = field_tracer.follow_field_lines(pol.R, pol.Z, y_slices, rtol=rtol)[
+                1:, ...
+            ]
 
-            # Store the coordinates in real space
-            parallel_slice.R[:, j, :] = coord[:, :, 0]
-            parallel_slice.Z[:, j, :] = coord[:, :, 1]
+            for parallel_slice, coord, pol_slice in zip(
+                parallel_slices, coords, pol_slices
+            ):
+                # Store the coordinates in real space
+                parallel_slice.R[:, j, :] = coord[:, :, 0]
+                parallel_slice.Z[:, j, :] = coord[:, :, 1]
 
-            # Get the indices into the slice poloidal grid
-            if pol_slice is None:
-                # No slice grid, so hit a boundary
-                xind = -1
-                zind = -1
-            else:
-                # Find the indices for these new locations on the slice poloidal grid
-                xcoord = coord[:, :, 0]
-                zcoord = coord[:, :, 1]
-                xind, zind = pol_slice.findIndex(xcoord, zcoord)
+                # Get the indices into the slice poloidal grid
+                if pol_slice is None:
+                    # No slice grid, so hit a boundary
+                    xind = -1
+                    zind = -1
+                else:
+                    # Find the indices for these new locations on the slice poloidal grid
+                    xcoord = coord[:, :, 0]
+                    zcoord = coord[:, :, 1]
+                    xind, zind = pol_slice.findIndex(xcoord, zcoord)
 
-                # Check boundary defined by the field
-                outside = magnetic_field.boundary.outside(xcoord, y_slice, zcoord)
-                xind[outside] = -1
-                zind[outside] = -1
+                    # Check boundary defined by the field
+                    outside = magnetic_field.boundary.outside(xcoord, y_slice, zcoord)
+                    xind[outside] = -1
+                    zind[outside] = -1
 
-            parallel_slice.xt_prime[:, j, :] = xind
-            parallel_slice.zt_prime[:, j, :] = zind
+                parallel_slice.xt_prime[:, j, :] = xind
+                parallel_slice.zt_prime[:, j, :] = zind
 
             if (not quiet) and (ny > 1):
                 if tqdm:
