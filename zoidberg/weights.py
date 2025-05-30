@@ -22,7 +22,7 @@ For forward and backward maps the Nw weights are stored in CSR format
                          Needs to be considered when getting the weights
 
 For each evolving cell i in 0...(Ne-1) the weight index j is
-row_index[i]..(row_index[i+1] - 1) 
+row_index[i]..(row_index[i+1] - 1)
 
 i.e.
 
@@ -38,25 +38,26 @@ This is because boundary conditions are set independently.
 
 The output grid file will contain
         int cell_number(x, y, z) ;
-	int total_cells ;
+        int total_cells ;
 
-	int forward_cell_number(x, y, z) ;
-	double forward_weights(t) ;
-	int forward_columns(t) ;
-	int forward_rows(t2) ;
+        int forward_cell_number(x, y, z) ;
+        double forward_weights(t) ;
+        int forward_columns(t) ;
+        int forward_rows(t2) ;
 
-	int backward_cell_number(x, y, z) ;
-	double backward_weights(t3) ;
-	int backward_columns(t3) ;
-	int backward_rows(t2) ;
+        int backward_cell_number(x, y, z) ;
+        double backward_weights(t3) ;
+        int backward_columns(t3) ;
+        int backward_rows(t2) ;
 
 """
+
 import numpy as np
 
 
 def calc_cell_numbers(maps):
-    """ Given a field line map dictionary, assign numbers to evolving
-    cells and boundary cells """
+    """Given a field line map dictionary, assign numbers to evolving
+    cells and boundary cells"""
     nx, ny, nz = maps["R"].shape
     MXG = maps["MXG"]
     # Number of evolving cells
@@ -124,7 +125,7 @@ def calc_cell_numbers(maps):
 def calc_interpolation(cell_number, MXG, yoffset, xtarr, ztarr):
     """
     Calculate CSR format matrix representing a 2D (X-Z) interpolation operation
-    
+
     Implements the cubic Catmull-Rom spline
     Coefficients taken from https://en.wikipedia.org/wiki/Cubic_Hermite_spline
     """
@@ -135,10 +136,10 @@ def calc_interpolation(cell_number, MXG, yoffset, xtarr, ztarr):
     def weights1D(u):
         return 0.5 * np.array(
             [
-                -u ** 3 + 2.0 * u ** 2 - u,
-                3.0 * u ** 3 - 5.0 * u ** 2 + 2,
-                -3.0 * u ** 3 + 4.0 * u ** 2 + u,
-                u ** 3 - u ** 2,
+                -(u**3) + 2.0 * u**2 - u,
+                3.0 * u**3 - 5.0 * u**2 + 2,
+                -3.0 * u**3 + 4.0 * u**2 + u,
+                u**3 - u**2,
             ]
         )
 
