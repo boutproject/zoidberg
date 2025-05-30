@@ -9,7 +9,7 @@ except PackageNotFoundError:
 
     __version__ = get_version(root="..", relative_to=__file__)
 
-from . import field, fieldtracer, grid, plot, zoidberg
+from . import field, fieldtracer, grid, plot, zoidberg, weights
 from .zoidberg import make_maps, write_maps
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "grid",
     "make_maps",
     "plot",
+    "weights",
     "write_maps",
     "zoidberg",
 ]
