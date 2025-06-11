@@ -73,7 +73,7 @@ def doit(pols, plot=False):
     A = np.empty((pols[0].nx, len(pols), pols[0].nz))
     Ar = np.empty_like(A)
     todo = enumerate(pols)
-    if tqdm:
+    if tqdm and len(pols) > 1:
         todo = tqdm(todo, total=len(pols))
 
     for gi, g in todo:
