@@ -308,6 +308,43 @@ class MapWriter:
         if self.field:
             self.writeMetric()
 
+    def addDagp(self):
+        from .stencil_dagp_fv import doit
+
+        assert self.grid
+        assert self.isOpen
+        handles = {}
+
+        pgs = self.grid.poloidal_grids
+        if tqdm:
+            pgs = tqdm(pgs)
+
+        def getHandle(k, t=None, dims=("x", "y", "z"), init=None):
+            try:
+                # See if the variable already exists
+                return self.f.impl.handle.variables[k]
+            except KeyError:
+                # t = v.dtype.str
+                # dims = ("x", "y", "z")
+                var = self.f.impl.handle.createVariable(k, t, dims)
+                if init is not None:
+                    var[:] = init
+                return var
+
+        i = np.int32(0)
+        prog = getHandle("_dagp_generation_progress", i.dtype.str, (), init=i)
+
+        for ind, pol in enumerate(pgs):
+            if ind < prog[0]:
+                continue
+            dagp = doit([pol])
+            for k, v in dagp.items():
+                if k not in handles:
+                    handles[k] = getHandle(k, v.dtype.str)
+
+                handles[k][:, ind, :] = v
+            prog[0] = ind + 1
+
     def addField(self, field):
         self.field = field
         if self.grid:
