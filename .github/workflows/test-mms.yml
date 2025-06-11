@@ -7,7 +7,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     container:
-      image: oi4ai/bout3d:latest-${{ matrix.config.mode }}
+      image: ghcr.io/boutproject/bout-dev:mpich-3d-{{ matrix.config.mode }}-next
     strategy:
       fail-fast: false
       matrix:
