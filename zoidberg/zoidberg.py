@@ -371,10 +371,19 @@ class MapWriter:
     def writeParMetric(self, maps, nslice, ypar):
         # Loop over offsets {1, ... nslice, -1, ... -nslice}
         ny = len(ypar)
-        Ly = self.grid.Ly if self.grid else np.mean(np.diff(ypar)) * ny
+        meandy = np.mean(np.diff(ypar))
+        Ly = self.grid.Ly if self.grid else meandy * ny
         yperiodic = self.grid.yperiodic if self.grid else True
         for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
             pypar = np.roll(ypar, -offset)  # TODO: is the sign correct?
+            if yperiodic:
+                for i in range(1, ny):
+                    if meandy * (pypar[i] - pypar[i - 1]) < 0:
+                        pypar[i] += np.sign(meandy) * Ly
+                assert np.isclose(
+                    np.mean(np.diff(pypar)), meandy
+                ), f"Mean of dy changes from {meandy} to {np.isclose(np.mean(np.diff(pypar)))}. Values: {pypar}"
+
             RZ = np.array([maps[parallel_slice_field_name(k, offset)] for k in "RZ"])
             par_pgrids = [StructuredPoloidalGrid(*RZ[:, :, i]) for i in range(ny)]
             par_grid = Grid(
