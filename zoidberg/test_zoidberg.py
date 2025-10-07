@@ -71,4 +71,4 @@ def test_make_maps_straight_stellarator():
     # Here both the field and and grid are centred at (x,z) = (0,0)
     # and the rectangular grid here fits entirely within the coils
 
-    maps = zoidberg.make_maps(rectangle, magnetic_field)
+    zoidberg.make_maps(rectangle, magnetic_field)

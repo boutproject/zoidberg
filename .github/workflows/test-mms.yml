@@ -7,7 +7,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     container:
-      image: oi4ai/bout3d:latest-${{ matrix.config.mode }}
+      image: ghcr.io/boutproject/bout-dev:mpich-3d-${{ matrix.config.mode }}-next
     strategy:
       fail-fast: false
       matrix:
@@ -36,7 +36,7 @@ jobs:
           cd /home/boutuser/zoidberg
           python3 -m ensurepip
           python3 -m pip install .
-          python3 -m pip install xarray
+          python3 -m pip install xarray typing_extensions
 
       - name: Run
         run: |
