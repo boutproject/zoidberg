@@ -1,6 +1,4 @@
-"""Boundary objects that define an 'outside'
-
-"""
+"""Boundary objects that define an 'outside'"""
 
 import numpy as np
 
