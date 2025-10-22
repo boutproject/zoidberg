@@ -236,7 +236,10 @@ def get_metric(grid, magnetic_field):
         metric["g_yy"][:, yindex, :] *= (Bmag[:, yindex, :] / By) ** 2
         metric["gyy"][:, yindex, :] *= (By / Bmag[:, yindex, :]) ** 2
 
-    return metric, Bmag, pressure
+    # B * J / sqrt(g22)
+    BJg = Bmag * metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2
+
+    return metric, Bmag, pressure, BJg
 
 
 class MapWriter:
@@ -267,6 +270,7 @@ class MapWriter:
         self.isOpen = False
         self.create = create
 
+        self.BJg = None
         self.grid = None
         self.field = None
         self.metric_done = False
@@ -358,7 +362,7 @@ class MapWriter:
         if self.metric_done:
             return
 
-        metric, Bmag, pressure = get_metric(self.grid, self.field)
+        metric, Bmag, pressure, self.BJg = get_metric(self.grid, self.field)
 
         # Add Rxy, Bxy
         metric["Bxy"] = Bmag
@@ -430,7 +434,35 @@ class MapWriter:
                 yperiodic=yperiodic,
             )
 
-            par_metric, _, _ = get_metric(par_grid, self.field)
+            par_metric, _, _, par_BJg = get_metric(par_grid, self.field)
+            if self.BJg is not None:
+                mymax = np.max(np.abs(par_BJg / self.BJg - 1)[2:-2], axis=(0, 2))
+                if np.max(mymax) > 1e-6:
+                    print(
+                        "FluxError",
+                        np.max(np.abs(par_BJg / self.BJg - 1)[2:-2], axis=(0, 2)),
+                    )
+                    ysel = np.argmax(mymax)
+                    print(mymax)
+                    print(ysel)
+                    import matplotlib.pyplot as plt
+
+                    plt.figure()
+                    ppgrid = par_pgrids[ysel]
+                    plt.pcolormesh(
+                        ppgrid.R, ppgrid.Z, par_BJg[:, ysel] / self.BJg[:, ysel]
+                    )
+                    plt.colorbar()
+
+                    if "R" in maps and "Z" in maps:
+                        plt.figure()
+                        RZ0 = np.array([maps[k] for k in "RZ"])
+                        plt.pcolormesh(
+                            *RZ0[:, :, ysel], par_BJg[:, ysel] / self.BJg[:, ysel]
+                        )
+                        plt.colorbar()
+
+                    plt.show()
             if not self.new_names:
                 par_metric = update_metric_names(par_metric)
 
