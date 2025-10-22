@@ -217,6 +217,7 @@ def get_metric(grid, magnetic_field):
     pol_grid, ypos = grid.getPoloidalGrid(0)
     Rmaj = magnetic_field.Rfunc(pol_grid.R, pol_grid.Z, ypos)
     if Rmaj is not None:
+        assert np.all(np.isfinite(Rmaj))
         # In cylindrical coordinates
         Rmaj = np.zeros(grid.shape)
         for yindex in range(grid.numberOfPoloidalGrids()):
@@ -406,8 +407,12 @@ class MapWriter:
             if "dz" in metric:
                 metric["dz"] = metric["dz"][0, 0]
 
-        for kv in metric.items():
-            self.f.write(*kv)
+        for k, v in metric.items():
+            if isinstance(v, np.ndarray):
+                assert np.all(
+                    np.isfinite(v)
+                ), f"{k} is not finite in {v.size - np.sum(np.isfinite(v))} of {v.size} cells"
+            self.f.write(k, v)
 
     def writeParMetric(self, maps, nslice, ypar):
         # Loop over offsets {1, ... nslice, -1, ... -nslice}
