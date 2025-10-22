@@ -321,7 +321,7 @@ class MapWriter:
 
         pgs = self.grid.poloidal_grids
         if tqdm:
-            pgs = tqdm(pgs)
+            pgs = tqdm(pgs, desc="DAGP")
 
         def getHandle(k, t=None, dims=("x", "y", "z"), init=None):
             try:
