@@ -803,12 +803,8 @@ def grid_elliptic(
 
     def fft_smooth(x, maxmode=None):
         dx = x - np.roll(x, 1)
-        # print("dx = np.array([", end="")
-        # print(*dx, sep=", ", end="])\n")
         dx[dx < -np.pi] += np.pi * 2
         dx[dx > np.pi] -= np.pi * 2
-        # print("dx = np.array([", end="")
-        # print(*dx, sep=", ", end="])\n")
         f = np.fft.fft(dx)
         n = len(f)
         nh = n // 2
