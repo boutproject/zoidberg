@@ -242,12 +242,13 @@ def get_metric(grid, magnetic_field):
 class MapWriter:
     """
     with MapWriter(...) as mw:
-        mw.addGridField(grid, field)
+        mw.add_grid_field(grid, field)
         ...
         # Add some additional things
-        mw.addDict(dict(a=f3d, b=f3d))
+        mw.add_dict(dict(a=f3d, b=f3d))
         ...
-        mw.addMaps(maps)
+        mw.add_maps(maps)
+        mw.add_dagp()
     """
 
     def __init__(
@@ -264,7 +265,7 @@ class MapWriter:
         self.metric2d = metric2d
         self.format = format
         self.quiet = quiet
-        self.isOpen = False
+        self.is_open = False
         self.create = create
 
         self.grid = None
@@ -276,7 +277,7 @@ class MapWriter:
     def __enter__(self):
         f = bdata.DataFile(self.fn, write=True, create=self.create, format=self.format)
         self.f = f.__enter__()
-        self.isOpen = True
+        self.is_open = True
         if not self.create:
             if "B" in self.f.list():
                 B = self.f["B"]
@@ -287,10 +288,11 @@ class MapWriter:
         return self.__enter__()
 
     def __exit__(self, *exc_details):
-        self.isOpen = False
+        self.is_open = False
         self.f.__exit__(*exc_details)
 
-    def addGrid(self, grid):
+    def add_grid(self, grid):
+        """Add information from the grid to the grid file"""
         self.grid = grid
         self.nxyz = grid.shape
 
@@ -301,14 +303,15 @@ class MapWriter:
             pol, _ = self.grid.getPoloidalGrid(j)
             R[:, j, :] = pol.R
             Z[:, j, :] = pol.Z
-        self.writeDict(dict(R=R, Z=Z))
+        self.write_dict(dict(R=R, Z=Z))
         del R
         del Z
 
         if self.field:
-            self.writeMetric()
+            self._write_metric()
 
-    def addDagp(self):
+    def add_dagp(self):
+        """Add the coefficient for the finite-volume div-a-grad-perp implementation suitable for FCI."""
         from .stencil_dagp_fv import doit
 
         assert self.grid, "The grid is needed to compute the DAGP. Set the grid first."
@@ -345,16 +348,23 @@ class MapWriter:
                 handles[k][:, ind, :] = v
             prog[0] = ind + 1
 
-    def addField(self, field):
+    def add_field(self, field):
+        """Add the information from the field to the grid"""
         self.field = field
         if self.grid:
-            self.writeMetric()
+            self._write_metric()
 
-    def addGridField(self, grid, field):
-        self.addField(field)
-        self.addGrid(grid)
+    def add_grid_field(self, grid, field):
+        """Add the information from the grid and the field to the grid file.
 
-    def writeMetric(self):
+        Short for
+        mw.add_grid(grid)
+        mw.add_field(field)
+        """
+        self.add_field(field)
+        self.add_grid(grid)
+
+    def _write_metric(self):
         if self.metric_done:
             return
 
@@ -368,7 +378,7 @@ class MapWriter:
         if not self.new_names:
             metric = update_metric_names(metric)
 
-        self.writeDict(metric, always3d=False)
+        self.write_dict(metric, always3d=False)
 
         del metric
         self.grid._metric_cache = None
@@ -383,11 +393,13 @@ class MapWriter:
                     pol_grid.R, pol_grid.Z, ypos
                 )
             attributes[name] = attribute
-        self.writeDict(attributes)
-        del attributes
+        self.write_dict(attributes)
 
-    def writeDict(self, metric, always3d=True):
-        assert self.open
+    def write_dict(self, metric, always3d=True):
+        """
+        Add  data to the grid file"""
+
+        assert self.is_open, "File needs to be open. Call open first."
         # Metric is now 3D
         if self.metric2d and not always3d:
             # Remove the Z dimension from metric components
@@ -405,7 +417,7 @@ class MapWriter:
         for kv in metric.items():
             self.f.write(*kv)
 
-    def writeParMetric(self, maps, nslice, ypar):
+    def _write_par_metric(self, maps, nslice, ypar):
         # Loop over offsets {1, ... nslice, -1, ... -nslice}
         ny = len(ypar)
         meandy = np.mean(np.diff(ypar))
@@ -434,11 +446,16 @@ class MapWriter:
             if not self.new_names:
                 par_metric = update_metric_names(par_metric)
 
-            self.writeDict(
+            self.write_dict(
                 {parallel_slice_field_name(k, offset): v for k, v in par_metric.items()}
             )
 
-    def addMaps(self, maps):
+    def add_maps(self, maps):
+        """Add mapping information to the grid field.
+
+        Also adds additionally needed data like parallel metric components and
+        grid id.
+        """
         if "Rxy" not in maps:
             maps["Rxy"] = maps["R"]
         self.writeDict(maps)
@@ -450,10 +467,10 @@ class MapWriter:
                 keep[n] = maps[n]
         del maps
         ypar = self.grid.ycoords
-        self.writeParMetric(keep, nslice, ypar)
-        self.final()
+        self._write_par_metric(keep, nslice, ypar)
+        self._final()
 
-    def final(self, update=False):
+    def _final(self, update=False):
         f = self.f
 
         grid_id = str(uuid.uuid1())
@@ -527,8 +544,8 @@ def write_maps(
     with MapWriter(
         gridfile, new_names=new_names, format=format, metric2d=metric2d, quiet=quiet
     ) as mw:
-        mw.addGridField(grid, magnetic_field)
-        mw.addMaps(maps)
+        mw.add_grid_field(grid, magnetic_field)
+        mw.add_maps(maps)
 
 
 def write_Bfield_to_vtk(
