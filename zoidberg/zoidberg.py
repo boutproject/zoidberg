@@ -318,9 +318,9 @@ class MapWriter:
         assert self.is_open, "The grid file needs to be open. Call open first."
         handles = {}
 
-        pgs = self.grid.poloidal_grids
+        poloidal_grids = self.grid.poloidal_grids
         if tqdm:
-            pgs = tqdm(pgs)
+            poloidal_grids = tqdm(poloidal_grids)
 
         def getHandle(k, t=None, dims=("x", "y", "z"), init=None):
             try:
@@ -337,7 +337,7 @@ class MapWriter:
         i = np.int32(0)
         prog = getHandle("_dagp_generation_progress", i.dtype.str, (), init=i)
 
-        for ind, pol in enumerate(pgs):
+        for ind, pol in enumerate(poloidal_grids):
             if ind < prog[0]:
                 continue
             dagp = doit([pol])
