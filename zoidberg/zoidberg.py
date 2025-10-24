@@ -316,8 +316,8 @@ class MapWriter:
     def addDagp(self):
         from .stencil_dagp_fv import doit
 
-        assert self.grid
-        assert self.isOpen
+        assert self.grid, "The grid is needed to compute the DAGP. Set the grid first."
+        assert self.is_open, "The grid file needs to be open. Call open first."
         handles = {}
 
         pgs = self.grid.poloidal_grids
