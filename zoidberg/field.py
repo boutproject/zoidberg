@@ -712,15 +712,13 @@ class DommaschkPotentials(MagneticField):
         beta_st = lambda n, b: beta(n, b) * (2 * n - b)
 
         def delta(n, b):
-            if n > 0:
-                return (
-                    alpha(n, b)
-                    * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
-                    / 2
-                )
-            return 0.0
-
-        # delta_st = lambda n, b: delta(n, b) * (2 * n + b)
+            if n <= 0:
+                return 0.0
+            return (
+                alpha(n, b)
+                * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
+                / 2
+            )
 
         CN = log(1)
         for j in range(k + 1):
