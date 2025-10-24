@@ -428,7 +428,7 @@ class MapWriter:
                         pypar[i] += np.sign(meandy) * Ly
                 assert np.isclose(
                     np.mean(np.diff(pypar)), meandy
-                ), f"Mean of dy changes from {meandy} to {np.isclose(np.mean(np.diff(pypar)))}. Values: {pypar}"
+                ), f"Mean of dy changes from {meandy} to {np.mean(np.diff(pypar))}. Values: {pypar}"
 
             RZ = np.array([maps[parallel_slice_field_name(k, offset)] for k in "RZ"])
             par_pgrids = [StructuredPoloidalGrid(*RZ[:, :, i]) for i in range(ny)]
