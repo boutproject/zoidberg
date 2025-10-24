@@ -732,12 +732,12 @@ class DommaschkPotentials(MagneticField):
 
         return CN
 
-    def D(self, m, n):
+    def D(self, n, v):
         """
         Parameters
         ----------
-        m: torodial mode number
-        n: summation index in  V
+        n: torodial mode number
+        v: summation index in  V
 
         Returns:
         --------
@@ -745,19 +745,19 @@ class DommaschkPotentials(MagneticField):
         """
 
         D = log(1)
-        k_arr = np.arange(0, int(n / 2) + 1, 1)
+        k_arr = np.arange(0, int(v / 2) + 1, 1)
 
         for k in k_arr:
-            D += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CD(m, k)
+            D += (self.Z ** (v - 2 * k)) / factorial(v - 2 * k) * self.CD(n, k)
 
         return D
 
-    def N(self, m, n):
+    def N(self, n, v):
         """
         Parameters
         ----------
-        m: torodial mode number
-        n: summation index in V
+        n: torodial mode number
+        v: summation index in V
 
         Returns:
         --------
@@ -765,19 +765,19 @@ class DommaschkPotentials(MagneticField):
         """
 
         N = log(1)
-        k_arr = np.arange(0, int(n / 2) + 1, 1)
+        k_arr = np.arange(0, int(v / 2) + 1, 1)
 
         for k in k_arr:
-            N += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CN(m, k)
+            N += (self.Z ** (v - 2 * k)) / factorial(v - 2 * k) * self.CN(n, k)
 
         return N
 
-    def V(self, m, n, a, b, c, d):
+    def V(self, n, m, a, b, c, d):
         """
         Parameters
         ----------
-        m: torodial mode number
-        n: polodial mode number
+        n: torodial mode number
+        m: polodial mode number
         a,b,c,d: Coefficients for m,l-th Dommaschk potential (elements of matrix A)
 
         Returns:
@@ -785,9 +785,9 @@ class DommaschkPotentials(MagneticField):
         Sympy function V_ml
         """
 
-        V = (a * cos(m * self.phi) + b * sin(m * self.phi)) * self.D(m, n) + (
-            c * cos(m * self.phi) + d * sin(m * self.phi)
-        ) * self.N(m, n - 1)
+        V = (a * cos(n * self.phi) + b * sin(n * self.phi)) * self.D(n, m) + (
+            c * cos(n * self.phi) + d * sin(n * self.phi)
+        ) * self.N(n, m - 1)
 
         return V
 
@@ -810,12 +810,12 @@ class DommaschkPotentials(MagneticField):
 
         return U
 
-    def V_hat(self, m, n, a, b, c, d):
+    def V_hat(self, n, m, a, b, c, d):
         """
         Parameters
         ----------
-        m: torodial mode number
-        n: polodial mode number
+        n: torodial mode number
+        m: polodial mode number
         a,b,c,d: Coefficients for m,l-th Dommaschk potential (elements of matrix A)
 
         Returns:
@@ -824,11 +824,11 @@ class DommaschkPotentials(MagneticField):
         """
 
         V = (
-            a * cos(m * self.phi - np.pi / 2) + b * sin(m * self.phi - np.pi / 2)
-        ) * self.D(m, n) + (
-            c * cos(m * self.phi - np.pi / 2) + d * sin(m * self.phi - np.pi / 2)
+            a * cos(n * self.phi - np.pi / 2) + b * sin(n * self.phi - np.pi / 2)
+        ) * self.D(n, m) + (
+            c * cos(n * self.phi - np.pi / 2) + d * sin(n * self.phi - np.pi / 2)
         ) * self.N(
-            m, n - 1
+            n, m - 1
         )
 
         return V
