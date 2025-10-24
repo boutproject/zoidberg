@@ -42,4 +42,4 @@ jobs:
         run: |
           cd /home/boutuser/zoidberg/test/mms/
           # Run test
-          make
+          PYTHONPATH=/home/boutuser/zoidberg:$PYTHONPATH make
