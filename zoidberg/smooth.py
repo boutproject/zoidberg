@@ -187,14 +187,9 @@ def gen_newr(r, z, splitedlist, bounds, plot):
 
         def fun(x, A, b, signs):
             ret = A @ x - b
-            # k = len(x) // 2
-            # newsigns = (x[0], x[1], np.sum(x[:k]), np.sum(x[k:]))
-            # mycoss = mycos(signs[:2], newsigns[:2]), mycos(signs[2:], newsigns[2:])
             return (
                 *ret,
                 lenofs(x) / 1e5,
-                # (1 - mycoss[0]) / 1e2,
-                # (mycoss[1] - 1) / 1e2,
                 *(curv(x, 1 / 1e3)),
             )
 
