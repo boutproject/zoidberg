@@ -40,6 +40,7 @@ jobs:
 
       - name: Run
         run: |
+          export HOME=/home/boutuser
           cd /home/boutuser/zoidberg/test/mms/
           # Run test
           PYTHONPATH=/home/boutuser/zoidberg:$PYTHONPATH make
