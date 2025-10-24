@@ -434,8 +434,6 @@ class CachingFieldTracer:
         except FileNotFoundError:
             if self.debug:
                 print("no cache", fn)
-            # raise
-            pass
         ret = self.tracer.follow_field_lines(x_values, z_values, y_values, **kwargs)
         shape = ret.shape
         if self.debug:
