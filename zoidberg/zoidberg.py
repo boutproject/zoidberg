@@ -106,11 +106,11 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
         "ParallelSlice", ["offset", "R", "Z", "xt_prime", "zt_prime"]
     )
     # A list of the above data structures for each offset we want
-    parallel_slicess = []
+    parallel_slices_list = []
 
     # Loop over offsets {1, ... nslice, -1, ... -nslice}
     for direction in 1, -1:
-        parallel_slicess.append([])
+        parallel_slices_list.append([])
         for absoffset in range(1, nslice + 1):
             offset = absoffset * direction
             # Unique names of the field line maps for this offset
@@ -125,10 +125,10 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
 
             # Get the field arrays we just made and wrap them up in our helper tuple
             fields = map(lambda x: maps[x], field_names)
-            parallel_slicess[-1].append(ParallelSlice(offset, *fields))
+            parallel_slices_list[-1].append(ParallelSlice(offset, *fields))
 
     # Total size of the progress bar
-    total_work = len(parallel_slicess) * ny
+    total_work = len(parallel_slices_list) * ny
 
     # TODO: if axisymmetric, don't loop, do one slice and copy
     # TODO: restart tracing for adjacent offsets
@@ -137,7 +137,7 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
             prog = tqdm(total=total_work, desc="Tracing")
         else:
             update_progress(0, **kwargs)
-    for slice_index, parallel_slices in enumerate(parallel_slicess):
+    for slice_index, parallel_slices in enumerate(parallel_slices_list):
         for j in range(ny):
             # Get this poloidal grid
             pol, ycoord = grid.getPoloidalGrid(j)
