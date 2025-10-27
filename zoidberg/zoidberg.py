@@ -464,6 +464,10 @@ class MapWriter:
                     print(ysel)
                     import matplotlib.pyplot as plt
 
+                    for k in "g11", "g13":
+                        plt.figure()
+                        plt.scatter(par_metric[k], par_BJg / self.BJg)
+                        plt.title(k)
                     plt.figure()
                     ppgrid = par_pgrids[ysel]
                     plt.pcolormesh(
