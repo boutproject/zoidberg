@@ -462,7 +462,7 @@ class MapWriter:
         """
         if "Rxy" not in maps:
             maps["Rxy"] = maps["R"]
-        self.writeDict(maps)
+        self.write_dict(maps)
         keep = {}
         nslice = maps["MYG"]
         for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
