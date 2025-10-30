@@ -228,6 +228,7 @@ def get_metric(grid, magnetic_field):
     # Get magnetic field and pressure
     Bmag = np.zeros(grid.shape)
     pressure = np.zeros(grid.shape)
+
     for yindex in range(grid.numberOfPoloidalGrids()):
         pol_grid, ypos = grid.getPoloidalGrid(yindex)
         Bmag[:, yindex, :] = magnetic_field.Bmag(pol_grid.R, pol_grid.Z, ypos)
