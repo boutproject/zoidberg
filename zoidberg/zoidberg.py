@@ -238,7 +238,7 @@ def get_metric(grid, magnetic_field):
         metric["gyy"][:, yindex, :] *= (By / Bmag[:, yindex, :]) ** 2
 
     # B * J / sqrt(g22)
-    BJg = Bmag * metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2
+    BJg = Bmag * np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
 
     return metric, Bmag, pressure, BJg
 
