@@ -1,7 +1,15 @@
 from multiprocessing import Pool
+import itertools
 
 import numpy as np
 from scipy.integrate import odeint
+
+try:
+    import eudist
+
+    has_eudist = True
+except ImportError:
+    has_eudist = False
 
 from .field import _set_config
 
@@ -701,3 +709,229 @@ class FieldTracerWeb:
                 result[i, j, 0] = np.sqrt(ps.x2[-1] ** 2 + ps.x1[-1] ** 2)
                 result[i, j, 1] = ps.x3[-1]
         return result
+
+
+if has_eudist:
+
+    class _PolyMesh(eudist.PolyMesh):
+        def __init__(self, x, y):
+            super().__init__()
+            self.r = x
+            self.z = y
+            self.grid = np.array([x, y]).transpose(1, 2, 0)
+
+else:
+
+    class _PolyMesh:
+        def __init__(self, x, y):
+            raise RuntimeError(
+                "eudist is needed to use PolyMesh. Maybe use pip install eudist?"
+            )
+
+
+class EMC3FieldTracer(FieldTracer):
+    """A class for following magnetic field lines
+
+    Parameters
+    ----------
+    field : :py:obj:`~zoidberg.field.MagneticField`
+        A Zoidberg MagneticField instance
+
+    """
+
+    def __init__(self, field):
+        import xarray as xr
+
+        self.field_direction = field.field_direction
+        self.field = field
+        self.ds = field.ds
+        self.ds_min = xr.Dataset(
+            dict(
+                R_bounds=self.ds["R_bounds"],
+                z_bounds=self.ds["z_bounds"],
+                phi_bounds=self.ds["phi_bounds"],
+            )
+        )
+        for k in self.ds:
+            if k.endswith("_dims"):
+                self.ds_min[k] = self.ds[k]
+        first = [self.makeMeshInd(0, zid) for zid in self._iterZones()]
+        last = [self.makeMeshInd(-1, zid) for zid in self._iterZones()]
+        self.firstlast = (first, last)
+
+    def follow_field_lines(self, x_values, z_values, y_values, rtol=None):
+        # assert np.all(y_values >= self.ds.phi.min().values) and np.all(
+        #     y_values <= self.ds.phi.max().values
+        # ), f"The condition is not fulfilled: {self.ds.phi.min()} <= {y_values} <= {self.ds.phi.max()}"
+        meshes = [self.makeMeshes(phi) for phi in y_values]
+        assert x_values.shape == z_values.shape
+        out = np.empty((len(y_values), *x_values.shape, 2))
+        ij = -1
+        zid = 0
+        # print([range(x) for x in x_values.shape])
+        for i in itertools.product(*[range(x) for x in x_values.shape]):
+            rz = np.array((x_values[i], z_values[i]))
+            ab, ij, zid = self.rz_to_ab(rz, meshes[0], ij, zid)
+            if x_values.shape == ():
+                i = None
+            out[(0, *i)] = rz
+            ij1, zid1 = ij, zid
+            cache = {0: (ab, ij, zid)}
+            for j in range(1, len(meshes)):
+                perBC = meshes[j][zid].perBC - meshes[0][zid].perBC
+                if perBC not in cache:
+                    first, last = (0, 1) if perBC > 0 else (1, 0)
+                    for _ in range(abs(perBC)):
+                        rz1 = self._ab_to_rz(ab, self.firstlast[last][zid1].grid, ij1)
+                        ab, ij1, zid1 = self.rz_to_ab(
+                            rz1, self.firstlast[first], ij1, zid1
+                        )
+                    cache[perBC] = self.rz_to_ab(rz, meshes[0], ij, zid)
+                ab, ij1, zid1 = cache[perBC]
+                out[(j, *i)] = self._ab_to_rz(ab, meshes[j][zid1].grid, ij1)
+        return out
+
+    def _rz_to_ab(self, rz, grid, ij):
+        _, nz, _ = grid.shape
+        nz -= 1
+        i, j = ij // nz, ij % nz
+        ABCD = grid[i : i + 2, j : j + 2]
+        # if j + 1 == nz:
+        #    ABCD[:, 1] = grid[i : i + 2, 0]
+        # print(ABCD)
+        # print(i, j, nz, ij)
+        if ABCD.shape != (2, 2, 2):
+            print(grid.shape)
+            print(rz)
+            import matplotlib.pyplot as plt
+
+            plt.figure()
+            plt.plot(grid[:, :, 0], grid[:, :, 1])
+            plt.plot(grid[:, :, 0].T, grid[:, :, 1].T)
+            plt.plot(*rz, "ro")
+            plt.show()
+            pass
+        assert ABCD.shape == (
+            2,
+            2,
+            2,
+        ), f"{ABCD.shape} {ij} = {i} * {nz} + {j}, {grid.shape}"
+        A = ABCD[0, 0]
+        a = ABCD[0, 1] - A
+        b = ABCD[1, 0] - A
+        c = ABCD[1, 1] - A - a - b
+        rz0 = rz - A
+
+        def fun(albe):
+            al, be = albe
+            return rz0 - a * al - b * be - c * al * be
+
+        def J(albe):
+            al, be = albe
+            return np.array([-a - c * be, -b - c * al])
+
+        tol = 1e-13
+        albe = np.ones(2) / 2
+        # while True:
+        for i in range(100):
+            assert np.all(np.isfinite(albe))
+            albe = albe - np.linalg.inv(J(albe).T) @ fun(albe)
+            # if i > 20:
+            #    print(f"Failing to converge! {albe} {fun(albe)}")
+            res = np.sum(fun(albe) ** 2)
+            if res < tol:
+                return albe
+        import scipy.optimize as sopt
+
+        def fun1(x0, a, b, c, rz0):
+            al, be = x0
+            return al * a + be * b + al * be * c - rz0
+
+        res = sopt.least_squares(fun1, np.zeros(2), args=(a, b, c, rz0))
+        return res.x
+
+    def _ab_to_rz(self, ab, grid, ij):
+        _, nz, _ = grid.shape
+        nz -= 1
+        i, j = ij // nz, ij % nz
+        A = grid[i, j]
+        a = grid[i, j + 1] - A
+        b = grid[i + 1, j] - A
+        c = grid[i + 1, j + 1] - A - a - b
+        al, be = ab
+        return A + al * a + be * b + al * be * c
+
+    def rz_to_ab(self, rz, meshes, ij, zid):
+        for mesh in itertools.chain(meshes[zid:], meshes[:zid]):
+            ij = mesh.find_cell(rz, ij)
+            if ij >= 0:
+                return self._rz_to_ab(rz, mesh.grid, ij), ij, mesh.zid
+
+        for mind in 1e-3, 1e-2, 1:
+            mind = mind**2
+            for mesh in itertools.chain(meshes[zid:], meshes[:zid]):
+                # print(f"checking mesh {mesh.zid}")
+                l2 = (rz[0] - mesh.r) ** 2 + (rz[1] - mesh.z) ** 2
+                ij = np.argmin(l2)
+                if l2.flat[ij] < mind:
+                    nr, nz = mesh.r.shape
+                    if ij >= (nr - 1) * nz:
+                        ij -= nz
+                    return self._rz_to_ab(rz, mesh.grid, ij), ij, mesh.zid
+
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as mcolors
+
+        plt.figure()
+        for mesh, clr in zip(meshes, itertools.cycle(mcolors.TABLEAU_COLORS.values())):
+            plt.plot(mesh.r.T, mesh.z.T, c=clr)
+            plt.plot(mesh.r, mesh.z, c=clr)
+        plt.plot(*rz, "ro")
+        plt.title("We left the domain!")
+        plt.show()
+        raise RuntimeError("We left the domain")
+
+    def _iterZones(self):
+        if "zone" in self.ds.dims:
+            return range(len(self.ds.zone))
+        return range(1)
+
+    def makeMeshes(self, phi):
+        return [self.makeMesh(phi, zid) for zid in self._iterZones()]
+
+    def makeMeshInd(self, phi, zid):
+        di = self.ds_min.emc3.isel(zone=zid)
+        if phi == -1:
+            di = di.isel(phi=phi)
+            di = di.isel(delta_phi=phi)
+        else:
+            di = di.emc3.isel(phi=phi)
+        Rsrc = di.emc3["R_corners"]
+        Zsrc = di.emc3["z_corners"]
+
+        mesh = _PolyMesh(Rsrc.data, Zsrc.data)
+        mesh.zid = zid
+        return mesh
+
+    def makeMesh(self, phi, zid):
+        di = self.ds_min.emc3.isel(zone=zid)
+        pmin = np.min(di["phi_bounds"])
+        pmax = np.max(di["phi_bounds"])
+        perBC = 0
+        if not (pmin < phi < pmax):
+            deltap = pmax - pmin
+            while phi < pmin:
+                phi += deltap
+                perBC += 1
+            while phi > pmax:
+                phi -= deltap
+                perBC -= 1
+        di = di.emc3.sel(phi=phi)
+        Rsrc = di.emc3["R_corners"]
+        Zsrc = di.emc3["z_corners"]
+
+        mesh = _PolyMesh(Rsrc.data, Zsrc.data)
+        mesh.zid = zid
+        mesh.phi = phi
+        mesh.perBC = perBC
+        return mesh
