@@ -229,6 +229,7 @@ def get_metric(grid, magnetic_field):
     # Get magnetic field and pressure
     Bmag = np.zeros(grid.shape)
     pressure = np.zeros(grid.shape)
+
     for yindex in range(grid.numberOfPoloidalGrids()):
         pol_grid, ypos = grid.getPoloidalGrid(yindex)
         Bmag[:, yindex, :] = magnetic_field.Bmag(pol_grid.R, pol_grid.Z, ypos)
@@ -431,6 +432,10 @@ class MapWriter:
         ny = len(ypar)
         meandy = np.mean(np.diff(ypar))
         Ly = self.grid.Ly if self.grid else meandy * ny
+        if self.grid:
+            assert np.isclose(
+                Ly, meandy * ny
+            ), f"Ly of grid (Ly={Ly}) does not seem to match the average dy (ny * dy = {ny} * {meandy} = {ny * meandy}"
         yperiodic = self.grid.yperiodic if self.grid else True
         for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
             pypar = np.roll(ypar, -offset)  # TODO: is the sign correct?
