@@ -1,5 +1,5 @@
-from multiprocessing import Pool
 import itertools
+from multiprocessing import Pool
 
 import numpy as np
 from scipy.integrate import odeint
@@ -879,8 +879,8 @@ class EMC3FieldTracer(FieldTracer):
                         ij -= nz
                     return self._rz_to_ab(rz, mesh.grid, ij), ij, mesh.zid
 
-        import matplotlib.pyplot as plt
         import matplotlib.colors as mcolors
+        import matplotlib.pyplot as plt
 
         plt.figure()
         for mesh, clr in zip(meshes, itertools.cycle(mcolors.TABLEAU_COLORS.values())):
