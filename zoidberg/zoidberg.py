@@ -451,8 +451,9 @@ class MapWriter:
                 yperiodic=yperiodic,
             )
 
-            par_metric, _, _, par_BJg = get_metric(par_grid, self.field)
-            if self.BJg is not None:
+            par_metric, par_B, _, par_BJg = get_metric(par_grid, self.field)
+
+            if self.BJg is not None and self.BJg.shape[0] > 4:
                 mymax = np.max(np.abs(par_BJg / self.BJg - 1)[2:-2], axis=(0, 2))
                 if np.max(mymax) > 1e-6:
                     print(
@@ -484,6 +485,9 @@ class MapWriter:
                         plt.colorbar()
 
                     plt.show()
+
+            par_metric["B"] = par_B
+            par_metric["Bxy"] = par_B
             if not self.new_names:
                 par_metric = update_metric_names(par_metric)
 
