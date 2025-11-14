@@ -281,17 +281,31 @@ class StructuredPoloidalGrid(PoloidalGrid):
         self.R = R
         self.Z = Z
 
-        # Create a KDTree for quick lookup of nearest points
-        n = R.size
-        data = np.concatenate((R.reshape((n, 1)), Z.reshape((n, 1))), axis=1)
-        self.tree = KDTree(data)
-
-        # Create splines for quick interpolation of coordinates
         nx, nz = R.shape
-
         self.nx = nx
         self.nz = nz
 
+        try:
+            import shapely
+        except ImportError:
+            pass
+        else:
+            if nx > 4:
+                inner = shapely.Polygon(zip(R[2], Z[2]))
+                outer = shapely.Polygon(zip(R[-2], Z[-2]))
+
+                assert (
+                    inner.area <= outer.area
+                ), f"""You are trying to create a grid with inner boundary at high x
+and outer boundary at low x. This is against the convention -
+switch inner and outer boundary.
+                {inner.area} {outer.area}"""
+
+        # Create a KDTree for quick lookup of nearest points
+        data = np.concatenate((R.reshape((-1, 1)), Z.reshape((-1, 1))), axis=1)
+        self.tree = KDTree(data)
+
+        # Create splines for quick interpolation of coordinates
         xinds = np.arange(nx)
         zinds = np.arange(nz * 3)
         # Repeat the data in z, to approximate periodicity
