@@ -398,6 +398,55 @@ def trace_poincare(
     return result, y_slices
 
 
+class CachingFieldTracer:
+    def __init__(
+        self, tracer, cachename="_zoidberg_cache_tracing_%10.10s", debug=False
+    ):
+        self.tracer = tracer
+        self.cachename = cachename
+        self.debug = debug
+
+    def _myhash(self, *args):
+        """
+
+        Compute a digest over some numerical data
+
+        """
+        import hashlib
+
+        m = hashlib.md5()
+        for arg in args:
+            s = "-".join([str(x) for x in np.array([arg]).ravel()]).encode()
+            if self.debug:
+                print(s)
+            m.update(s)
+        return m.hexdigest()
+
+    def _guess_shape(self, x_values, y_values):
+        return len(y_values), *x_values.shape, 2
+
+    def follow_field_lines(self, x_values, z_values, y_values, **kwargs):
+        fn = self.cachename % self._myhash(x_values, z_values, y_values)
+        try:
+            dat = np.loadtxt(fn)
+            dat.shape = self._guess_shape(x_values, y_values)
+            return dat
+        except FileNotFoundError:
+            if self.debug:
+                print("no cache", fn)
+        ret = self.tracer.follow_field_lines(x_values, z_values, y_values, **kwargs)
+        shape = ret.shape
+        if self.debug:
+            print(f"saving {ret.shape}, {x_values.shape}")
+        ret.shape = -1, shape[-1]
+        np.savetxt(fn, ret)
+        assert shape == self._guess_shape(
+            x_values, y_values
+        ), f"Estimated {self._guess_shape(x_values, y_values)} but got {shape}"
+        ret.shape = shape
+        return ret
+
+
 def _get_value(*args):
     for k in args:
         if k is not None:
@@ -419,7 +468,7 @@ class FieldTracerWeb:
         self,
         config=None,
         configId=None,
-        timeout=0.1,
+        timeout=1,
         chunk=10000,
         stepsize=None,
         retry=None,

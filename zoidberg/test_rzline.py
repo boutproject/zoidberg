@@ -9,6 +9,8 @@ def test_circular_boundaries():
 
     assert np.amax(inner.R) <= 2.0
     assert np.amin(inner.R) >= 0.0
+    assert np.amax(outer.R) <= 3.0
+    assert np.amin(outer.R) >= -1.0
 
 
 def test_distance():

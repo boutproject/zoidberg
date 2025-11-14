@@ -1,8 +1,8 @@
 from math import gamma
 
 import numpy as np
-from sympy import (And, Piecewise, Sum, Symbol, atan2, cos, diff, factorial,
-                   lambdify, log, pi, sin, sqrt)
+from sympy import (Piecewise, Symbol, atan2, cos, diff, factorial, lambdify,
+                   log, pi, sin, sqrt)
 
 from . import boundary
 
@@ -711,12 +711,14 @@ class DommaschkPotentials(MagneticField):
         )
         beta_st = lambda n, b: beta(n, b) * (2 * n - b)
 
-        delta = lambda n, b: (
-            alpha(n, b) * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)]) / 2
-            if (n > 0)
-            else 0.0
-        )
-        delta_st = lambda n, b: delta(n, b) * (2 * n + b)
+        def delta(n, b):
+            if n <= 0:
+                return 0.0
+            return (
+                alpha(n, b)
+                * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
+                / 2
+            )
 
         CN = log(1)
         for j in range(k + 1):
@@ -730,12 +732,12 @@ class DommaschkPotentials(MagneticField):
 
         return CN
 
-    def D(self, m, n):
+    def D(self, n, v):
         """
         Parameters
         ----------
-        m: torodial mode number
-        n: summation index in  V
+        n: torodial mode number
+        v: summation index in  V
 
         Returns:
         --------
@@ -743,19 +745,19 @@ class DommaschkPotentials(MagneticField):
         """
 
         D = log(1)
-        k_arr = np.arange(0, int(n / 2) + 1, 1)
+        k_arr = np.arange(0, int(v / 2) + 1, 1)
 
         for k in k_arr:
-            D += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CD(m, k)
+            D += (self.Z ** (v - 2 * k)) / factorial(v - 2 * k) * self.CD(n, k)
 
         return D
 
-    def N(self, m, n):
+    def N(self, n, v):
         """
         Parameters
         ----------
-        m: torodial mode number
-        n: summation index in V
+        n: torodial mode number
+        v: summation index in V
 
         Returns:
         --------
@@ -763,19 +765,19 @@ class DommaschkPotentials(MagneticField):
         """
 
         N = log(1)
-        k_arr = np.arange(0, int(n / 2) + 1, 1)
+        k_arr = np.arange(0, int(v / 2) + 1, 1)
 
         for k in k_arr:
-            N += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CN(m, k)
+            N += (self.Z ** (v - 2 * k)) / factorial(v - 2 * k) * self.CN(n, k)
 
         return N
 
-    def V(self, m, l, a, b, c, d):
+    def V(self, n, m, a, b, c, d):
         """
         Parameters
         ----------
-        m: torodial mode number
-        l: polodial mode number
+        n: torodial mode number
+        m: polodial mode number
         a,b,c,d: Coefficients for m,l-th Dommaschk potential (elements of matrix A)
 
         Returns:
@@ -783,9 +785,9 @@ class DommaschkPotentials(MagneticField):
         Sympy function V_ml
         """
 
-        V = (a * cos(m * self.phi) + b * sin(m * self.phi)) * self.D(m, l) + (
-            c * cos(m * self.phi) + d * sin(m * self.phi)
-        ) * self.N(m, l - 1)
+        V = (a * cos(n * self.phi) + b * sin(n * self.phi)) * self.D(n, m) + (
+            c * cos(n * self.phi) + d * sin(n * self.phi)
+        ) * self.N(n, m - 1)
 
         return V
 
@@ -808,12 +810,12 @@ class DommaschkPotentials(MagneticField):
 
         return U
 
-    def V_hat(self, m, l, a, b, c, d):
+    def V_hat(self, n, m, a, b, c, d):
         """
         Parameters
         ----------
-        m: torodial mode number
-        l: polodial mode number
+        n: torodial mode number
+        m: polodial mode number
         a,b,c,d: Coefficients for m,l-th Dommaschk potential (elements of matrix A)
 
         Returns:
@@ -822,11 +824,11 @@ class DommaschkPotentials(MagneticField):
         """
 
         V = (
-            a * cos(m * self.phi - np.pi / 2) + b * sin(m * self.phi - np.pi / 2)
-        ) * self.D(m, l) + (
-            c * cos(m * self.phi - np.pi / 2) + d * sin(m * self.phi - np.pi / 2)
+            a * cos(n * self.phi - np.pi / 2) + b * sin(n * self.phi - np.pi / 2)
+        ) * self.D(n, m) + (
+            c * cos(n * self.phi - np.pi / 2) + d * sin(n * self.phi - np.pi / 2)
         ) * self.N(
-            m, l - 1
+            n, m - 1
         )
 
         return V
@@ -1147,9 +1149,6 @@ class SmoothedMagneticField(MagneticField):
         Not modified by smoothing
         """
         return self.field.Byfunc(x, z, phi)
-
-    def Bxfunc(self, x, z, phi):
-        pass
 
     def Rfunc(self, x, z, phi):
         return self.field.Rfunc(x, z, phi)
@@ -1631,9 +1630,6 @@ class W7X_vacuum(MagneticField):
             res.axis.vertices.x2
         )  # (m) -- REAL SPACE from an arbitrary start point
         magnetic_axis_z = np.asarray(res.axis.vertices.x3)  # (m)
-        magnetic_axis_rmaj = np.sqrt(
-            magnetic_axis_x**2 + magnetic_axis_y**2 + magnetic_axis_z**2
-        )
 
         magnetic_axis_r = np.sqrt(
             np.asarray(magnetic_axis_x) ** 2 + np.asarray(magnetic_axis_y**2)
@@ -1680,7 +1676,7 @@ class W7X_vacuum(MagneticField):
         global tracer
         tracer = tracer or Client(
             "http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl",
-            osa_timeout=0.1,
+            osa_timeout=1,
         )
 
         assert x.shape[0] == 3
@@ -1700,7 +1696,7 @@ class W7X_vacuum(MagneticField):
                 res = tracer.service.magneticField(
                     pos, config, osa_timeout=(10 + len(pos.x1) / 1000)
                 )
-            except:
+            except:  # noqa
                 # Catch any error. Different errors might be
                 # reported, but we want to retry anyway.
                 # Do not except Exception, as that would also

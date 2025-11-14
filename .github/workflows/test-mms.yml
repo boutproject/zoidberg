@@ -7,7 +7,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     container:
-      image: oi4ai/bout3d:latest-${{ matrix.config.mode }}
+      image: ghcr.io/boutproject/bout-dev:mpich-3d-${{ matrix.config.mode }}-fix3121
     strategy:
       fail-fast: false
       matrix:
@@ -36,13 +36,11 @@ jobs:
           cd /home/boutuser/zoidberg
           python3 -m ensurepip
           python3 -m pip install .
-          python3 -m pip install xarray
+          python3 -m pip install xarray typing_extensions
 
       - name: Run
         run: |
           export HOME=/home/boutuser
-          export PYTHONPATH=/home/boutuser/BOUT-dev/build/tools/pylib/
-          export LD_LIBRARY_PATH=/usr/lib64/mpich/lib
           cd /home/boutuser/zoidberg/test/mms/
           # Run test
-          make
+          PYTHONPATH=/home/boutuser/zoidberg:$PYTHONPATH make
