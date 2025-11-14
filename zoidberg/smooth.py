@@ -206,7 +206,6 @@ def gen_newr(r, z, splitedlist, bounds, plot):
                 xtol=1e-14,
                 ftol=None,
             )
-            # if np.max(np.abs(x.fun)) > 1e-5:
             if x.optimality > 1e-8:
                 have_failed = True
                 deb += [[x.cost, x.optimality, np.max(np.abs(x.fun))]]
