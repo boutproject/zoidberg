@@ -1885,3 +1885,74 @@ class W7X_VMEC(MagneticField):
     def Rfunc(self, x, z, phi):
         phi = np.mod(phi, 2.0 * np.pi)
         return x
+
+
+class EMC3(MagneticField):
+    def __init__(self, ds):
+        self.ds = ds
+        assert hasattr(ds, "emc3"), "Expected an xemc3 dataset. Is xemc3 imported?"
+        self.ds["Bmean"] = ds["bf_bounds"].mean(
+            dim=("delta_r", "delta_phi", "delta_theta")
+        )
+
+    def Bxfunc(self, x, z, phi):
+        raise NotImplementedError("Use maybe EMC3 tracer?")
+
+    def Byfunc(self, x, z, phi):
+        # raise NotImplementedError("Use maybe EMC3 tracer?")
+        return self.Bmag(x, z, phi)
+
+    def Bzfunc(self, x, z, phi):
+        raise NotImplementedError("Use maybe EMC3 tracer?")
+
+    def Bxyzfunc(self, x, z, phi):
+        raise NotImplementedError("Use maybe EMC3 tracer?")
+
+    def Bmag(self, x, z, phi):
+        vals = self.ds.emc3.evaluate_at_rpz(x, phi, z, "Bmean", delta_phi=1e-6)[
+            "Bmean"
+        ].values
+        nans = np.isnan(vals)
+        if np.any(nans):
+            if 1:
+                from scipy.interpolate import CubicSpline as CS
+
+                for i in range(x.shape[1]):
+                    ni = nans[:, i]
+                    if not np.any(ni):
+                        continue
+                    xi = x[:, i]
+                    zi = z[:, i]
+                    vi = vals[:, i]
+                    si = np.zeros_like(xi)
+                    si[1:] = np.cumsum(
+                        np.sqrt((xi[1:] - xi[:-1]) ** 2 + (zi[1:] - zi[:-1]) ** 2)
+                    )
+                    interp = CS(si[~ni], vi[~ni])
+                    vals[ni, i] = interp(si[ni])
+            else:
+                from scipy.interpolate import LinearNDInterpolator as LinInter
+
+                if phi.shape == ():
+                    pos = np.array((x, z))
+                else:
+                    pos = np.array((x, z, phi))
+                inter = LinInter(pos[:, ~nans].T, vals[~nans])
+                print(vals[~nans])
+
+                print(inter(pos[:, nans].T))
+                vals[nans] = inter(pos[:, nans].T)
+
+                import matplotlib.pyplot as plt
+
+                plt.figure()
+                # plt.pcolormesh(X, Y, Z, shading='auto')
+                plt.plot(*pos[:, ~nans], "ok", label="input point")
+                plt.plot(*pos[:, nans], "or", label="evaled")
+                print(*pos[:, nans].T)
+                plt.legend()
+                # plt.colorbar()
+                plt.axis("equal")
+                plt.show()
+
+        return vals
