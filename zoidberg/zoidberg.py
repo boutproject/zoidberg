@@ -381,7 +381,6 @@ class MapWriter:
 
         self.write_dict(metric, always3d=False)
 
-        del metric
         self.grid._metric_cache = None
 
         # Get attributes from magnetic field (e.g. psi)
