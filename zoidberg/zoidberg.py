@@ -269,8 +269,6 @@ class MapWriter:
         self.fn = gridfile
         self.new_names = new_names
         self.metric2d = metric2d
-        self.format = "NETCDF4"
-,
         self.quiet = quiet
         self.is_open = False
         self.create = create
@@ -282,7 +280,7 @@ class MapWriter:
         self.final_done = False
 
     def __enter__(self):
-        f = bdata.DataFile(self.fn, write=True, create=self.create, format=self.format)
+        f = bdata.DataFile(self.fn, write=True, create=self.create)
         self.f = f.__enter__()
         self.is_open = True
         if not self.create:
