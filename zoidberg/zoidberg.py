@@ -250,13 +250,18 @@ class MapWriter:
         ...
         mw.add_maps(maps)
         mw.add_dagp()
+
+    Unlike map_write() this allows to delete objects when they are not needed
+    any more. This can help avoid OOM issues for generating large grids.
+
+    It also allows to update grids, if new fields are added to zoidberg, that
+    old grids are missing.
     """
 
     def __init__(
         self,
         gridfile="fci.grid.nc",
         new_names=False,
-        format="NETCDF4",
         metric2d=False,
         quiet=False,
         create=True,
@@ -264,7 +269,8 @@ class MapWriter:
         self.fn = gridfile
         self.new_names = new_names
         self.metric2d = metric2d
-        self.format = format
+        self.format = "NETCDF4"
+,
         self.quiet = quiet
         self.is_open = False
         self.create = create
