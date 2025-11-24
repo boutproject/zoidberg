@@ -518,7 +518,7 @@ def write_maps(
     gridfile="fci.grid.nc",
     new_names=False,
     metric2d=True,
-    format="NETCDF4",
+    format=None,
     quiet=False,
 ):
     """Write FCI maps to BOUT++ grid file
@@ -537,8 +537,8 @@ def write_maps(
         Write "g_yy" rather than "g_22"
     metric2d : bool, optional
         Output only 2D metrics
-    format : str, optional
-        Specifies file format to use, passed to boutdata.DataFile
+    format : optional
+        deprecated and ignored
     quiet : bool, optional
         Don't warn about 2D metrics
 
@@ -549,9 +549,7 @@ def write_maps(
 
 
     """
-    with MapWriter(
-        gridfile, new_names=new_names, format=format, metric2d=metric2d, quiet=quiet
-    ) as mw:
+    with MapWriter(gridfile, new_names=new_names, metric2d=metric2d, quiet=quiet) as mw:
         mw.add_grid_field(grid, magnetic_field)
         mw.add_maps(maps)
 
