@@ -33,7 +33,7 @@ def gen_grid(nx, ny, nz, R0, r0, r1, mode=0):
     pol_grid = zb.poloidal_grid.StructuredPoloidalGrid(R, Z)
 
     field = FixedCurvedSlab(Bz=0, Bzprime=0, Rmaj=R0)
-    grid = zb.grid.Grid(pol_grid, phi, 5, yperiodic=True)
+    grid = zb.grid.Grid(pol_grid, phi, 2 * np.pi / 5, yperiodic=True)
 
     fn = gen_name(*args)
 
