@@ -510,7 +510,6 @@ class RotatingEllipse(MagneticField):
 
         for c in self.coil_list:
             xc, zc, Ic = c
-            rc = (xc**2 + zc**2) ** (0.5)
             r2 = (self.x - xc) ** 2 + (self.z - zc) ** 2
             theta = atan2(self.z - zc, self.x - xc)  # Angle relative to coil
 
@@ -647,26 +646,37 @@ class DommaschkPotentials(MagneticField):
         Sympy function CD_mk (R) (Dirichlet boudary conditions)
         """
 
-        alpha = lambda n, b: (
-            (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
-            if (n >= 0)
-            else 0.0
-        )
-        alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
+        def alpha(n, b):
+            return (
+                (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+                if (n >= 0)
+                else 0.0
+            )
 
-        beta = lambda n, b: (
-            gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
-            if (n >= 0 and n < b)
-            else 0.0
-        )
-        beta_st = lambda n, b: beta(n, b) * (2 * n - b)
+        def alpha_st(n, b):
+            return alpha(n, b) * (2 * n + b)
 
-        delta = lambda n, b: (
-            alpha(n, b) * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)]) / 2
-            if (n > 0)
-            else 0.0
-        )
-        delta_st = lambda n, b: delta(n, b) * (2 * n + b)
+        def beta(n, b):
+            return (
+                gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+                if (n >= 0 and n < b)
+                else 0.0
+            )
+
+        def beta_st(n, b):
+            return beta(n, b) * (2 * n - b)
+
+        def delta(n, b):
+            return (
+                alpha(n, b)
+                * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
+                / 2
+                if (n > 0)
+                else 0.0
+            )
+
+        def delta_st(n, b):
+            return delta(n, b) * (2 * n + b)
 
         CD = log(1)
         for j in range(k + 1):
@@ -697,19 +707,25 @@ class DommaschkPotentials(MagneticField):
         Sympy function CN_mk (R) (Neumann boundary conditions)
         """
 
-        alpha = lambda n, b: (
-            (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
-            if (n >= 0)
-            else 0.0
-        )
-        alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
+        def alpha(n, b):
+            return (
+                (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+                if (n >= 0)
+                else 0.0
+            )
 
-        beta = lambda n, b: (
-            gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
-            if (n >= 0 and n < b)
-            else 0.0
-        )
-        beta_st = lambda n, b: beta(n, b) * (2 * n - b)
+        def alpha_st(n, b):
+            return alpha(n, b) * (2 * n + b)
+
+        def beta(n, b):
+            return (
+                gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+                if (n >= 0 and n < b)
+                else 0.0
+            )
+
+        def beta_st(n, b):
+            return beta(n, b) * (2 * n - b)
 
         def delta(n, b):
             if n <= 0:

@@ -193,25 +193,20 @@ def gen_newr(r, z, splitedlist, bounds, plot):
                 *(curv(x, 1 / 1e3)),
             )
 
-        if 0:
-            x = linalg.lstsq(A, b)
-            x0 = x[0]
-        else:
-            signs = (diff_minus_r, diff_minus_z, -diff_plus_r, -diff_plus_z)
-            x = least_squares(
-                fun,
-                np.zeros(A.shape[1]),
-                args=(A, b, signs),
-                gtol=None,
-                xtol=1e-14,
-                ftol=None,
-            )
-            if x.optimality > 1e-8:
-                have_failed = True
-                deb += [[x.cost, x.optimality, np.max(np.abs(x.fun))]]
-                continue
-            x0 = x.x
-            newsigns = (x0[0], x0[1], np.sum(x0[:3]), np.sum(x0[3:]))
+        signs = (diff_minus_r, diff_minus_z, -diff_plus_r, -diff_plus_z)
+        x = least_squares(
+            fun,
+            np.zeros(A.shape[1]),
+            args=(A, b, signs),
+            gtol=None,
+            xtol=1e-14,
+            ftol=None,
+        )
+        if x.optimality > 1e-8:
+            have_failed = True
+            deb += [[x.cost, x.optimality, np.max(np.abs(x.fun))]]
+            continue
+        x0 = x.x
 
         S = np.linspace(0, 1, num=len(alist))
 

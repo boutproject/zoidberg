@@ -1,7 +1,6 @@
 import zoidberg as zb
 import numpy as np
 import xarray as xr
-import os
 
 lst = [16, 32]
 
