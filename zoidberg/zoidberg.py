@@ -237,7 +237,11 @@ def get_metric(grid, magnetic_field):
         metric["g_yy"][:, yindex, :] *= (Bmag[:, yindex, :] / By) ** 2
         metric["gyy"][:, yindex, :] *= (By / Bmag[:, yindex, :]) ** 2
 
-    return metric, Bmag, pressure
+    metric["Bxy"] = Bmag
+    metric["B"] = Bmag
+    metric["pressure"] = pressure
+
+    return metric
 
 
 class MapWriter:
@@ -373,12 +377,7 @@ class MapWriter:
         if self.metric_done:
             return
 
-        metric, Bmag, pressure = get_metric(self.grid, self.field)
-
-        # Add Rxy, Bxy
-        metric["Bxy"] = Bmag
-        metric["B"] = Bmag
-        metric["pressure"] = pressure
+        metric = get_metric(self.grid, self.field)
 
         if not self.new_names:
             metric = update_metric_names(metric)
@@ -450,9 +449,7 @@ class MapWriter:
                 yperiodic=yperiodic,
             )
 
-            par_metric, par_B, _ = get_metric(par_grid, self.field)
-            par_metric["B"] = par_B
-            par_metric["Bxy"] = par_B
+            par_metric = get_metric(par_grid, self.field)
             if not self.new_names:
                 par_metric = update_metric_names(par_metric)
 
