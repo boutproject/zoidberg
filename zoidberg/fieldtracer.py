@@ -730,7 +730,7 @@ else:
 
 
 class EMC3FieldTracer(FieldTracer):
-    """A class for following magnetic field lines
+    """A class for following magnetic field lines provided by an EMC3 grid.
 
     Parameters
     ----------
@@ -760,9 +760,6 @@ class EMC3FieldTracer(FieldTracer):
         self.firstlast = (first, last)
 
     def follow_field_lines(self, x_values, z_values, y_values, rtol=None):
-        # assert np.all(y_values >= self.ds.phi.min().values) and np.all(
-        #     y_values <= self.ds.phi.max().values
-        # ), f"The condition is not fulfilled: {self.ds.phi.min()} <= {y_values} <= {self.ds.phi.max()}"
         meshes = [self.makeMeshes(phi) for phi in y_values]
         assert x_values.shape == z_values.shape
         out = np.empty((len(y_values), *x_values.shape, 2))
@@ -796,10 +793,6 @@ class EMC3FieldTracer(FieldTracer):
         nz -= 1
         i, j = ij // nz, ij % nz
         ABCD = grid[i : i + 2, j : j + 2]
-        # if j + 1 == nz:
-        #    ABCD[:, 1] = grid[i : i + 2, 0]
-        # print(ABCD)
-        # print(i, j, nz, ij)
         if ABCD.shape != (2, 2, 2):
             print(grid.shape)
             print(rz)
@@ -836,8 +829,6 @@ class EMC3FieldTracer(FieldTracer):
         for i in range(100):
             assert np.all(np.isfinite(albe))
             albe = albe - np.linalg.inv(J(albe).T) @ fun(albe)
-            # if i > 20:
-            #    print(f"Failing to converge! {albe} {fun(albe)}")
             res = np.sum(fun(albe) ** 2)
             if res < tol:
                 return albe
@@ -870,7 +861,6 @@ class EMC3FieldTracer(FieldTracer):
         for mind in 1e-3, 1e-2, 1:
             mind = mind**2
             for mesh in itertools.chain(meshes[zid:], meshes[:zid]):
-                # print(f"checking mesh {mesh.zid}")
                 l2 = (rz[0] - mesh.r) ** 2 + (rz[1] - mesh.z) ** 2
                 ij = np.argmin(l2)
                 if l2.flat[ij] < mind:
