@@ -332,7 +332,7 @@ class StraightStellarator(MagneticField):
 
     """
 
-    def coil(self, xcentre, zcentre, radius, angle, iota, I):
+    def coil(self, xcentre, zcentre, radius, angle, iota, current):
         """Defines a single coil
 
         Parameters
@@ -343,7 +343,7 @@ class StraightStellarator(MagneticField):
             Initial angle of coil
         iota : float
             Rotational transform of coil
-        I : float
+        current : float
             Current through coil
 
         Returns
@@ -354,7 +354,7 @@ class StraightStellarator(MagneticField):
         return (
             xcentre + radius * cos(angle + iota * self.phi),
             zcentre + radius * sin(angle + iota * self.phi),
-            I,
+            current,
         )
 
     def __init__(
@@ -438,7 +438,7 @@ class RotatingEllipse(MagneticField):
         Toroidal magnetic field strength
     """
 
-    def coil(self, xcentre, zcentre, radius, angle, iota, I):
+    def coil(self, xcentre, zcentre, radius, angle, iota, current):
         """Defines a single coil
         Parameters
         ----------
@@ -448,7 +448,7 @@ class RotatingEllipse(MagneticField):
             Initial angle of coil
         iota : float
             Rotational transform of coil
-        I : float
+        current : float
             Current through coil
         Returns
         -------
@@ -458,7 +458,7 @@ class RotatingEllipse(MagneticField):
         return (
             xcentre + radius * cos(angle + iota * self.phi),
             zcentre + radius * sin(angle + iota * self.phi),
-            I,
+            current,
         )
 
     def __init__(

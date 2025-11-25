@@ -1,5 +1,4 @@
 import numpy as np
-from scipy import linalg
 from scipy.optimize import least_squares
 
 
