@@ -456,14 +456,14 @@ class MapWriter:
 
             par_metric, _, _, par_BJg = get_metric(par_grid, self.field)
 
+            # Check flux conservation
             if self.BJg is not None and self.BJg.shape[0] > 4:
                 mymax = np.max(np.abs(par_BJg / self.BJg - 1)[2:-2], axis=(0, 2))
                 if np.max(mymax) > 1e-6:
                     print(
                         "FluxError",
-                        np.max(np.abs(par_BJg / self.BJg - 1)[2:-2], axis=(0, 2)),
+                        mymax
                     )
-                    ysel = np.argmax(mymax)
 
             if not self.new_names:
                 par_metric = update_metric_names(par_metric)
