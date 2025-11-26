@@ -4,9 +4,11 @@ import xarray as xr
 from mms_helper import lst
 
 
-ident = lambda a, b: a
+def ident(a, b):
+    return a
 
-varx = lambda t, x: (t + x) % (2 * np.pi)
+def varx(t, x):
+    return (t + x) % (2 * np.pi)
 
 modes = [
     ("const", ident, ident),

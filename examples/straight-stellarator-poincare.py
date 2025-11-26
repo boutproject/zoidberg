@@ -3,8 +3,6 @@
 # Create grids for a straight stellarator, based on
 # curvilinear grids
 
-import numpy as np
-import matplotlib.pyplot as plt
 
 import zoidberg
 

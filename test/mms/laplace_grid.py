@@ -1,7 +1,5 @@
 import zoidberg as zb
 import numpy as np
-import xarray as xr
-import os
 
 lst = [16, 32]  # , 64, 128]
 
@@ -27,7 +25,6 @@ def gen_name(*args):
 
 def gen_grid(nx, ny, nz, R0, r0, r1, mode=0):
     mode = modes[mode]
-    one = np.ones((nx, ny, nz))
     r = mode[1](r0, r1, nx)[:, None]
     theta = np.linspace(0, 2 * np.pi, nz, False)[None, :]
     if mode[0] == "distort" or mode[0] == "ellipse":
@@ -37,12 +34,6 @@ def gen_grid(nx, ny, nz, R0, r0, r1, mode=0):
     if mode[0] == "ellipse" or mode[0] == "ellipse2":
         R *= 1.5
     Z = np.sin(theta) * r
-    if 0:
-        import matplotlib.pyplot as plt
-
-        plt.plot(R, Z)
-        plt.plot(R.T, Z.T)
-        plt.show()
     pol_grid = zb.poloidal_grid.StructuredPoloidalGrid(R, Z)
 
     field = FixedCurvedSlab(Bz=0, Bzprime=0, Rmaj=R0)
