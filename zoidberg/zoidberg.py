@@ -237,10 +237,14 @@ def get_metric(grid, magnetic_field):
         metric["g_yy"][:, yindex, :] *= (Bmag[:, yindex, :] / By) ** 2
         metric["gyy"][:, yindex, :] *= (By / Bmag[:, yindex, :]) ** 2
 
+    metric["Bxy"] = Bmag
+    metric["B"] = Bmag
+    metric["pressure"] = pressure
+
     # B * J / sqrt(g22)
     BJg = Bmag * np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
 
-    return metric, Bmag, pressure, BJg
+    return metric, BJg
 
 
 class MapWriter:
@@ -329,7 +333,7 @@ class MapWriter:
 
         poloidal_grids = self.grid.poloidal_grids
         if tqdm:
-            poloidal_grids = tqdm(poloidal_grids)
+            poloidal_grids = tqdm(poloidal_grids, desc="compute DAGP terms")
 
         def getHandle(k, t=None, dims=("x", "y", "z"), init=None):
             try:
@@ -377,12 +381,7 @@ class MapWriter:
         if self.metric_done:
             return
 
-        metric, Bmag, pressure, self.BJg = get_metric(self.grid, self.field)
-
-        # Add Rxy, Bxy
-        metric["Bxy"] = Bmag
-        metric["B"] = Bmag
-        metric["pressure"] = pressure
+        metric, self.BJg = get_metric(self.grid, self.field)
 
         if not self.new_names:
             metric = update_metric_names(metric)
@@ -454,7 +453,7 @@ class MapWriter:
                 yperiodic=yperiodic,
             )
 
-            par_metric, _, _, par_BJg = get_metric(par_grid, self.field)
+            par_metric, par_BJg = get_metric(par_grid, self.field)
 
             # Check flux conservation
             if self.BJg is not None and self.BJg.shape[0] > 4:
