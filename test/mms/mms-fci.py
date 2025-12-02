@@ -34,65 +34,16 @@ def fixup(fn):
     grid = xr.open_dataset(fn)
     R = grid.R
     Z = grid.Z
-    dims = Z.dims
     one = np.ones_like(Z)
 
-    # grid["dx"] = dims, np.sqrt((diff(R, 0)) ** 2 + (diff(Z, 0)) ** 2)
-    # grid.dx[:, 1, :].plot()
-    # plt.figure()
     dxn = np.sqrt((diff(R, 0)) ** 2 + (diff(Z, 0)) ** 2)
     dxn /= np.mean(dxn) * R.shape[0]
 
-    # plt.imshow(dxn[:, 1])
-    # plt.colorbar()
-    # plt.show()
-
     dzn = np.sqrt((diff(R, 2)) ** 2 + (diff(Z, 2)) ** 2)
     dzn /= np.mean(dzn) * R.shape[2] / 2 / np.pi
-    # grid["dz"] = np.sqrt((diff(R, 2)) ** 2 + (diff(Z, 2)) ** 2)
     ny = R.shape[1]
     dy = 2 * np.pi / 5 / ny
-    phi = np.linspace(0, np.pi / 5, ny * 5, False)[None, :ny, None] * one + dy / 2
-    # grid["dy"] = dims, dy * one
 
-    # grid["dx"] = dims, dxn
-    # grid["dy"] = dims, dy * one
-    # grid["dz"] = dzn
-    # grid["phi"] = (dims, phi)
-
-    # J = np.array([[diff(o, d) for d in range(3)] for o in [R, Z, phi]])
-
-    # g = np.array(
-    #     [[[J[k, i] * J[k, j] for k in range(3)] for i in range(3)] for j in range(3)]
-    # )
-    # g = g.sum(axis=2)
-    # g = g.transpose((2, 3, 4, 0, 1))
-    # J = J.transpose((2, 3, 4, 0, 1))
-    # # g
-    # assert np.all(J[..., 0, 1] == diff(R, 1))
-    # # Jinv = np.linalg.inv(J)
-    # bad = np.linalg.det(g) == 0
-    # for i, b in enumerate(bad):
-    #     if np.any(b):
-    #         plt.figure()
-    #         # plt.imshow(np.linalg.det(g)[i])
-    #         plt.imshow(b)
-    #         plt.colorbar()
-    #         plt.title(str(i))
-    # plt.show()
-
-    # #    raise
-    # ginv = np.linalg.inv(g)
-    # det = np.linalg.det(J)
-    # if np.min(det) * np.max(det) < 0:
-    #     plt.imshow(g[:, 2, :, 0, 0])
-    #     plt.colorbar()
-    #     plt.show()
-
-    # for i in range(3):
-    #     for j in range(3):
-    #         grid[f"g_{i+1}{j+1}"] = dims, g[..., i, j]
-    #         grid[f"g{i+1}{j+1}"] = dims, ginv[..., i, j]
     g = np.empty((3, 3), dtype=object)
     for i in range(3):
         for j in range(3):
@@ -144,29 +95,19 @@ def test(fn):
     print(bc.__file__)
     print()
     print()
-    print()
-    print()
     f = bc.create3D("0", mesh)
     R = extend(grid.R)
     Z = extend(grid.Z)
-    one = np.ones_like(Z)
 
     dx = np.sqrt((diff(R, 0)) ** 2 + (diff(Z, 0)) ** 2)
-    dz = np.sqrt((diff(R, 2)) ** 2 + (diff(Z, 2)) ** 2)
     ny = R.shape[1] - 2
     dy = 2 * np.pi / 5 / ny
     phi = np.linspace(0, np.pi / 5, ny * 5, False)[None, : ny + 2, None] - dy * 1.5
 
-    coords = mesh.coordinates
     print(dx.shape)
-    # coords.dx[:, :, :] = dx
-    # coords.dy[:, :, :] = dy * one
-    # coords.dz[:, :, :] = dz
 
     X = R * np.cos(phi)
-    Y = R * np.sin(phi)
-    inp = np.sin(X)  # * np.sin(Z) + np.cos(Y)
-    # ana = -2 * np.sin(X) * np.sin(Z) - np.cos(Y)
+    inp = np.sin(X)
     ana = -np.sin(X)
 
     # Set input field
