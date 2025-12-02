@@ -1901,3 +1901,50 @@ class W7X_VMEC(MagneticField):
     def Rfunc(self, x, z, phi):
         phi = np.mod(phi, 2.0 * np.pi)
         return x
+
+
+class EMC3(MagneticField):
+    """Field based on a EMC3 grid file"""
+
+    def __init__(self, ds):
+        self.ds = ds
+        assert hasattr(ds, "emc3"), "Expected an xemc3 dataset. Is xemc3 imported?"
+        self.ds["Bmean"] = ds["bf_bounds"].mean(
+            dim=("delta_r", "delta_phi", "delta_theta")
+        )
+
+    def Bxfunc(self, x, z, phi):
+        raise NotImplementedError("Use maybe EMC3 tracer?")
+
+    def Byfunc(self, x, z, phi):
+        return self.Bmag(x, z, phi)
+
+    def Bzfunc(self, x, z, phi):
+        raise NotImplementedError("Use maybe EMC3 tracer?")
+
+    def Bxyzfunc(self, x, z, phi):
+        raise NotImplementedError("Use maybe EMC3 tracer?")
+
+    def Bmag(self, x, z, phi):
+        vals = self.ds.emc3.evaluate_at_rpz(x, phi, z, "Bmean", delta_phi=1e-6)[
+            "Bmean"
+        ].values
+        nans = np.isnan(vals)
+        if np.any(nans):
+            from scipy.interpolate import CubicSpline as CS
+
+            for i in range(x.shape[1]):
+                ni = nans[:, i]
+                if not np.any(ni):
+                    continue
+                xi = x[:, i]
+                zi = z[:, i]
+                vi = vals[:, i]
+                si = np.zeros_like(xi)
+                si[1:] = np.cumsum(
+                    np.sqrt((xi[1:] - xi[:-1]) ** 2 + (zi[1:] - zi[:-1]) ** 2)
+                )
+                interp = CS(si[~ni], vi[~ni])
+                vals[ni, i] = interp(si[ni])
+
+        return vals
