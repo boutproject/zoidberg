@@ -241,7 +241,10 @@ def get_metric(grid, magnetic_field):
     metric["B"] = Bmag
     metric["pressure"] = pressure
 
-    return metric
+    # B * J / sqrt(g22)
+    BJg = Bmag * np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
+
+    return metric, BJg
 
 
 class MapWriter:
@@ -277,6 +280,7 @@ class MapWriter:
         self.is_open = False
         self.create = create
 
+        self.BJg = None
         self.grid = None
         self.field = None
         self.metric_done = False
@@ -377,7 +381,7 @@ class MapWriter:
         if self.metric_done:
             return
 
-        metric = get_metric(self.grid, self.field)
+        metric, self.BJg = get_metric(self.grid, self.field)
 
         if not self.new_names:
             metric = update_metric_names(metric)
@@ -449,7 +453,14 @@ class MapWriter:
                 yperiodic=yperiodic,
             )
 
-            par_metric = get_metric(par_grid, self.field)
+            par_metric, par_BJg = get_metric(par_grid, self.field)
+
+            # Check flux conservation
+            if self.BJg is not None and self.BJg.shape[0] > 4:
+                mymax = np.max(np.abs(par_BJg / self.BJg - 1)[2:-2], axis=(0, 2))
+                if np.max(mymax) > 1e-6:
+                    print("FluxError", mymax)
+
             if not self.new_names:
                 par_metric = update_metric_names(par_metric)
 
