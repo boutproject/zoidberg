@@ -291,8 +291,8 @@ class StructuredPoloidalGrid(PoloidalGrid):
             pass
         else:
             if nx > 4:
-                inner = shapely.Polygon(zip(R[2], Z[2]))
-                outer = shapely.Polygon(zip(R[-2], Z[-2]))
+                inner = shapely.Polygon(zip(R[2, :], Z[2, :]))
+                outer = shapely.Polygon(zip(R[-2, :], Z[-2, :]))
 
                 assert (
                     inner.area <= outer.area
