@@ -21,10 +21,10 @@ Functions
 import warnings
 
 import numpy as np
+import shapely
 from numpy import linspace, pi, zeros
 from scipy.interpolate import RectBivariateSpline
 from scipy.spatial import cKDTree as KDTree
-import shapely
 
 try:
     import matplotlib.pyplot as plt
