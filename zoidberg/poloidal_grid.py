@@ -24,6 +24,7 @@ import numpy as np
 from numpy import linspace, pi, zeros
 from scipy.interpolate import RectBivariateSpline
 from scipy.spatial import cKDTree as KDTree
+import shapely
 
 try:
     import matplotlib.pyplot as plt
@@ -285,18 +286,13 @@ class StructuredPoloidalGrid(PoloidalGrid):
         self.nx = nx
         self.nz = nz
 
-        try:
-            import shapely
-        except ImportError:
-            pass
-        else:
-            if nx > 4:
-                inner = shapely.Polygon(zip(R[2, :], Z[2, :]))
-                outer = shapely.Polygon(zip(R[-2, :], Z[-2, :]))
+        if nx > 4:
+            inner = shapely.Polygon(zip(R[2, :], Z[2, :]))
+            outer = shapely.Polygon(zip(R[-2, :], Z[-2, :]))
 
-                assert (
-                    inner.area <= outer.area
-                ), f"""You are trying to create a grid with inner boundary at high x
+            assert (
+                inner.area <= outer.area
+            ), f"""You are trying to create a grid with inner boundary at high x
 and outer boundary at low x. This is against the convention -
 switch inner and outer boundary.
                 {inner.area} {outer.area}"""
