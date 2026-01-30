@@ -7,6 +7,8 @@ import time
 import numpy as np
 from boututils.datafile import DataFile as DF
 
+from .poloidal_grid import RectangularPoloidalGrid
+
 try:
     from tqdm.auto import tqdm
 except ImportError:
@@ -63,15 +65,26 @@ def load(fn):
     return RZ, volume, coefsX, coefsZ
 
 
-def doit(pols, plot=False):
+def getSame(lst):
+    val = np.min(lst)
+    assert val == np.max(lst)
+    return val
+
+
+def doit(pols, plot=False, isSlab=False):
     RZs = []
+
+    isRect = getSame([isinstance(pol, RectangularPoloidalGrid) for pol in pols])
+    if isRect:
+        Lx = getSame([pol.Lx for pol in pols])
+        Lz = getSame([pol.Lz for pol in pols])
 
     ### Calculate Volume of the cell
     #
     ### Go in a line around the cell
 
-    A = np.empty((pols[0].nx, len(pols), pols[0].nz))
-    Ar = np.empty_like(A)
+    Ar = np.empty((pols[0].nx, len(pols), pols[0].nz))
+    # Ar = np.empty_like(A)
     todo = enumerate(pols)
     if tqdm and len(pols) > 1:
         todo = tqdm(todo, total=len(pols))
@@ -100,8 +113,11 @@ def doit(pols, plot=False):
         dy = RZ[1, ..., 1:] - RZ[1, ..., :-1]
         xx = (RZ[0, ..., :-1] + RZ[0, ..., 1:]) / 2
 
-        A[1:-1, gi] = -np.sum(xx * dy, axis=-1)
-        Ar[1:-1, gi] = -np.sum(0.5 * xx * xx * dy, axis=-1)
+        # A[1:-1, gi] = -np.sum(xx * dy, axis=-1)
+        if isSlab:
+            Ar[1:-1, gi] = -np.sum(xx * dy, axis=-1)
+        else:
+            Ar[1:-1, gi] = -np.sum(0.5 * xx * xx * dy, axis=-1)
 
         RZs += [RZ]
     RZs = np.array(RZs)
@@ -164,7 +180,10 @@ def doit(pols, plot=False):
     # direction of edge, length ~ 1/nx
     dR = pos[..., :-1] - pos[..., 1:]
     dX = np.sqrt(np.sum(dR**2, axis=0))
-    area = dX * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5
+    if isSlab:
+        area = dX
+    else:
+        area = dX * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5
     assert area.shape[0] > 2
     # Vector in normal direction
     assert dR.shape[0] == 2
@@ -176,6 +195,9 @@ def doit(pols, plot=False):
     # vector in derivative direction
     dxR = RZ[:, 1:] - RZ[:, :-1]
     dzR = np.roll(RZ, -1, axis=-1) - np.roll(RZ, 1, axis=-1)
+    if isRect:
+        dzR[dzR < -Lz / 2] += Lz
+        dzR[dzR > Lz / 2] -= Lz
     dzR = 0.5 * (dzR[:, 1:] + dzR[:, :-1])
 
     # dxR /= (np.sum(dxR**2, axis=0))
@@ -216,7 +238,11 @@ def doit(pols, plot=False):
 
     dR = pos[..., :-1] - pos[..., 1:]
     dX = np.sqrt(np.sum(dR**2, axis=0))
-    area = dX * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5
+    if isSlab:
+        area = dX
+    else:
+        area = dX * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5
+
     log("get normal vector")
     # Vector in normal direction
     dRr = np.array((dR[1], -dR[0]))
@@ -227,6 +253,10 @@ def doit(pols, plot=False):
     dxR = RZ[:, 2:] - RZ[:, :-2]
     dxR = 0.5 * (np.roll(dxR, -1, axis=-1) + dxR)
     dzR = (np.roll(RZ, -1, axis=-1) - RZ)[:, 1:-1]
+    if isRect:
+        dzR[dzR < -Lz / 2] += Lz
+        dzR[dzR > Lz / 2] -= Lz
+
     dxzR = np.array((dxR, dzR)).transpose(2, 3, 4, 1, 0)
     log("solving again")
     coefsZ = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0)[..., None])[..., 0]
