@@ -1778,7 +1778,7 @@ def _set_config(config, configuration):
     return config
 
 
-class W7X_vacuum_on_demand:
+class W7X_vacuum_on_demand(MagneticField):
     def __init__(self, configuration):
         self.configuration = configuration
         self.boundary = boundary.NoBoundary()  # An optional Boundary object
@@ -1948,3 +1948,41 @@ class EMC3(MagneticField):
                 vals[ni, i] = interp(si[ni])
 
         return vals
+
+
+class FusionSC(MagneticField):
+    def __init__(self, field):
+        self.field = field
+        self.boundary = boundary.NoBoundary()  # An optional Boundary object
+        self.attributes = {}
+
+    def Rfunc(self, x, z, phi):
+        return x
+
+    def Bmag(self, x, z, phi):
+        return np.sqrt(np.sum(self.getB(x, z, phi) ** 2, axis=0))
+
+    def pressure(self, x, z, phi):
+        return np.zeros_like(x)
+
+    def getB(self, x, z, phi):
+        X = np.cos(phi) * x
+        Y = np.sin(phi) * x
+        return self.field.interpolateXyz([X, Y, z])
+
+    def Bxfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        return B[0] * np.cos(phi) + B[1] * np.sin(phi)
+
+    def Byfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        return -B[0] * np.sin(phi) + B[1] * np.cos(phi)
+
+    def Bxyzfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        Bx = B[0] * np.cos(phi) + B[1] * np.sin(phi)
+        By = -B[0] * np.sin(phi) + B[1] * np.cos(phi)
+        return Bx, By, B[2]
+
+    def Bzfunc(self, *pos):
+        return self.getB(*pos)[2]

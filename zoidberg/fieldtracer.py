@@ -925,3 +925,43 @@ class EMC3FieldTracer(FieldTracer):
         mesh.phi = phi
         mesh.perBC = perBC
         return mesh
+
+
+class FusionSC(FieldTracer):
+    def __init__(self, field, **kwargs):
+        """
+        Arguments are passed to fsc.flt.poincareInPhiPlanes.
+
+        Passing rtol to follow_field_lines overwrites targetError.
+
+        See fusionsc docs.
+        """
+        self.field = field
+        self.kwargs = kwargs
+
+    def follow_field_lines(self, x_values, z_values, y_values, rtol=None):
+        import fusionsc as fsc
+
+        kwargs = self.kwargs
+        if rtol is not None:
+            kwargs = kwargs.copy()
+            kwargs["targetError"] = rtol
+
+        X = np.cos(y_values[0]) * x_values
+        Y = np.sin(y_values[0]) * x_values
+        Z = z_values
+        direction = "ccw" if y_values[0] < y_values[1] else "cw"
+        pnts = fsc.flt.poincareInPhiPlanes(
+            [X, Y, Z], self.field, y_values[1:], 1, direction=direction, **self.kwargs
+        )
+        assert pnts.shape[-1] == 1
+        pnts = pnts[..., 0]
+
+        out = np.empty((len(y_values), *x_values.shape, 2))
+        out[0, ..., 0] = x_values
+        out[0, ..., 1] = z_values
+        out[1:, ..., 0] = np.sqrt(pnts[0] ** 2 + pnts[1] ** 2)
+        out[1:, ..., 1] = pnts[2]
+        # [len(y), x.shape[0], x.shape[1], 2].
+
+        return out
