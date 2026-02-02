@@ -29,7 +29,6 @@ def check_l2s(l2s, exps):
     if isinstance(exps, int):
         exps = [exps]
     l2s = np.array(l2s).T
-    print(l2s.shape)
     success = True
     for (a, b), exp in zip(l2s, exps):
         ord = np.log(a / b) / np.log(2)
@@ -85,6 +84,76 @@ def test_diff_c4_np():
     assert check_l2s(l2, 4)
 
 
+def test_diff_get_dist():
+    for refine in 1, 10, 100:
+        for nx in 16, 32, 64, 128:
+            y = np.linspace(0, 1, nx + 1)
+            x = y * 0 + 2
+            z = y  # **3
+
+            RZ = np.empty((nx + 1, 1, 2))
+            RZ[:, 0, 0] = np.sqrt(x**2 + y**2)
+            RZ[:, 0, 1] = z
+            phi = np.atan2(y, x)
+
+            # https://www.wolframalpha.com/input?i=integrate+sqrt%281%2B9*x**4%29+dx+from+0+to+1
+            # result = 1.54786565468361014477533164606426061800663331794707225136859391655021114123260072669317296327301901
+            result = np.sqrt(2)
+
+            approx = diff.get_dist(RZ, phi, refine=refine)
+            print(approx, result, np.abs(approx - result))
+            tol = 1e-15 if refine == 1 else 1e-11
+            assert np.abs(approx[0] - result) < tol
+
+    for refine in 1, 10:
+        l2 = []
+        for nx in 16, 32, 64, 128:
+            y = np.linspace(0, 1, nx + 1)
+            x = y * 0 + 2
+            z = y**3
+
+            RZ = np.empty((nx + 1, 1, 2))
+            RZ[:, 0, 0] = np.sqrt(x**2 + y**2)
+            RZ[:, 0, 1] = z
+            phi = np.atan2(y, x)
+
+            # https://www.wolframalpha.com/input?i=integrate+sqrt%281%2B9*x**4%29+dx+from+0+to+1
+            result = 1.54786565468361014477533164606426061800663331794707225136859391655021114123260072669317296327301901
+
+            approx = diff.get_dist(RZ, phi, refine=refine)
+            # print(approx, result, np.abs(approx - result))
+            # tol = 1e-15 if refine == 1 else 1e-11
+            # assert np.abs(approx[0] - result) < tol
+            l2.append(np.abs(approx - result))
+        for i in range(3):
+            assert check_l2s(l2[i : i + 2], 2)
+    for nx in 16, 32, 64, 128:
+        l2 = []
+        for refine in 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024:
+            y = np.linspace(0, 1, nx + 1)
+            x = y * 0 + 2
+            z = y**3
+
+            RZ = np.empty((nx + 1, 1, 2))
+            RZ[:, 0, 0] = np.sqrt(x**2 + y**2)
+            RZ[:, 0, 1] = z
+            phi = np.atan2(y, x)
+
+            # https://www.wolframalpha.com/input?i=integrate+sqrt%281%2B9*x**4%29+dx+from+0+to+1
+            result = 1.54786565468361014477533164606426061800663331794707225136859391655021114123260072669317296327301901
+
+            approx = diff.get_dist(RZ, phi, refine=refine)
+            l2.append(np.abs(approx - result))
+        for i in range(len(l2) - 1):
+            # At a certain point further refinement is not helpful.
+            chk = check_l2s(l2[i : i + 2], 2)
+            if np.log2(nx) - i > 0.5:
+                assert chk
+            else:
+                break
+
+
 if __name__ == "__main__":
+    test_diff_get_dist()
     test_diff_c4_np()
     test_diff_c4_per()
