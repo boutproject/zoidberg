@@ -10,6 +10,7 @@ from zoidberg import __version__
 from . import fieldtracer
 from .grid import Grid
 from .poloidal_grid import StructuredPoloidalGrid
+from .diff import get_dist
 from .field import Slab
 
 try:
@@ -119,7 +120,7 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
     # Loop over offsets {1, ... nslice, -1, ... -nslice}
     for direction in 1, -1:
         parallel_slices_list.append([])
-        for absoffset in range(1, nslice + 1):
+        for absoffset in [0.5, *range(1, nslice + 1)]:
             offset = absoffset * direction
             # Unique names of the field line maps for this offset
             field_names = [
@@ -193,7 +194,91 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
                     prog.update()
                 else:
                     update_progress((slice_index * ny + j + 1) / total_work, **kwargs)
+    for k in list(maps.keys()):
+        if "_cell_y" in k and "t_prime" in k:
+            del maps[k]
 
+    # We could probably skip a lot of the compuation for slab grids
+    prog = None
+    if (not quiet) and (ny > 1):
+        if tqdm:
+            prog = tqdm(total=total_work, desc="Tracing for J")
+        else:
+            update_progress(0, **kwargs)
+
+    jacobian = np.empty(shape)
+    sg_22 = [np.empty(shape) for _ in range(3)]
+    B_cell = [np.empty(shape) for _ in range(3)]
+
+    for j in range(ny):
+        coords = None
+        y_all = None
+        pol, ycoord = grid.getPoloidalGrid(j)
+
+        num = 20
+
+        for direction in [-1, +1]:
+            # Get this poloidal grid
+            _, ycoordnext = grid.getPoloidalGrid(j + direction)
+
+            # Get the next poloidal grid
+            pol_slice = []
+            y_slices = np.linspace(ycoord, ycoordnext, num * 2 + 1)
+            if y_all is None:
+                y_all = y_slices[::-1]
+            else:
+                y_all = np.concat((y_all, y_slices[1:]))
+
+            tmp = np.array(
+                field_tracer.follow_field_lines(pol.R, pol.Z, y_slices, rtol=rtol)
+            )
+            if coords is None:
+                coords = tmp[::-1]
+            else:
+                coords = np.concat((coords, tmp[1:]))
+                if prog is not None:
+                    prog.update()
+
+        for k in range(3):
+            slc = slice(num * k, -num * (2 - k) if k < 2 else None)
+            sg_22[k][:, j, :] = get_dist(coords[slc], y_all[slc])
+        coords = coords[num:-num]
+        y_all = y_all[num:-num]
+
+        Bs = [
+            magnetic_field.Byfunc(coord[..., 0], coord[..., 1], y)
+            for coord, y in zip(coords, y_all)
+        ]
+
+        B_cell[0][:, j, :] = Bs[0]
+        B_cell[1][:, j, :] = Bs[num]
+        B_cell[2][:, j, :] = Bs[-1]
+
+        facs = np.ones(num * 2 + 1)
+        assert len(y_all) == len(facs)
+        facs[0] = 0.5
+        facs[-1] = 0.5
+
+        metric = pol.metric()
+        Jperp0 = np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
+        B0 = Bs[len(Bs) // 2]
+        vols = [
+            Jperp0 * Bpar / B0 * fac * R
+            for Bpar, fac, R in zip(Bs, facs, coords[..., 0])
+        ]
+        assert len(vols) == len(facs)
+        J = np.sum(vols, axis=0) / (len(Bs) - 1)
+        jacobian[:, j, :] = J
+
+        if prog is not None:
+            prog.update()
+
+    if not isinstance(magnetic_field, Slab):
+        maps["J"] = jacobian
+        for post, vals in zip(("_cell_ylow", "", "_cell_yhigh"), sg_22):
+            maps[f"Ly{post}"] = vals
+    for post, vals in zip(("_cell_ylow", "", "_cell_yhigh"), B_cell):
+        maps[f"By{post}"] = vals
     return maps
 
 
@@ -392,6 +477,14 @@ class MapWriter:
 
         metric, self.BJg = get_metric(self.grid, self.field)
 
+        if "Ly" in maps:
+            metric["g_yy_old"] = metric["g_yy"]
+            for post in "", "_cell_ylow", "_cell_yhigh":
+                metric[f"g_yy{post}"] = (maps[f"Ly{post}"] / metric["dy"]) ** 2
+            metric["g_yy_correct"] = (maps["Ly"] / metric["dy"]) ** 2
+        else:
+            for post in "_cell_ylow", "_cell_yhigh":
+                metric[f"g_yy{post}"] = metric["g_yy"]
         if not self.new_names:
             metric = update_metric_names(metric)
 
