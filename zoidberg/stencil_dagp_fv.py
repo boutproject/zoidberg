@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+import itertools
 import sys
 import time
-import itertools
 
 import numpy as np
 from boututils.datafile import DataFile as DF

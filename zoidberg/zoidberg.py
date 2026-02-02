@@ -8,10 +8,10 @@ from boututils import datafile as bdata
 from zoidberg import __version__
 
 from . import fieldtracer
-from .grid import Grid
-from .poloidal_grid import StructuredPoloidalGrid
 from .diff import get_dist
 from .field import Slab
+from .grid import Grid
+from .poloidal_grid import StructuredPoloidalGrid
 
 try:
     from tqdm.auto import tqdm
