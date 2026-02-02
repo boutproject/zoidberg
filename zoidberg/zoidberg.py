@@ -131,7 +131,6 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
     total_work = len(parallel_slices_list) * ny
 
     # TODO: if axisymmetric, don't loop, do one slice and copy
-    # TODO: restart tracing for adjacent offsets
     if (not quiet) and (ny > 1):
         if tqdm:
             prog = tqdm(total=total_work, desc="Tracing")
