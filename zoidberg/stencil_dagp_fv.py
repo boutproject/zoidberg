@@ -75,10 +75,11 @@ def getSame(lst):
 def doit(pols, plot=False, isSlab=False):
     RZs = []
 
-    isRect = getSame([isinstance(pol, RectangularPoloidalGrid) for pol in pols])
-    if isRect:
-        Lx = getSame([pol.Lx for pol in pols])
-        Lz = getSame([pol.Lz for pol in pols])
+    Lz = (
+        getSame([pol.Lz for pol in pols])
+        if getSame([isinstance(pol, RectangularPoloidalGrid) for pol in pols])
+        else None
+    )
 
     ### Calculate Volume of the cell
     #
@@ -196,7 +197,7 @@ def doit(pols, plot=False, isSlab=False):
     # vector in derivative direction
     dxR = RZ[:, 1:] - RZ[:, :-1]
     dzR = np.roll(RZ, -1, axis=-1) - np.roll(RZ, 1, axis=-1)
-    if isRect:
+    if Lz is not None:
         dzR[dzR < -Lz / 2] += Lz
         dzR[dzR > Lz / 2] -= Lz
     dzR = 0.5 * (dzR[:, 1:] + dzR[:, :-1])
@@ -254,7 +255,7 @@ def doit(pols, plot=False, isSlab=False):
     dxR = RZ[:, 2:] - RZ[:, :-2]
     dxR = 0.5 * (np.roll(dxR, -1, axis=-1) + dxR)
     dzR = (np.roll(RZ, -1, axis=-1) - RZ)[:, 1:-1]
-    if isRect:
+    if Lz is not None:
         dzR[dzR < -Lz / 2] += Lz
         dzR[dzR > Lz / 2] -= Lz
 
