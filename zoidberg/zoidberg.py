@@ -444,7 +444,7 @@ class MapWriter:
             ), f"Ly of grid (Ly={Ly}) does not seem to match the average dy (ny * dy = {ny} * {meandy} = {ny * meandy}"
         yperiodic = self.grid.yperiodic if self.grid else True
         for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
-            pypar = np.roll(ypar, -offset)  # TODO: is the sign correct?
+            pypar = np.roll(ypar, -offset)
             if yperiodic:
                 for i in range(1, ny):
                     if meandy * (pypar[i] - pypar[i - 1]) < 0:
