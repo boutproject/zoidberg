@@ -3,6 +3,7 @@
 
 import sys
 import time
+import itertools
 
 import numpy as np
 from boututils.datafile import DataFile as DF
@@ -259,7 +260,20 @@ def doit(pols, plot=False, isSlab=False):
 
     dxzR = np.array((dxR, dzR)).transpose(2, 3, 4, 1, 0)
     log("solving again")
-    coefsZ = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0)[..., None])[..., 0]
+    try:
+        coefsZ = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0)[..., None])[..., 0]
+    except np.linalg.LinAlgError:
+        dRrtrans = dRr.transpose(1, 2, 3, 0)
+        [..., None]
+        coefsZ = np.empty(dRrtrans.shape)
+        for ijk in itertools.product(*[range(x) for x in dxzR.shape[:-2]]):
+            try:
+                coefsZ[ijk] = np.linalg.solve(dxzR[ijk], dRrtrans[ijk][..., None])[
+                    ..., 0
+                ]
+            except np.linalg.LinAlgError:
+                print(f"Failed to solve for:\n{ijk}\n{dxzR[ijk]}\n\n{dRrtrans[ijk]}\n")
+                raise
     log("done")
 
     test(RZ, volume, coefsX, coefsZ, plot=plot)
