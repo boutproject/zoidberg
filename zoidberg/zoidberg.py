@@ -318,11 +318,6 @@ class MapWriter:
             R[:, j, :] = pol.R
             Z[:, j, :] = pol.Z
         self.write_dict(dict(R=R, Z=Z))
-        del R
-        del Z
-
-        if self.field:
-            self._write_metric()
 
     def add_dagp(self):
         """Add the coefficient for the finite-volume div-a-grad-perp implementation suitable for FCI."""
@@ -369,8 +364,6 @@ class MapWriter:
     def add_field(self, field):
         """Add the information from the field to the grid"""
         self.field = field
-        if self.grid:
-            self._write_metric()
 
     def add_grid_field(self, grid, field):
         """Add the information from the grid and the field to the grid file.
@@ -382,7 +375,7 @@ class MapWriter:
         self.add_field(field)
         self.add_grid(grid)
 
-    def _write_metric(self):
+    def _write_metric(self, maps):
         if self.metric_done:
             return
 
@@ -492,6 +485,9 @@ class MapWriter:
             for k in "RZ":
                 n = parallel_slice_field_name(k, offset)
                 keep[n] = maps[n]
+        assert self.field, "Ensure field is set before calling add_maps"
+        assert self.grid, "Ensure grid is set before calling add_maps"
+        self._write_metric(maps)
         del maps
         ypar = self.grid.ycoords
         self._write_par_metric(keep, nslice, ypar)
