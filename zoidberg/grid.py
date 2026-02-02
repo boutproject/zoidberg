@@ -101,16 +101,23 @@ class Grid(object):
             The value of the y coordinate at `yindex`
 
         """
-        yindex = int(yindex)
+        yindexint = int(yindex)
 
         ny = self.ycoords.size
+
+        if abs(yindexint - yindex) > 1e-6:
+            floor = np.floor(yindex)
+            _, yup = self.getPoloidalGrid(floor + 1)
+            _, ydown = self.getPoloidalGrid(floor)
+            fac = yindex - floor
+            return None, ydown + (yup - ydown) * (1 - fac)
 
         if (yindex >= 0) and (yindex < ny):
             # Within index range, so just return
             if self._ngrids == 1:
                 # Only one grid
-                return self.poloidal_grids, self.ycoords[yindex]
-            return self.poloidal_grids[yindex], self.ycoords[yindex]
+                return self.poloidal_grids, self.ycoords[yindexint]
+            return self.poloidal_grids[yindexint], self.ycoords[yindexint]
 
         # Out of range
 
@@ -118,10 +125,10 @@ class Grid(object):
             # Periodic domain
 
             # Map index into domain
-            y_remap = np.remainder(yindex, ny)  # 0 <= yremap < ny
+            y_remap = np.remainder(yindexint, ny)  # 0 <= yremap < ny
 
             # Get number of periods around the domain. Note this can be negative
-            nperiods = np.floor(float(yindex) / float(ny))
+            nperiods = np.floor(yindex / float(ny))
 
             ycoord = self.ycoords[y_remap] + nperiods * self.Ly
 
