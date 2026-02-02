@@ -41,9 +41,16 @@ def parallel_slice_field_name(field, offset):
         Parallel slice offset
 
     """
+    absoffset = abs(offset)
+    if absoffset < 1:
+        assert (
+            abs(absoffset - 0.5) < 1e-6
+        ), f"Expected an offset of +- 0.5 but got {offset}"
+        prefix = "low" if offset < 0 else "high"
+        return f"{field}_cell_y{prefix}"
     prefix = "forward" if offset > 0 else "backward"
-    suffix = "_{}".format(abs(offset)) if abs(offset) > 1 else ""
-    return "{}_{}{}".format(prefix, field, suffix)
+    suffix = f"_{absoffset}" if abs(offset) > 1 else ""
+    return f"{prefix}_{field}{suffix}"
 
 
 def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **kwargs):
@@ -194,7 +201,8 @@ def update_metric_names(metric):
     # Translate between output variable names and metric names
     # Map from new to old names. Anything not in this dict
     # is unchanged
-    name_changes = {
+    name_changes = {}
+    for k, v in {
         "g_yy": "g_22",
         "gyy": "g22",
         "gxx": "g11",
@@ -203,7 +211,10 @@ def update_metric_names(metric):
         "g_xx": "g_11",
         "g_xz": "g_13",
         "g_zz": "g_33",
-    }
+    }.items():
+        for post in "", "_cell_ylow", "_cell_yhigh":
+            name_changes[k + post] = v + post
+
     return {name_changes.get(key, key): value for key, value in metric.items()}
 
 
