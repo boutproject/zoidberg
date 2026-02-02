@@ -10,6 +10,7 @@ from zoidberg import __version__
 from . import fieldtracer
 from .grid import Grid
 from .poloidal_grid import StructuredPoloidalGrid
+from .field import Slab
 
 try:
     from tqdm.auto import tqdm
@@ -329,6 +330,9 @@ class MapWriter:
 
         assert self.grid, "The grid is needed to compute the DAGP. Set the grid first."
         assert self.is_open, "The grid file needs to be open. Call open first."
+        assert (
+            self.field
+        ), "The field is needed to compute the DAGP. Set the grid first."
         handles = {}
 
         poloidal_grids = self.grid.poloidal_grids
@@ -347,13 +351,14 @@ class MapWriter:
                     var[:] = init
                 return var
 
+        isSlab = isinstance(self.field, Slab)
         i = np.int32(0)
         prog = getHandle("_dagp_generation_progress", i.dtype.str, (), init=i)
 
         for ind, pol in enumerate(poloidal_grids):
             if ind < prog[0]:
                 continue
-            dagp = doit([pol])
+            dagp = doit([pol], isSlab=isSlab)
             for k, v in dagp.items():
                 if k not in handles:
                     handles[k] = getHandle(k, v.dtype.str)
