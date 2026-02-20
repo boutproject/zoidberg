@@ -535,7 +535,7 @@ class MapWriter:
         ny = len(ypar)
         meandy = np.mean(np.diff(ypar))
         Ly = self.grid.Ly if self.grid else meandy * ny
-        if self.grid:
+        if self.grid and len(ypar) > 1:
             assert np.isclose(
                 Ly, meandy * ny
             ), f"Ly of grid (Ly={Ly}) does not seem to match the average dy (ny * dy = {ny} * {meandy} = {ny * meandy}"
@@ -546,9 +546,10 @@ class MapWriter:
                 for i in range(1, ny):
                     if meandy * (pypar[i] - pypar[i - 1]) < 0:
                         pypar[i] += np.sign(meandy) * Ly
-                assert np.isclose(
-                    np.mean(np.diff(pypar)), meandy
-                ), f"Mean of dy changes from {meandy} to {np.mean(np.diff(pypar))}. Values: {ypar} -> {pypar}"
+                if len(pypar) > 1:
+                    assert np.isclose(
+                        np.mean(np.diff(pypar)), meandy
+                    ), f"Mean of dy changes from {meandy} to {np.mean(np.diff(pypar))}. Values: {ypar} -> {pypar}"
 
             RZ = np.array([maps[parallel_slice_field_name(k, offset)] for k in "RZ"])
             par_pgrids = [StructuredPoloidalGrid(*RZ[:, :, i]) for i in range(ny)]

@@ -116,7 +116,7 @@ class Grid(object):
             # Within index range, so just return
             if self._ngrids == 1:
                 # Only one grid
-                return self.poloidal_grids, self.ycoords[yindexint]
+                return self.poloidal_grids[0], self.ycoords[yindexint]
             return self.poloidal_grids[yindexint], self.ycoords[yindexint]
 
         # Out of range
@@ -133,7 +133,7 @@ class Grid(object):
             ycoord = self.ycoords[y_remap] + nperiods * self.Ly
 
             if self._ngrids == 1:
-                return self.poloidal_grids, ycoord
+                return self.poloidal_grids[0], ycoord
             return self.poloidal_grids[y_remap], ycoord
 
         # Not periodic
