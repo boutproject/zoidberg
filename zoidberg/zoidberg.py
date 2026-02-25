@@ -350,7 +350,7 @@ class MapWriter:
         mw.add_grid_field(grid, field)
         ...
         # Add some additional things
-        mw.add_dict(dict(a=f3d, b=f3d))
+        mw.write_dict(dict(a=f3d, b=f3d))
         ...
         mw.add_maps(maps)
         mw.add_dagp()
@@ -506,7 +506,7 @@ class MapWriter:
 
     def write_dict(self, metric, always3d=True):
         """
-        Add  data to the grid file"""
+        Add data to the grid file"""
 
         assert self.is_open, "File needs to be open. Call open first."
         # Metric is now 3D
