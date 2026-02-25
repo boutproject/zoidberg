@@ -38,23 +38,18 @@ class Grid(object):
     """
 
     def __init__(self, poloidal_grids, ycoords, Ly, yperiodic=False, name="fci_grid"):
+        self.ycoords = np.asarray(ycoords)
         try:
-            ngrids = len(poloidal_grids)
-
-            # Check this is the same length as ycoords
-            assert len(ycoords) == ngrids
-
-            nx = poloidal_grids[0].nx
-            nz = poloidal_grids[0].nz
+            len(poloidal_grids)
         except TypeError:
-            # No len(), assume single poloidal grid
-            ngrids = 1
-            nx = poloidal_grids.nx
-            nz = poloidal_grids.nz
+            poloidal_grids = [poloidal_grids]
+
+        nx = poloidal_grids[0].nx
+        nz = poloidal_grids[0].nz
+
+        assert len(ycoords) == len(poloidal_grids)
 
         self.poloidal_grids = poloidal_grids
-        self._ngrids = ngrids  # This is an implementation detail, whether we have one or multiple separate grids
-        self.ycoords = np.asarray(ycoords)
         self.Ly = Ly
         self.yperiodic = yperiodic
 
@@ -114,9 +109,6 @@ class Grid(object):
 
         if (yindex >= 0) and (yindex < ny):
             # Within index range, so just return
-            if self._ngrids == 1:
-                # Only one grid
-                return self.poloidal_grids[0], self.ycoords[yindexint]
             return self.poloidal_grids[yindexint], self.ycoords[yindexint]
 
         # Out of range
@@ -132,8 +124,6 @@ class Grid(object):
 
             ycoord = self.ycoords[y_remap] + nperiods * self.Ly
 
-            if self._ngrids == 1:
-                return self.poloidal_grids[0], ycoord
             return self.poloidal_grids[y_remap], ycoord
 
         # Not periodic
