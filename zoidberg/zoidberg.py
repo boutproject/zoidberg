@@ -263,7 +263,7 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
         Jperp0 = np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
         B0 = Bs[len(Bs) // 2]
         vols = [
-            Jperp0 * Bpar / B0 * fac * R
+            Jperp0 * B0 / Bpar * fac * R
             for Bpar, fac, R in zip(Bs, facs, coords[..., 0])
         ]
         assert len(vols) == len(facs)
