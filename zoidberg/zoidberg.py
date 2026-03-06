@@ -54,7 +54,7 @@ def parallel_slice_field_name(field, offset):
     return f"{prefix}_{field}{suffix}"
 
 
-def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **kwargs):
+def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None,num = 20, **kwargs):
     """Make the forward and backward FCI maps
 
     Parameters
@@ -215,7 +215,6 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
         y_all = None
         pol, ycoord = grid.getPoloidalGrid(j)
 
-        num = 20
 
         for direction in [-1, +1]:
             # Get this poloidal grid
@@ -227,7 +226,7 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
             if y_all is None:
                 y_all = y_slices[::-1]
             else:
-                y_all = np.concat((y_all, y_slices[1:]))
+                y_all = np.concatenate((y_all, y_slices[1:]))
 
             tmp = np.array(
                 field_tracer.follow_field_lines(pol.R, pol.Z, y_slices, rtol=rtol)
@@ -235,7 +234,7 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
             if coords is None:
                 coords = tmp[::-1]
             else:
-                coords = np.concat((coords, tmp[1:]))
+                coords = np.concatenate((coords, tmp[1:]))
                 if prog is not None:
                     prog.update()
 
