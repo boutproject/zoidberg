@@ -230,7 +230,7 @@ def calculate_dommaschk_volume(
 # %%
 
 
-if __name__ == "__main__":
+def test_run():
     Btor = 2.5
     R0 = 2.0
     a1 = R0 + 0.03
@@ -279,8 +279,8 @@ if __name__ == "__main__":
         ax.set_ylabel(r"Error")
         plt.show()
 
-    if a > -0.9:
-        fail=True
+    assert a <= -0.9
 
-    assert not fail
-    
+
+if __name__ == "__main__":
+    test_run()
