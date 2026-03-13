@@ -1,17 +1,14 @@
+import os
+
 import numpy as np
-import xarray as xr
-from . import (
-    field as zbfield,
-    fieldtracer,
-    rzline,
-    zoidberg,
-    poloidal_grid,
-    grid as zbgrid,
-)
 import scipy
+import xarray as xr
 from shapely.geometry import Polygon
 
-import os
+from . import field as zbfield
+from . import fieldtracer
+from . import grid as zbgrid
+from . import poloidal_grid, rzline, zoidberg
 
 script_dir = os.getcwd()
 
