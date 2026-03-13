@@ -268,8 +268,10 @@ def test_run():
         )
         print(f"Grid volume: {np.round(gridvolumes[i],6)} m^3")
     error = np.abs(gridvolumes - exact_volume)
+    print("Error:", error)
     coeffs = np.polyfit(np.log(scales), np.log(error), 1)
     a, b = coeffs
+    print("Convergence:", -a)
 
     if plotting:
         import matplotlib.pyplot as plt
