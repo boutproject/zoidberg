@@ -54,7 +54,15 @@ def parallel_slice_field_name(field, offset):
     return f"{prefix}_{field}{suffix}"
 
 
-def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None,num = 20, **kwargs):
+def make_maps(
+    grid,
+    magnetic_field,
+    nslice=1,
+    quiet=False,
+    field_tracer=None,
+    refine_parallel_integral=20,
+    **kwargs,
+):
     """Make the forward and backward FCI maps
 
     Parameters
@@ -67,6 +75,11 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None,num
         Number of parallel slices in each direction
     quiet : bool
         Don't display progress bar
+    field_tracer:
+        Specify a field tracer, otherwise use standard tracer for the
+        given field
+    refine_parallel_integral:
+        The number of intermediate points for g_22 calculation
     kwargs
         Optional arguments for field line tracing, etc.
 
@@ -215,14 +228,13 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None,num
         y_all = None
         pol, ycoord = grid.getPoloidalGrid(j)
 
-
         for direction in [-1, +1]:
             # Get this poloidal grid
             _, ycoordnext = grid.getPoloidalGrid(j + direction)
 
             # Get the next poloidal grid
             pol_slice = []
-            y_slices = np.linspace(ycoord, ycoordnext, num * 2 + 1)
+            y_slices = np.linspace(ycoord, ycoordnext, refine_parallel_integral * 2 + 1)
             if y_all is None:
                 y_all = y_slices[::-1]
             else:
@@ -239,10 +251,13 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None,num
                     prog.update()
 
         for k in range(3):
-            slc = slice(num * k, -num * (2 - k) if k < 2 else None)
+            slc = slice(
+                refine_parallel_integral * k,
+                -refine_parallel_integral * (2 - k) if k < 2 else None,
+            )
             sg_22[k][:, j, :] = get_dist(coords[slc], y_all[slc])
-        coords = coords[num:-num]
-        y_all = y_all[num:-num]
+        coords = coords[refine_parallel_integral:-refine_parallel_integral]
+        y_all = y_all[refine_parallel_integral:-refine_parallel_integral]
 
         Bs = [
             magnetic_field.Byfunc(coord[..., 0], coord[..., 1], y)
@@ -250,10 +265,10 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None,num
         ]
 
         B_cell[0][:, j, :] = Bs[0]
-        B_cell[1][:, j, :] = Bs[num]
+        B_cell[1][:, j, :] = Bs[refine_parallel_integral]
         B_cell[2][:, j, :] = Bs[-1]
 
-        facs = np.ones(num * 2 + 1)
+        facs = np.ones(refine_parallel_integral * 2 + 1)
         assert len(y_all) == len(facs)
         facs[0] = 0.5
         facs[-1] = 0.5
