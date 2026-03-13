@@ -1,12 +1,15 @@
 import numpy as np
 import xarray as xr
-import sys
-from . import field as zbfield, fieldtracer, rzline, zoidberg, poloidal_grid
+from . import (
+    field as zbfield,
+    fieldtracer,
+    rzline,
+    zoidberg,
+    poloidal_grid,
+    grid as zbgrid,
+)
 import scipy
-from tqdm import tqdm
-import numpy as np
 from shapely.geometry import Polygon
-from shapely.validation import make_valid
 
 import os
 
@@ -19,7 +22,9 @@ def calc_divertortheta(x, z, x0=0.0):
     return theta
 
 
-def dommaschk_grid_volume(nx, ny, nz, a1, a2, R0, Btor, symmetry, plotting=False):
+def dommaschk_grid_volume(
+    nx, ny, nz, a1, a2, R0, Btor, symmetry, yperiod, plotting=False
+):
 
     C = np.zeros((6, 3, 4))
     C[5, 2, 1] = -1.489
@@ -79,7 +84,7 @@ def dommaschk_grid_volume(nx, ny, nz, a1, a2, R0, Btor, symmetry, plotting=False
             ax.set_ylim(-0.3, 0.3)
             plt.show()
 
-    grid = grid.Grid(pol_grids, y_grid, 2.0 * np.pi / symmetry, yperiodic=True)
+    grid = zbgrid.Grid(pol_grids, y_grid, 2.0 * np.pi / symmetry, yperiodic=True)
     maps = zoidberg.make_maps(grid, field, nslice=1, num=10)
 
     filename = os.path.join(script_dir, f"dommaschk_testgrid_{nx}_{ny}_{nz}.nc")
@@ -239,9 +244,6 @@ def test_run():
     a1 = R0 + 0.03
     a2 = R0 + 0.08
 
-    fail = False
-
-    revs = 500
     symmetry = 5.0
     yperiod = 2.0 * np.pi / symmetry
     plotting = False
@@ -262,7 +264,7 @@ def test_run():
         nx = 8 * scale
         nz = 32 * scale
         gridvolumes[i] = dommaschk_grid_volume(
-            nx, ny, nz, a1, a2, R0, Btor, symmetry, plotting=plotting
+            nx, ny, nz, a1, a2, R0, Btor, symmetry, yperiod, plotting=plotting
         )
         print(f"Grid volume: {np.round(gridvolumes[i],6)} m^3")
     error = np.abs(gridvolumes - exact_volume)
