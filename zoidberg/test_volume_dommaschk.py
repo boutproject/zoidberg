@@ -1,6 +1,5 @@
 import numpy as np
 import xarray as xr
-import matplotlib.pyplot as plt
 import sys
 from . import field as zbfield, fieldtracer, rzline, zoidberg, poloidal_grid
 import scipy
@@ -70,6 +69,8 @@ def dommaschk_grid_volume(nx, ny, nz, a1, a2, R0, Btor, symmetry, plotting=False
         )
         pol_grids.append(pol_grid)
         if plotting:
+            import matplotlib.pyplot as plt
+
             fig, ax = plt.subplots(figsize=(8, 8), dpi=400)
             pol_grid.plot(axis=ax, show=False)
             ax.set_aspect("equal")
@@ -196,6 +197,8 @@ def calculate_dommaschk_volume(
 
         cross_area[i] = outer_poly.area - inner_poly.area
         if plotting:
+            import matplotlib.pyplot as plt
+
             fig, ax = plt.subplots()
             for poly in (inner_poly, outer_poly):
                 x, y = poly.exterior.xy
@@ -267,6 +270,8 @@ def test_run():
     a, b = coeffs
 
     if plotting:
+        import matplotlib.pyplot as plt
+
         x = np.linspace(1.0, 50, 100)
         fig, ax = plt.subplots()
         ax.plot(scales, gridvolumes - exact_volume)
