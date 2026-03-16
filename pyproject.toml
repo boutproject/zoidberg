@@ -43,7 +43,11 @@ Repository = "https://github.com/boutproject/zoidberg"
 Tracker = "https://github.com/boutproject/zoidberg/issues"
 
 [project.optional-dependencies]
-tests = ["pytest >= 3.3.0"]
+tests = [
+    "pytest >= 3.3.0",
+    "xarray",
+    "shapely",
+]
 
 [project.scripts]
 zoidberg-rotating-ellipse = "zoidberg.examples.rotating_ellipse:main"
