@@ -114,13 +114,8 @@ def get_dist(RZ_coords, y_coords, refine=100):
 
     y_inter = interp(np.linspace(0, 1, len(y_coords)), y_coords)
 
-    if 1:
-        y_fine = y_inter(np.linspace(0, 1, (len(y_coords) - 1) * refine + 1))
-
-        R_fine, Z_fine = [interp(y_coords, x)(y_fine) for x in RZ_coords]
-    else:
-        y_fine = y_coords
-        R_fine, Z_fine = RZ_coords
+    y_fine = y_inter(np.linspace(0, 1, (len(y_coords) - 1) * refine + 1))
+    R_fine, Z_fine = [interp(y_coords, x)(y_fine) for x in RZ_coords]
 
     slicer = [None for _ in R_fine.shape]
     slicer[0] = slice(None, None)
@@ -132,6 +127,4 @@ def get_dist(RZ_coords, y_coords, refine=100):
     dXYZs = [(x[1:] - x[:-1]) ** 2 for x in [X_fine, Y_fine, Z_fine]]
     ds2 = np.sum(dXYZs, axis=0)
     ds = np.sqrt(ds2)
-    s = np.sum(ds, axis=0)
-
-    return s
+    return np.sum(ds, axis=0)
