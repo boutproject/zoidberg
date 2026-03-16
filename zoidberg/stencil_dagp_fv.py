@@ -68,7 +68,10 @@ def load(fn):
 
 def getSame(lst):
     val = np.min(lst)
-    assert val == np.max(lst)
+    if not val == np.max(lst):
+        raise ValueError(
+            f"Expected a list of identical values, but there are different values in {lst}!"
+        )
     return val
 
 
