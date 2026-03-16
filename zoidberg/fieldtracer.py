@@ -765,7 +765,6 @@ class EMC3FieldTracer(FieldTracer):
         out = np.empty((len(y_values), *x_values.shape, 2))
         ij = -1
         zid = 0
-        # print([range(x) for x in x_values.shape])
         for i in itertools.product(*[range(x) for x in x_values.shape]):
             rz = np.array((x_values[i], z_values[i]))
             ab, ij, zid = self.rz_to_ab(rz, meshes[0], ij, zid)

@@ -352,7 +352,7 @@ def get_metric(grid, magnetic_field):
     metric["B"] = Bmag
     metric["pressure"] = pressure
 
-    # B * J / sqrt(g22)
+    # compute B * J / sqrt(g22)
     BJg = Bmag * np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
 
     return metric, BJg
@@ -449,8 +449,6 @@ class MapWriter:
                 # See if the variable already exists
                 return self.f.impl.handle.variables[k]
             except KeyError:
-                # t = v.dtype.str
-                # dims = ("x", "y", "z")
                 var = self.f.impl.handle.createVariable(k, t, dims)
                 if init is not None:
                     var[:] = init

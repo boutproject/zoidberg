@@ -57,7 +57,6 @@ def c4(f, axis, periodic=False):
     slc = [slice(None) for _ in f.shape]
 
     slc[axis] = slice(2, -2)
-    # out[t(slc)] = 0.083333333333333333 * fi(-2) + -0.66666666666666666 * fi(-1) + 0.66666666666666666 * fi(1) + -0.08333333333333333 * fi(2)
     out[t(slc)] = (-fi(2) + 8 * fi(1) - 8 * fi(-1) + fi(-2)) / 12
 
     slc[axis] = 0

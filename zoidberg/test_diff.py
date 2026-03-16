@@ -89,15 +89,12 @@ def test_diff_field_line_length():
         for nx in 16, 32, 64, 128:
             y = np.linspace(0, 1, nx + 1)
             x = y * 0 + 2
-            z = y  # **3
-
+            z = y
             RZ = np.empty((nx + 1, 1, 2))
             RZ[:, 0, 0] = np.sqrt(x**2 + y**2)
             RZ[:, 0, 1] = z
             phi = np.atan2(y, x)
 
-            # https://www.wolframalpha.com/input?i=integrate+sqrt%281%2B9*x**4%29+dx+from+0+to+1
-            # result = 1.54786565468361014477533164606426061800663331794707225136859391655021114123260072669317296327301901
             result = np.sqrt(2)
 
             approx = diff.field_line_length(RZ, phi, refine=refine)
@@ -121,9 +118,6 @@ def test_diff_field_line_length():
             result = 1.54786565468361014477533164606426061800663331794707225136859391655021114123260072669317296327301901
 
             approx = diff.field_line_length(RZ, phi, refine=refine)
-            # print(approx, result, np.abs(approx - result))
-            # tol = 1e-15 if refine == 1 else 1e-11
-            # assert np.abs(approx[0] - result) < tol
             l2.append(np.abs(approx - result))
         for i in range(3):
             assert check_l2s(l2[i : i + 2], 2)

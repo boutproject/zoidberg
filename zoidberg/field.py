@@ -295,12 +295,6 @@ class CurvedSlab(MagneticField):
         self.Bzprime = Bzprime
         self.Rmaj = Rmaj
 
-        # Set poloidal magnetic field
-        # Bpx = self.Bp + (self.grid.xarray-self.grid.Lx/2.) * self.Bpprime
-        # self.Bpxy = np.resize(Bpx, (self.grid.nz, self.grid.ny, self.grid.nx))
-        # self.Bpxy = np.transpose(self.Bpxy, (2,1,0))
-        # self.Bxy = np.sqrt(self.Bpxy**2 + self.Bt**2)
-
     def Bxfunc(self, x, z, phi):
         return np.zeros(x.shape)
 
@@ -946,10 +940,8 @@ class VMEC(MagneticField):
             rmn = np.repeat(field_slice[:, np.newaxis], lt, axis=1)
             a = rmn * cosmt
             b = np.dot(a.T, cosnz)
-            # print("a: {}, b: {}".format(a.shape, b.shape))
             c = rmn * sinmt
             d = np.dot(c.T, sinnz)
-            # print("c: {}, d: {}".format(c.shape, d.shape))
             f[k, :, :] = b - d
         return f
 
@@ -1612,10 +1604,7 @@ class W7X_vacuum(MagneticField):
             points.x3 = np.ndarray.flatten(z)  # z in Cylindrical
 
             ## call EXTENDER on web services
-            # if not (os.path.isfile(wout_file)):
             plasmafield = cl.service.getPlasmaField(None, vmecURL, points, None)
-            # else:
-            # plasmafield = cl.service.getPlasmaField(wout, None, points, None)
 
             ## Reshape to 3d array
             Br = np.ndarray.reshape(np.asarray(plasmafield.x1), (nx, ny, nz))

@@ -24,7 +24,6 @@ def find_outliers(r, z, cutoff=0.75, bounds=10):
 
 def generate_points_tosmooth(bounds, outliers, length):
     ### for every position to be smoothed, get all points within a range surrouding that point
-    # assert len(outliers) != 0
     if not outliers:
         return []
     todel = set()
@@ -142,7 +141,6 @@ def gen_newr(r, z, splitedlist, bounds, plot):
             x23 = x2r * x3r + x2z * x3z
             x24 = x2r * x4r + x2z * x4z
             x34 = x3r * x4r + x3z * x4z
-            # return x1s + x12 + 2 / 3 * x13 + 1/2*x14 +1/3 * x23 + 1 / 4 * x2s + 1 / 5 * x3s +1/7*x4s
             num = 100
             s = np.linspace(0, 1, num)
             tmp = np.sqrt(
@@ -281,7 +279,6 @@ def gen_newr(r, z, splitedlist, bounds, plot):
             lc.set_array(S)
             lc.set_linewidth(2)
             plt.gca().add_collection(lc)
-            # plt.plot(X, Y, "k-")
 
     return newr, newz, have_failed, deb
 
@@ -311,7 +308,6 @@ def smooth(r, z, cutoff=0.75, bounds=10, bounds_find=None, plot=False):
     if plot:
         import matplotlib.pyplot as plt
 
-        # print(r, z)
         plt.plot(r, z, "o-", label="input")
 
     bounds_find = bounds_find or bounds
@@ -320,18 +316,14 @@ def smooth(r, z, cutoff=0.75, bounds=10, bounds_find=None, plot=False):
     while True:
         outliers = []
         for b in range(1, bounds_find + 1):
-            # print(find_outliers(r, z, cutoff, b))
             outliers += find_outliers(r, z, cutoff, b)
         if plot:
-            # print(np.array([(r[i], z[i]) for i in outliers]).T)
             if outliers:
                 plt.plot(
                     *np.array([(r[i], z[i]) for i in outliers]).T, "x", label="outlier"
                 )
         splitedlist = generate_points_tosmooth(bounds, outliers, len(r))
         if plot:
-            # plt.plot(
-            # print(splitedlist)
             pass
         a, b, fail, deb = gen_newr(r, z, splitedlist, bounds, plot)
         if not fail:
@@ -352,7 +344,6 @@ def smooth(r, z, cutoff=0.75, bounds=10, bounds_find=None, plot=False):
         plt.plot(*ret, "o-", label="new")
         plt.legend()
         plt.gca().set_aspect("equal")
-        # plt.show()
     return ret
 
 
@@ -372,8 +363,6 @@ if __name__ == "__main__":
             smooth(r, z, cutoff=0.75, bounds=10, plot=True)
             j += 1
             print(f"figure {j}")
-            # if j == 2:
-            #    break
 
     if any([len(x) for x in alldeb]):
         f, axs = plt.subplots(3, 1)

@@ -526,8 +526,6 @@ class StructuredPoloidalGrid(PoloidalGrid):
             "g_xz": g[..., 0, 1],
             "gzz": ginv[..., 1, 1],
             "g_zz": g[..., 1, 1],
-            # Jacobian from BOUT++
-            # "J": self.R * (J[0, 0] * J[1, 1] - J[0, 1] * J[1, 0]),
         }
 
 
