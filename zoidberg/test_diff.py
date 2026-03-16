@@ -84,7 +84,7 @@ def test_diff_c4_np():
     assert check_l2s(l2, 4)
 
 
-def test_diff_get_dist():
+def test_diff_field_line_length():
     for refine in 1, 10, 100:
         for nx in 16, 32, 64, 128:
             y = np.linspace(0, 1, nx + 1)
@@ -100,7 +100,7 @@ def test_diff_get_dist():
             # result = 1.54786565468361014477533164606426061800663331794707225136859391655021114123260072669317296327301901
             result = np.sqrt(2)
 
-            approx = diff.get_dist(RZ, phi, refine=refine)
+            approx = diff.field_line_length(RZ, phi, refine=refine)
             print(approx, result, np.abs(approx - result))
             tol = 1e-15 if refine == 1 else 1e-11
             assert np.abs(approx[0] - result) < tol
@@ -120,7 +120,7 @@ def test_diff_get_dist():
             # https://www.wolframalpha.com/input?i=integrate+sqrt%281%2B9*x**4%29+dx+from+0+to+1
             result = 1.54786565468361014477533164606426061800663331794707225136859391655021114123260072669317296327301901
 
-            approx = diff.get_dist(RZ, phi, refine=refine)
+            approx = diff.field_line_length(RZ, phi, refine=refine)
             # print(approx, result, np.abs(approx - result))
             # tol = 1e-15 if refine == 1 else 1e-11
             # assert np.abs(approx[0] - result) < tol
@@ -142,7 +142,7 @@ def test_diff_get_dist():
             # https://www.wolframalpha.com/input?i=integrate+sqrt%281%2B9*x**4%29+dx+from+0+to+1
             result = 1.54786565468361014477533164606426061800663331794707225136859391655021114123260072669317296327301901
 
-            approx = diff.get_dist(RZ, phi, refine=refine)
+            approx = diff.field_line_length(RZ, phi, refine=refine)
             l2.append(np.abs(approx - result))
         for i in range(len(l2) - 1):
             # At a certain point further refinement is not helpful.
@@ -154,6 +154,6 @@ def test_diff_get_dist():
 
 
 if __name__ == "__main__":
-    test_diff_get_dist()
+    test_diff_field_line_length()
     test_diff_c4_np()
     test_diff_c4_per()

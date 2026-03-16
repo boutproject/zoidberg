@@ -98,7 +98,7 @@ def c4(f, axis, periodic=False):
     return out
 
 
-def get_dist(RZ_coords, y_coords, refine=100):
+def field_line_length(RZ_coords, y_coords, refine=100):
     """
     This function takes the trace from a field line tracer and calculate
     the length along the points.

@@ -8,7 +8,7 @@ from boututils import datafile as bdata
 from zoidberg import __version__
 
 from . import fieldtracer
-from .diff import get_dist
+from .diff import field_line_length
 from .field import Slab
 from .grid import Grid
 from .poloidal_grid import StructuredPoloidalGrid
@@ -255,7 +255,7 @@ def make_maps(
                 refine_parallel_integral * k,
                 -refine_parallel_integral * (2 - k) if k < 2 else None,
             )
-            sg_22[k][:, j, :] = get_dist(coords[slc], y_all[slc])
+            sg_22[k][:, j, :] = field_line_length(coords[slc], y_all[slc])
         coords = coords[refine_parallel_integral:-refine_parallel_integral]
         y_all = y_all[refine_parallel_integral:-refine_parallel_integral]
 
