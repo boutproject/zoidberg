@@ -8,10 +8,11 @@ Boundary cells include both radial (X) boundaries and parallel (Yup/Ydown) cells
 
 Cell index numbers are stored in three arrays:
 
-    cell_number[x,y,z]       <- These can be calculated, not stored
+    cell_number[x,y,z]
     cell_number_yup[x,y,z]
     cell_number_ydown[x,y,z]
 
+Non-negative numbers indicate a valid cell number.
 
 For forward and backward maps the Nw weights are stored in CSR format
 
@@ -64,7 +65,7 @@ def calc_cell_numbers(maps):
     N_evolving = (nx - 2 * MXG) * ny * nz
 
     # Numbering
-    cell_number_array = np.zeros((nx, ny, nz), dtype=int)
+    cell_number_array = np.full((nx, ny, nz), -1, dtype=int)
     cell_number = 0
     for i in range(MXG, nx - MXG):
         for j in range(ny):
@@ -85,8 +86,8 @@ def calc_cell_numbers(maps):
                 cell_number_array[i, j, k] = cell_number
                 cell_number += 1
 
-    backward_cell_number = np.zeros((nx, ny, nz), dtype=int)
-    forward_cell_number = np.zeros((nx, ny, nz), dtype=int)
+    backward_cell_number = np.full((nx, ny, nz), -1, dtype=int)
+    forward_cell_number = np.full((nx, ny, nz), -1, dtype=int)
 
     # Iterate through for forward and backward maps
     forward_xt_prime = maps["forward_xt_prime"]
@@ -122,7 +123,7 @@ def calc_cell_numbers(maps):
     }
 
 
-def calc_interpolation(cell_number, MXG, yoffset, xtarr, ztarr):
+def calc_interpolation(cell_number, MXG, yoffset, xtarr, ztarr, bndry_cell_number):
     """
     Calculate CSR format matrix representing a 2D (X-Z) interpolation operation
 
@@ -144,6 +145,7 @@ def calc_interpolation(cell_number, MXG, yoffset, xtarr, ztarr):
         )
 
     # CSR format
+
     weights = []
     columns = []
     rows = []
@@ -157,8 +159,11 @@ def calc_interpolation(cell_number, MXG, yoffset, xtarr, ztarr):
                 xt = xtarr[i, j, k]
                 zt = ztarr[i, j, k]
                 if (xt < 0.0) or (xt >= nx):
-                    # Boundary
-                    rows.append(-1)
+                    # Boundary => Take value from yup/ydown boundary cell
+                    rows.append(weight_number)
+                    columns.append(bndry_cell_number[i, j, k])
+                    weights.append(1.0)
+                    weight_number += 1
                 else:
                     # Not a boundary point => Interpolating
                     rows.append(weight_number)
@@ -168,17 +173,23 @@ def calc_interpolation(cell_number, MXG, yoffset, xtarr, ztarr):
                     weights_x = weights1D(xt - xi)
                     weights_z = weights1D(zt - zi)
 
+                    # Weights should sum to 1
+                    assert abs(np.sum(weights_x) - 1) < 1e-8
+                    assert abs(np.sum(weights_z) - 1) < 1e-8
+
                     for xo, xw in zip(offsets1D, weights_x):
                         for zo, zw in zip(offsets1D, weights_z):
-                            columns.append(
-                                cell_number[
+                            col = cell_number[
                                     np.clip(xi + xo, 0, nx - 1),
                                     (j + yoffset + ny) % ny,
                                     (zi + zo + nz) % nz,
-                                ]
-                            )
+                            ]
+                            assert col >= 0
+                            columns.append(col)
                             weights.append(xw * zw)
                             weight_number += 1
+    assert weight_number == len(weights)
+    assert len(weights) == len(columns)
     return {"weights": weights, "columns": columns, "rows": rows}
 
 
@@ -197,6 +208,7 @@ def calc_weights(maps):
         +1,
         maps["forward_xt_prime"],
         maps["forward_zt_prime"],
+        numbering["forward_cell_number"]
     )
 
     backward = calc_interpolation(
@@ -205,6 +217,7 @@ def calc_weights(maps):
         -1,
         maps["backward_xt_prime"],
         maps["backward_zt_prime"],
+        numbering["backward_cell_number"]
     )
 
     return {
