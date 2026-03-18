@@ -72,3 +72,62 @@ def test_make_maps_straight_stellarator():
     # and the rectangular grid here fits entirely within the coils
 
     zoidberg.make_maps(rectangle, magnetic_field)
+
+
+def test_repair_sparse_boundary_holes_repairs_narrow_adjacent_slice():
+    nx = 5
+    ny = 3
+    nz = 8
+    xt_base = np.broadcast_to(np.arange(nx)[:, None, None], (nx, ny, nz)).astype(float)
+    z_base = np.broadcast_to(np.arange(nz)[None, None, :], (nx, ny, nz)).astype(float)
+    maps = {
+        "forward_xt_prime": xt_base.copy(),
+        "forward_zt_prime": z_base.copy(),
+        "forward_R": xt_base.copy(),
+        "forward_Z": z_base.copy(),
+        "backward_xt_prime": xt_base.copy(),
+        "backward_zt_prime": z_base.copy(),
+        "backward_R": xt_base.copy(),
+        "backward_Z": z_base.copy(),
+    }
+
+    maps["forward_xt_prime"][0, :, :] = -1.0
+    maps["backward_xt_prime"][0, :, :] = -1.0
+    maps["forward_zt_prime"][0, :, :] = -1.0
+    maps["backward_zt_prime"][0, :, :] = -1.0
+    maps["forward_xt_prime"][1, 1, [2, 3]] = -1.0
+    maps["backward_xt_prime"][1, 1, [4]] = -1.0
+
+    zoidberg._repair_sparse_boundary_holes(maps, nx, nz)
+
+    assert np.all(maps["forward_xt_prime"][1] >= 0.0)
+    assert np.all(maps["backward_xt_prime"][1] >= 0.0)
+    assert np.allclose(maps["forward_xt_prime"][1, 1, 2:4], 1.0)
+    assert np.allclose(maps["backward_xt_prime"][1, 1, 4], 1.0)
+    assert np.all(maps["forward_xt_prime"][0] == -1.0)
+
+
+def test_repair_sparse_boundary_holes_preserves_broad_invalid_region():
+    nx = 5
+    ny = 2
+    nz = 10
+    xt_base = np.broadcast_to(np.arange(nx)[:, None, None], (nx, ny, nz)).astype(float)
+    z_base = np.broadcast_to(np.arange(nz)[None, None, :], (nx, ny, nz)).astype(float)
+    maps = {
+        "forward_xt_prime": xt_base.copy(),
+        "forward_zt_prime": z_base.copy(),
+        "forward_R": xt_base.copy(),
+        "forward_Z": z_base.copy(),
+        "backward_xt_prime": xt_base.copy(),
+        "backward_zt_prime": z_base.copy(),
+        "backward_R": xt_base.copy(),
+        "backward_Z": z_base.copy(),
+    }
+
+    maps["forward_xt_prime"][0, :, :] = -1.0
+    maps["forward_xt_prime"][1, :, :5] = -1.0
+
+    before = maps["forward_xt_prime"].copy()
+    zoidberg._repair_sparse_boundary_holes(maps, nx, nz)
+
+    assert np.array_equal(maps["forward_xt_prime"], before)

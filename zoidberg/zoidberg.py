@@ -54,6 +54,107 @@ def parallel_slice_field_name(field, offset):
     return f"{prefix}_{field}{suffix}"
 
 
+def _unwrap_periodic(values, period):
+    values = np.asarray(values, dtype=float)
+    if values.size == 0:
+        return values.copy()
+    unwrapped = values.copy()
+    for idx in range(1, unwrapped.size):
+        delta = unwrapped[idx] - unwrapped[idx - 1]
+        if delta > period / 2.0:
+            unwrapped[idx:] -= period
+        elif delta < -period / 2.0:
+            unwrapped[idx:] += period
+    return unwrapped
+
+
+def _periodic_fill_missing(values, valid_mask, index_period, value_period=None):
+    result = np.asarray(values, dtype=float).copy()
+    valid_indices = np.flatnonzero(valid_mask)
+    if valid_indices.size < 2 or valid_indices.size == result.size:
+        return result
+
+    valid_values = result[valid_mask]
+    if value_period is not None:
+        valid_values = _unwrap_periodic(valid_values, value_period)
+        extended_values = np.concatenate(
+            [valid_values - value_period, valid_values, valid_values + value_period]
+        )
+    else:
+        extended_values = np.tile(valid_values, 3)
+
+    extended_indices = np.concatenate(
+        [valid_indices - index_period, valid_indices, valid_indices + index_period]
+    )
+    missing_indices = np.flatnonzero(~valid_mask)
+    result[missing_indices] = np.interp(missing_indices, extended_indices, extended_values)
+    if value_period is not None:
+        result %= value_period
+    return result
+
+
+def _repair_sparse_boundary_holes(maps, nx, nz):
+    max_invalid_fraction = 0.2
+    dominant_boundary_fraction = 0.9
+
+    for prefix in ["forward", "backward"]:
+        xt_name = f"{prefix}_xt_prime"
+        zt_name = f"{prefix}_zt_prime"
+        r_name = f"{prefix}_R"
+        z_name = f"{prefix}_Z"
+
+        if xt_name not in maps:
+            continue
+
+        xt_prime = maps[xt_name]
+        zt_prime = maps[zt_name]
+        mapped_r = maps[r_name]
+        mapped_z = maps[z_name]
+
+        invalid = (~np.isfinite(xt_prime)) | (xt_prime < 0.0) | (xt_prime > nx - 1)
+        invalid_fraction = invalid.mean(axis=(1, 2))
+
+        candidate_x = []
+        for x_idx in range(1, nx - 1):
+            current_fraction = invalid_fraction[x_idx]
+            if not (0.0 < current_fraction <= max_invalid_fraction):
+                continue
+            left_boundary = invalid_fraction[x_idx - 1] >= dominant_boundary_fraction
+            right_boundary = invalid_fraction[x_idx + 1] >= dominant_boundary_fraction
+            if left_boundary or right_boundary:
+                candidate_x.append(x_idx)
+
+        for x_idx in candidate_x:
+            for y_idx in range(xt_prime.shape[1]):
+                bad_mask = invalid[x_idx, y_idx, :]
+                if not np.any(bad_mask):
+                    continue
+                valid_mask = ~bad_mask
+                if np.count_nonzero(valid_mask) < 2:
+                    continue
+
+                xt_prime[x_idx, y_idx, :] = _periodic_fill_missing(
+                    xt_prime[x_idx, y_idx, :], valid_mask, nz
+                )
+                zt_prime[x_idx, y_idx, :] = _periodic_fill_missing(
+                    zt_prime[x_idx, y_idx, :], valid_mask, nz, value_period=float(nz)
+                )
+                mapped_r[x_idx, y_idx, :] = _periodic_fill_missing(
+                    mapped_r[x_idx, y_idx, :], valid_mask, nz
+                )
+                mapped_z[x_idx, y_idx, :] = _periodic_fill_missing(
+                    mapped_z[x_idx, y_idx, :], valid_mask, nz
+                )
+
+            xt_prime[x_idx, :, :] = np.clip(xt_prime[x_idx, :, :], 0.0, nx - 1.0)
+            zt_prime[x_idx, :, :] %= float(nz)
+
+        maps[xt_name] = xt_prime
+        maps[zt_name] = zt_prime
+        maps[r_name] = mapped_r
+        maps[z_name] = mapped_z
+
+
 def make_maps(
     grid,
     magnetic_field,
@@ -210,6 +311,8 @@ def make_maps(
     for k in list(maps.keys()):
         if "_cell_y" in k and "t_prime" in k:
             del maps[k]
+
+    _repair_sparse_boundary_holes(maps, nx, nz)
 
     # We could probably skip a lot of the compuation for slab grids
     prog = None
