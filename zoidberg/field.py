@@ -1,10 +1,26 @@
 from math import gamma
+import os
+import sys
 
 import numpy as np
 from sympy import (Piecewise, Symbol, atan2, cos, diff, factorial, lambdify,
                    log, pi, sin, sqrt)
 
 from . import boundary
+
+
+def _import_simsopt_field_dependencies():
+    try:
+        from simsopt import load
+        from simsopt.field import BiotSavart, Coil, Current
+        return load, BiotSavart, Coil, Current
+    except ImportError:
+        simsopt_src = os.environ.get("SIMSOPT_SRC")
+        if simsopt_src and simsopt_src not in sys.path:
+            sys.path.insert(0, simsopt_src)
+        from simsopt import load
+        from simsopt.field import BiotSavart, Coil, Current
+        return load, BiotSavart, Coil, Current
 
 
 class MagneticField(object):
@@ -628,6 +644,67 @@ class DommaschkPotentials(MagneticField):
 
         return x
 
+
+class SimsoptBiotSavart(MagneticField):
+    def __init__(self, json_path, currents=None):
+        load, BiotSavart, Coil, Current = _import_simsopt_field_dependencies()
+
+        loaded = load(str(json_path))
+        if hasattr(loaded, "set_points_cyl") and hasattr(loaded, "B_cyl"):
+            self.bs = loaded
+            self.curve_count = None
+            return
+
+        if not isinstance(loaded, (list, tuple)):
+            raise TypeError(
+                "SIMSOPT JSON must deserialize to either a magnetic field object or a sequence of curves"
+            )
+
+        if currents is None:
+            raise ValueError("Curve JSON requires explicit coil currents")
+
+        if np.isscalar(currents):
+            current_values = [float(currents)] * len(loaded)
+        else:
+            current_values = [float(value) for value in currents]
+            if len(current_values) == 1 and len(loaded) > 1:
+                current_values *= len(loaded)
+
+        if len(current_values) != len(loaded):
+            raise ValueError(
+                f"Expected 1 or {len(loaded)} current values, got {len(current_values)}"
+            )
+
+        coils = [
+            Coil(curve, Current(1) * current)
+            for curve, current in zip(loaded, current_values)
+        ]
+        self.bs = BiotSavart(coils)
+        self.curve_count = len(loaded)
+
+    def _evaluate(self, x, z, phi):
+        x = np.asarray(x, dtype=float)
+        z = np.asarray(z, dtype=float)
+        phi = np.asarray(phi, dtype=float)
+        x, z, phi = np.broadcast_arrays(x, z, phi)
+        points = np.column_stack(
+            [x.ravel(), np.remainder(phi.ravel(), 2.0 * np.pi), z.ravel()]
+        )
+        self.bs.set_points_cyl(points)
+        return np.asarray(self.bs.B_cyl(), dtype=float).reshape(x.shape + (3,))
+
+    def Bxfunc(self, x, z, phi):
+        return self._evaluate(x, z, phi)[..., 0]
+
+    def Byfunc(self, x, z, phi):
+        return self._evaluate(x, z, phi)[..., 1]
+
+    def Bzfunc(self, x, z, phi):
+        return self._evaluate(x, z, phi)[..., 2]
+
+    def Rfunc(self, x, z, phi):
+        return np.asarray(x, dtype=float)
+
     def CD(self, m, k):
         """
         Parameters
@@ -868,6 +945,11 @@ class DommaschkPotentials(MagneticField):
                     ) * Piecewise((self.phi, i == 0), (i_inv, i > 0))
 
         return U
+
+
+# Restore the Dommaschk helper methods to the intended class.
+for _name in ("CD", "CN", "D", "N", "V", "U", "V_hat", "U_hat"):
+    setattr(DommaschkPotentials, _name, getattr(SimsoptBiotSavart, _name))
 
 
 class Screwpinch(MagneticField):

@@ -491,6 +491,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
         ddist[0] = 1 / nx
         ddist[1] = 1 / nz
         dolddnew /= ddist[:, None, ...]
+        determinant = dolddnew[0, 0] * dolddnew[1, 1] - dolddnew[1, 0] * dolddnew[0, 1]
 
         # g_ij = J_ki J_kj
         # (2.5.27) from D'Haeseleer 1991
@@ -517,6 +518,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
             np.linalg.det(g) > 0
         ), f"All determinants of g should be positive, but some are not (minimum {np.min(np.linalg.det(g))})"
         ginv = np.linalg.inv(g)
+        jacobian = self.R * determinant
         return {
             "dx": ddist[0],
             "dz": ddist[1],  # Grid spacing
@@ -526,6 +528,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
             "g_xz": g[..., 0, 1],
             "gzz": ginv[..., 1, 1],
             "g_zz": g[..., 1, 1],
+            "J": jacobian,
         }
 
 
