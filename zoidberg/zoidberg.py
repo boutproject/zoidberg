@@ -45,7 +45,15 @@ def parallel_slice_field_name(field, offset):
     return "{}_{}{}".format(prefix, field, suffix)
 
 
-def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **kwargs):
+def make_maps(
+    grid,
+    magnetic_field,
+    nslice=1,
+    quiet=False,
+    field_tracer=None,
+    samples_per_dim: int = 1,
+    **kwargs,
+):
     """Make the forward and backward FCI maps
 
     Parameters
@@ -58,6 +66,10 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
         Number of parallel slices in each direction
     quiet : bool
         Don't display progress bar
+    samples_per_dim: int, optional
+        Trace multiple field-lines within each cell. This is the
+        number of points per dimension so the number of points
+        per 2D cell is samples_per_dim**2.
     kwargs
         Optional arguments for field line tracing, etc.
 
@@ -93,6 +105,30 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
 
     rtol = kwargs.get("rtol", None)
 
+    # Sub-sampling within cells
+    samples_per_dim = int(samples_per_dim)
+    nsamples = samples_per_dim**2
+    if samples_per_dim > 1:
+        # Calculate quadrature points in 1D
+        # Using Gauss-Legendre (alpha = beta = 0.0)
+        # If samples_per_dim is odd then there is a point at cell center
+        from scipy.special import roots_jacobi
+
+        xs, ws = roots_jacobi(samples_per_dim, 0.0, 0.0)
+        # xs are in range [-1, 1]; ws are the weights
+        xs *= 0.5  # Map to [-0.5, 0.5]
+        ws *= 0.5  # Sum should now be 1
+        assert np.isclose(np.sum(ws), 1.0)
+
+        xoffsets, zoffsets = np.meshgrid(
+            xs,
+            xs,
+            indexing="ij",
+        )
+        weights = np.outer(ws, ws).reshape(-1)
+        xoffsets = xoffsets.reshape(-1)
+        zoffsets = zoffsets.reshape(-1)
+
     # The field line maps and coordinates, etc.
     maps = {
         "R": R,
@@ -102,8 +138,11 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
     }
 
     # A helper data structure that groups the various field line maps along with the offset
+    # (xt_prime, ztprime)[x,y,z] is the map traced from cell center
+    # (xt_primes, ztprimes)[x,y,z,s] is a set of s maps for each cell
     ParallelSlice = namedtuple(
-        "ParallelSlice", ["offset", "R", "Z", "xt_prime", "zt_prime"]
+        "ParallelSlice",
+        ["offset", "R", "Z", "xt_prime", "zt_prime", "xt_primes", "zt_primes"],
     )
     # A list of the above data structures for each offset we want
     parallel_slices = []
@@ -119,6 +158,13 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
         # Initialise the field arrays -- puts them straight into the result dict
         for field in field_names:
             maps[field] = np.zeros(shape)
+        # Sub-sampled maps, multiple samples per cell
+        for field in [
+            parallel_slice_field_name("xt_primes", offset),
+            parallel_slice_field_name("zt_primes", offset),
+        ]:
+            maps[field] = np.zeros(shape + (nsamples,))
+            field_names.append(field)
 
         # Get the field arrays we just made and wrap them up in our helper tuple
         fields = map(lambda x: maps[x], field_names)
@@ -169,6 +215,60 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
 
             parallel_slice.xt_prime[:, j, :] = xind
             parallel_slice.zt_prime[:, j, :] = zind
+
+            if nsamples == 1:
+                # Only one sample per cell
+                parallel_slice.xt_primes[:, j, :, 0] = xind
+                parallel_slice.zt_primes[:, j, :, 0] = zind
+            elif pol_slice is None:
+                # No slice grid, so hit a boundary
+                # Not calculating intersection R,Z so no need to follow
+                parallel_slice.xt_primes[:, j, :, :] = -1
+                parallel_slice.zt_primes[:, j, :, :] = -1
+            else:
+                # Multiple samples.
+                # Interpolate R and Z to get starting locations
+                from scipy import interpolate
+
+                R = pol.R
+                Z = pol.Z
+                nx, nz = pol.R.shape
+                # Wrap around in Z by adding the arrays
+                Rinterp = interpolate.RegularGridInterpolator(
+                    (np.arange(nx), np.arange(nz + 2) - 1),
+                    np.concatenate((R[:, -1:], R, R[:, 0:1]), axis=-1),
+                    bounds_error=False,
+                    fill_value=None,  # Extrapolates
+                )
+                Zinterp = interpolate.RegularGridInterpolator(
+                    (np.arange(nx), np.arange(nz + 2) - 1),
+                    np.concatenate((Z[:, -1:], Z, Z[:, 0:1]), axis=-1),
+                    bounds_error=False,
+                    fill_value=None,  # Extrapolates
+                )
+
+                # Indices of the cell centers
+                xinds, zinds = np.meshgrid(np.arange(nx), np.arange(nz), indexing="ij")
+
+                for s, xo, zo, w in zip(range(nsamples), xoffsets, zoffsets, weights):
+                    coord = field_tracer.follow_field_lines(
+                        Rinterp((xinds + xo, zinds)),
+                        Zinterp((xinds + zo, zinds)),
+                        [ycoord, y_slice],
+                        rtol=rtol,
+                    )[1, ...]
+                    xcoord = coord[:, :, 0]
+                    zcoord = coord[:, :, 1]
+                    xind, zind = pol_slice.findIndex(xcoord, zcoord)
+
+                    # Check boundary defined by the field
+                    # Note: A fraction of points may hit the boundary
+                    outside = magnetic_field.boundary.outside(xcoord, y_slice, zcoord)
+                    xind[outside] = -1
+                    zind[outside] = -1
+
+                    parallel_slice.xt_primes[:, j, :, s] = xind
+                    parallel_slice.zt_primes[:, j, :, s] = zind
 
             if (not quiet) and (ny > 1):
                 if tqdm:
