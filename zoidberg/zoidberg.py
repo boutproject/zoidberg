@@ -128,6 +128,8 @@ def make_maps(
         weights = np.outer(ws, ws).reshape(-1)
         xoffsets = xoffsets.reshape(-1)
         zoffsets = zoffsets.reshape(-1)
+    else:
+        weights = np.ones(1)
 
     # The field line maps and coordinates, etc.
     maps = {
@@ -135,6 +137,7 @@ def make_maps(
         "Z": Z,
         "MXG": mxg,
         "MYG": nslice,
+        "subcell_weights": weights,
     }
 
     # A helper data structure that groups the various field line maps along with the offset

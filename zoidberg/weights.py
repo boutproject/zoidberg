@@ -60,9 +60,9 @@ stencil.
 import numpy as np
 
 
-def hits_radial_boundary(x_mapped, nx, mxg):
+def any_hits_radial_boundary(x_mapped, nx, mxg):
     """Return True if a mapped X coordinate lies in the radial boundary region."""
-    return (x_mapped < mxg) or (x_mapped > nx - mxg - 1)
+    return np.any(x_mapped < mxg) or np.any(x_mapped > nx - mxg - 1)
 
 
 def assign_cell_numbers(maps):
@@ -123,21 +123,44 @@ def assign_cell_numbers(maps):
     backward_boundary_number = np.full((nx, ny, nz), -1, dtype=int)
     forward_boundary_number = np.full((nx, ny, nz), -1, dtype=int)
 
-    forward_xt_prime = maps["forward_xt_prime"]
-    backward_xt_prime = maps["backward_xt_prime"]
+    # Arrays of mapped indices [x,y,z,s]
+    # where 's' is the sub-cell node index
+    forward_xts = maps["forward_xt_primes"]
+    backward_xts = maps["backward_xt_primes"]
+
+    # Cell center maps that are used to set boundary conditions
+    forward_xt = maps["forward_xt_prime"]
+    backward_xt = maps["backward_xt_prime"]
 
     # Parallel boundary numbering starts after all interior + radial cells
-
     for x in range(mxg, nx - mxg):
         for y in range(ny):
             for z in range(nz):
-                if hits_radial_boundary(backward_xt_prime[x, y, z], nx, mxg):
+                # Allocate a boundary cell if any sub-cell points hit the boundary
+                if any_hits_radial_boundary(backward_xts[x, y, z, :], nx, mxg):
                     backward_boundary_number[x, y, z] = next_cell
                     next_cell += 1
+                    # Ensure that the cell is marked as a boundary
+                    if not any_hits_radial_boundary(backward_xt[x, y, z], nx, mxg):
+                        # Find a point that hits the boundary
+                        for s in range(backward_xts.shape[-1]):
+                            if any_hits_radial_boundary(
+                                backward_xts[x, y, z, s], nx, mxg
+                            ):
+                                backward_xt[x, y, z] = backward_xts[x, y, z, s]
+                                break
 
-                if hits_radial_boundary(forward_xt_prime[x, y, z], nx, mxg):
+                if any_hits_radial_boundary(forward_xts[x, y, z, :], nx, mxg):
                     forward_boundary_number[x, y, z] = next_cell
                     next_cell += 1
+                    if not any_hits_radial_boundary(forward_xt[x, y, z], nx, mxg):
+                        # Find a point that hits the boundary
+                        for s in range(forward_xts.shape[-1]):
+                            if any_hits_radial_boundary(
+                                forward_xts[x, y, z, s], nx, mxg
+                            ):
+                                forward_xt[x, y, z] = forward_xts[x, y, z, s]
+                                break
 
     return {
         "N_cells": next_cell,
@@ -276,8 +299,14 @@ class SparseRowMatrixBuilder:
 
         self.rows[row] = list(entries)
 
-    def append_to_row(self, row, col, weight):
-        """Append one entry to a row."""
+    def add_to_entry(self, row, col, weight):
+        """Add to an entry. If there is already an entry
+        at this (row, col) then it will be added."""
+        for i, (entry_col, entry_weight) in enumerate(self.rows[row]):
+            if entry_col == col:
+                # Replace this entry with the sum
+                self.rows[row][i] = (col, entry_weight + weight)
+                return
         self.rows[row].append((col, weight))
 
     def to_csr(self):
@@ -344,18 +373,20 @@ class SparseRowMatrixBuilder:
 
 
 def add_boundary_or_interpolation_row(
-    matrix_builder,
-    reverse_builder,
-    row,
-    mapped_x,
-    mapped_z,
-    y,
-    y_offset,
-    boundary_row,
+    matrix_builder: SparseRowMatrixBuilder,
+    reverse_builder: SparseRowMatrixBuilder,
+    row: int,
+    mapped_xs,
+    mapped_zs,
+    weights,
+    y: int,
+    y_offset: int,
+    boundary_row: int,
     cell_number,
-    mxg,
+    mxg: int,
 ):
-    """Add one operator row for either a boundary map or interior interpolation.
+    """Add one operator row for a boundary map, interior interpolation,
+    or weighted combination.
 
     Parameters
     ----------
@@ -365,8 +396,10 @@ def add_boundary_or_interpolation_row(
         Opposite-direction matrix, used to set the reverse boundary row.
     row : int
         Output row index for the evolving cell.
-    mapped_x, mapped_z : float
-        Mapped X and Z coordinates.
+    mapped_xs, mapped_xs : [float]
+        Mapped X and Z coordinates for all sub-cell node indices.
+    weights : [float]
+        Weighting factor for each sub-cell node. Sums to 1.
     y : int
         Source Y index.
     y_offset : int
@@ -378,60 +411,96 @@ def add_boundary_or_interpolation_row(
     mxg : int
         Radial boundary width.
 
+    Returns
+    -------
+    boundary_weight: float
+        A factor between 0 and 1 that should be applied to the volume
+        of boundary cells when constructing divergence operators.
+        It is the fraction of the cell that hits the boundary.
+
     Notes
     -----
-    If the mapped point lands in the radial boundary region, the row is set to
-    reference the corresponding parallel boundary cell.
+    If one or more mapped points land in the radial boundary region,
+    the row is set to reference the corresponding parallel boundary cell.
 
     The reverse operator also receives a boundary row contribution. This row is
     expected to be unique; if the same reverse boundary row is assigned twice,
     an exception is raised.
     """
+    assert len(weights) == len(mapped_xs)
+    assert len(weights) == len(mapped_zs)
+    if abs(np.sum(weights) - 1.0) >= 1e-8:
+        raise ValueError(f"weights should sum to 1, got {np.sum(weights)}")
 
     nx, ny, nz = cell_number.shape
 
-    if hits_radial_boundary(mapped_x, nx, mxg):
-        if boundary_row < 0:
-            raise ValueError(
-                f"Expected a valid boundary row for mapped_x={mapped_x}, got {boundary_row}"
-            )
-
-        matrix_builder.set_row(row, [(boundary_row, 1.0)])
-        matrix_builder.set_row(boundary_row, [(row, -1.0), (boundary_row, 2.0)])
-        reverse_builder.set_row(boundary_row, [(row, 1.0)])
-        return
-
     x_offsets = [-1, 0, 1, 2]
 
-    x_base = int(mapped_x)
-    z_base = int(mapped_z)
+    # Track whether any sub-cell nodes hit boundaries
+    any_hit_boundary = False
+    # Sum of the weights of points hitting the boundary
+    boundary_weight = 0.0
 
-    weights_x = catmull_rom_weights(mapped_x - x_base)
-    weights_z = catmull_rom_weights(mapped_z - z_base)
-
-    weights_x = shift_weights_out_of_x_boundaries(weights_x, x_base, x_offsets, nx, mxg)
-
-    if abs(np.sum(weights_z) - 1.0) >= 1e-8:
-        raise ValueError(f"Z weights should sum to 1, got {np.sum(weights_z)}")
-
-    for x_offset, x_weight in zip(x_offsets, weights_x):
-        if abs(x_weight) < 1e-10:
+    # Iterate over sub-cell nodes
+    for mapped_x, mapped_z, subcell_weight in zip(mapped_xs, mapped_zs, weights):
+        if any_hits_radial_boundary(mapped_x, nx, mxg):
+            any_hit_boundary = True
+            boundary_weight += subcell_weight
             continue
+        x_base = int(mapped_x)
+        z_base = int(mapped_z)
 
-        for z_offset, z_weight in zip(x_offsets, weights_z):
-            col = cell_number[
-                np.clip(x_base + x_offset, 0, nx - 1),
-                (y + y_offset + ny) % ny,
-                (z_base + z_offset + nz) % nz,
-            ]
+        weights_x = catmull_rom_weights(mapped_x - x_base)
+        weights_z = catmull_rom_weights(mapped_z - z_base)
 
-            if col < 0:
-                raise ValueError(
-                    f"Invalid column index at "
-                    f"x={x_base + x_offset}, y={(y + y_offset + ny) % ny}, z={(z_base + z_offset + nz) % nz}"
+        weights_x = shift_weights_out_of_x_boundaries(
+            weights_x, x_base, x_offsets, nx, mxg
+        )
+
+        if abs(np.sum(weights_z) - 1.0) >= 1e-8:
+            raise ValueError(f"Z weights should sum to 1, got {np.sum(weights_z)}")
+
+        for x_offset, x_weight in zip(x_offsets, weights_x):
+            if abs(x_weight) < 1e-10:
+                continue
+
+            for z_offset, z_weight in zip(x_offsets, weights_z):
+                col = cell_number[
+                    np.clip(x_base + x_offset, 0, nx - 1),
+                    (y + y_offset + ny) % ny,
+                    (z_base + z_offset + nz) % nz,
+                ]
+
+                if col < 0:
+                    raise ValueError(
+                        f"Invalid column index at "
+                        f"x={x_base + x_offset}, y={(y + y_offset + ny) % ny}, z={(z_base + z_offset + nz) % nz}"
+                    )
+
+                # Sub-cell nodes will provide entries at overlapping
+                # (row, col) so add to existing entries.
+                matrix_builder.add_to_entry(
+                    row, col, subcell_weight * x_weight * z_weight
                 )
 
-            matrix_builder.append_to_row(row, col, x_weight * z_weight)
+    if any_hit_boundary:
+        # One or more points hit a boundary
+        if boundary_row < 0:
+            raise ValueError(
+                f"Expected a valid boundary row for mapped_x={mapped_xs}, got {boundary_row}"
+            )
+
+        matrix_builder.add_to_entry(row, boundary_row, boundary_weight)
+        # Note: Identity operation in the boundary
+        #       Extrapolating messes up the boundary fluxes!
+        matrix_builder.set_row(
+            boundary_row,
+            [
+                (boundary_row, 1.0),
+            ],
+        )
+        reverse_builder.set_row(boundary_row, [(row, 1.0)])
+    return boundary_weight
 
 
 def build_parallel_interpolation_operators(numbering, maps):
@@ -447,8 +516,11 @@ def build_parallel_interpolation_operators(numbering, maps):
     Returns
     -------
     tuple[dict, dict]
-        Two dictionaries in row-start sparse format:
-        ``(forward_operator, backward_operator)``.
+        Two dictionaries in row-start sparse format,
+        and 3D arrays of volume fractions for forward
+        and backward boundaries.
+        ``(forward_operator, backward_operator,
+           forward_fraction, backward_fraction)``.
 
     Notes
     -----
@@ -464,13 +536,18 @@ def build_parallel_interpolation_operators(numbering, maps):
     forward_builder = SparseRowMatrixBuilder(numbering["N_cells"])
     backward_builder = SparseRowMatrixBuilder(numbering["N_cells"])
 
+    forward_boundary_fraction = np.zeros(cell_number.shape)
+    backward_boundary_fraction = np.zeros(cell_number.shape)
+
     def assemble_direction(
         matrix_builder,
         reverse_builder,
         y_offset,
-        xt_prime,
-        zt_prime,
+        xt_primes,
+        zt_primes,
+        weights,
         boundary_number,
+        boundary_fraction,
     ):
         """Assemble one directional interpolation operator."""
         for x in range(mxg, nx - mxg):
@@ -480,12 +557,14 @@ def build_parallel_interpolation_operators(numbering, maps):
                     if row < 0:
                         raise ValueError(f"Invalid evolving row at x={x}, y={y}, z={z}")
 
-                    add_boundary_or_interpolation_row(
+                    # Store the fraction [0,1] of the cell that hits
+                    boundary_fraction[x, y, z] = add_boundary_or_interpolation_row(
                         matrix_builder=matrix_builder,
                         reverse_builder=reverse_builder,
                         row=row,
-                        mapped_x=xt_prime[x, y, z],
-                        mapped_z=zt_prime[x, y, z],
+                        mapped_xs=xt_primes[x, y, z, :],
+                        mapped_zs=zt_primes[x, y, z, :],
+                        weights=weights,
                         y=y,
                         y_offset=y_offset,
                         boundary_row=boundary_number[x, y, z],
@@ -497,21 +576,30 @@ def build_parallel_interpolation_operators(numbering, maps):
         forward_builder,
         backward_builder,
         +1,
-        maps["forward_xt_prime"],
-        maps["forward_zt_prime"],
+        maps["forward_xt_primes"],
+        maps["forward_zt_primes"],
+        maps["subcell_weights"],
         numbering["forward_boundary_number"],
+        forward_boundary_fraction,
     )
 
     assemble_direction(
         backward_builder,
         forward_builder,
         -1,
-        maps["backward_xt_prime"],
-        maps["backward_zt_prime"],
+        maps["backward_xt_primes"],
+        maps["backward_zt_primes"],
+        maps["subcell_weights"],
         numbering["backward_boundary_number"],
+        backward_boundary_fraction,
     )
 
-    return forward_builder.to_csr(), backward_builder.to_csr()
+    return (
+        forward_builder.to_csr(),
+        backward_builder.to_csr(),
+        forward_boundary_fraction,
+        backward_boundary_fraction,
+    )
 
 
 def calculate_parallel_map_operators(maps):
@@ -521,7 +609,9 @@ def calculate_parallel_map_operators(maps):
     Parameters
     ----------
     maps : dict
-        Field-line map dictionary.
+        Field-line map dictionary. Uses `forward_{x,z}t_primes` and
+        `backward_{x,z}t_primes` if present, falling back to
+        `forward_{x,z}t_prime` and `backward_{x,z}t_prime`.
 
     Returns
     -------
@@ -530,16 +620,20 @@ def calculate_parallel_map_operators(maps):
         ready to be written to a BOUT++ mesh file.
     """
     numbering = assign_cell_numbers(maps)
-    forward_op, backward_op = build_parallel_interpolation_operators(numbering, maps)
+    forward_op, backward_op, forward_fraction, backward_fraction = (
+        build_parallel_interpolation_operators(numbering, maps)
+    )
 
     return {
         "cell_number": numbering["cell_number"],
         "total_cells": numbering["N_cells"],
         "forward_cell_number": numbering["forward_boundary_number"],
+        "forward_boundary_fraction": forward_fraction,
         "forward_weights": forward_op["weights"],
         "forward_columns": forward_op["columns"],
         "forward_rows": forward_op["rows"],
         "backward_cell_number": numbering["backward_boundary_number"],
+        "backward_boundary_fraction": backward_fraction,
         "backward_weights": backward_op["weights"],
         "backward_columns": backward_op["columns"],
         "backward_rows": backward_op["rows"],
