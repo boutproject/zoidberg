@@ -682,6 +682,7 @@ def write_maps(
     with MapWriter(gridfile, new_names=new_names, metric2d=metric2d, quiet=quiet) as mw:
         mw.add_grid_field(grid, magnetic_field)
         mw.add_maps(maps)
+        mw.add_dagp()
 
 
 def write_Bfield_to_vtk(
