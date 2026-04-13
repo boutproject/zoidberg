@@ -54,7 +54,7 @@ def parallel_slice_field_name(field, offset):
     return f"{prefix}_{field}{suffix}"
 
 
-def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **kwargs):
+def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None,n_chunks = 1, **kwargs):
     """Make the forward and backward FCI maps
 
     Parameters
@@ -211,65 +211,75 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
     B_cell = [np.empty(shape) for _ in range(3)]
 
     for j in range(ny):
-        coords = None
-        y_all = None
+        chunks_x = np.array_split(np.arange(0,nx), n_chunks)
         pol, ycoord = grid.getPoloidalGrid(j)
-
         num = 20
+        
+        for chunk in chunks_x:
+            
+            coords = None
+            y_all = None
+            
+    
+    
+    
+            for direction in [-1, +1]:
+                # Get this poloidal grid
+                _, ycoordnext = grid.getPoloidalGrid(j + direction)
+    
+                # Get the next poloidal grid
+                pol_slice = []
+                y_slices = np.linspace(ycoord, ycoordnext, num * 2 + 1)
+                if y_all is None:
+                    y_all = y_slices[::-1]
+                else:
+                    y_all = np.concatenate((y_all, y_slices[1:]))
+    
+                tmp = np.array(
+                    field_tracer.follow_field_lines(pol.R[chunk], pol.Z[chunk], y_slices, rtol=rtol)
+                )
+                if coords is None:
+                    coords = tmp[::-1]
+                else:
+                    coords = np.concatenate((coords, tmp[1:]))
 
-        for direction in [-1, +1]:
-            # Get this poloidal grid
-            _, ycoordnext = grid.getPoloidalGrid(j + direction)
-
-            # Get the next poloidal grid
-            pol_slice = []
-            y_slices = np.linspace(ycoord, ycoordnext, num * 2 + 1)
-            if y_all is None:
-                y_all = y_slices[::-1]
-            else:
-                y_all = np.concat((y_all, y_slices[1:]))
-
-            tmp = np.array(
-                field_tracer.follow_field_lines(pol.R, pol.Z, y_slices, rtol=rtol)
-            )
-            if coords is None:
-                coords = tmp[::-1]
-            else:
-                coords = np.concat((coords, tmp[1:]))
-                if prog is not None:
-                    prog.update()
-
-        for k in range(3):
-            slc = slice(num * k, -num * (2 - k) if k < 2 else None)
-            sg_22[k][:, j, :] = get_dist(coords[slc], y_all[slc])
-        coords = coords[num:-num]
-        y_all = y_all[num:-num]
-
-        Bs = [
-            magnetic_field.Byfunc(coord[..., 0], coord[..., 1], y)
-            for coord, y in zip(coords, y_all)
-        ]
-
-        B_cell[0][:, j, :] = Bs[0]
-        B_cell[1][:, j, :] = Bs[num]
-        B_cell[2][:, j, :] = Bs[-1]
-
-        facs = np.ones(num * 2 + 1)
-        assert len(y_all) == len(facs)
-        facs[0] = 0.5
-        facs[-1] = 0.5
-
-        metric = pol.metric()
-        Jperp0 = np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
-        B0 = Bs[len(Bs) // 2]
-        vols = [
-            Jperp0 * B0 / Bpar * fac * R
-            for Bpar, fac, R in zip(Bs, facs, coords[..., 0])
-        ]
-        assert len(vols) == len(facs)
-        J = np.sum(vols, axis=0) / (len(Bs) - 1)
-        jacobian[:, j, :] = J
-
+    
+            for k in range(3):
+                slc = slice(num * k, -num * (2 - k) if k < 2 else None)
+                sg_22[k][chunk, j, :] = get_dist(coords[slc], y_all[slc])
+            coords = coords[num:-num]
+            y_all = y_all[num:-num]
+    
+            Bs = [
+                magnetic_field.Byfunc(coord[..., 0], coord[..., 1], y)
+                for coord, y in zip(coords, y_all)
+            ]
+    
+            B_cell[0][chunk, j, :] = Bs[0]
+            B_cell[1][chunk, j, :] = Bs[num]
+            B_cell[2][chunk, j, :] = Bs[-1]
+    
+            facs = np.ones(num * 2 + 1)
+            assert len(y_all) == len(facs)
+            facs[0] = 0.5
+            facs[-1] = 0.5
+    
+            metric = pol.metric()
+            try:
+                Jperp0 = np.sqrt(metric["g_xx"][chunk] * metric["g_zz"][chunk] - metric["g_xz"][chunk] ** 2)
+            except: # Slabs only have one metric coefficient and not the whole array stored
+                Jperp0 = np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
+                
+                
+            B0 = Bs[len(Bs) // 2]
+            vols = [
+                Jperp0 * B0 / Bpar * fac * R
+                for Bpar, fac, R in zip(Bs, facs, coords[..., 0])
+            ]
+            assert len(vols) == len(facs)
+            J = np.sum(vols, axis=0) / (len(Bs) - 1)
+            jacobian[chunk, j, :] = J
+    
         if prog is not None:
             prog.update()
 
