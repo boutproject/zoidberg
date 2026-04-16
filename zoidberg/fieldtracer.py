@@ -926,14 +926,22 @@ class EMC3FieldTracer(FieldTracer):
         return mesh
 
 
-class FusionSC(FieldTracer):
+class FusionSCTracer(FieldTracer):
+    """
+    A wrapper for the fusionsc backend.
+
+    PyPI:     https://pypi.org/project/fusionsc/
+    Upstream: https://github.com/alexrobomind/fusionsc/
+    Docs:     https://alexrobomind.github.io/fusionsc/
+    """
+
     def __init__(self, field, **kwargs):
         """
         Arguments are passed to fsc.flt.poincareInPhiPlanes.
 
         Passing rtol to follow_field_lines overwrites targetError.
 
-        See fusionsc docs.
+        See fusionsc docs: https://alexrobomind.github.io/fusionsc/
         """
         self.field = field
         self.kwargs = kwargs

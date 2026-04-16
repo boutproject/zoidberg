@@ -1939,7 +1939,15 @@ class EMC3(MagneticField):
         return vals
 
 
-class FusionSC(MagneticField):
+class FusionSCField(MagneticField):
+    """
+    A wrapper for the fusionsc backend.
+
+    PyPI:     https://pypi.org/project/fusionsc/
+    Upstream: https://github.com/alexrobomind/fusionsc/
+    Docs:     https://alexrobomind.github.io/fusionsc/
+    """
+
     def __init__(self, field):
         self.field = field
         self.boundary = boundary.NoBoundary()  # An optional Boundary object
