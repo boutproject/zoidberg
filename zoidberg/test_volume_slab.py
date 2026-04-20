@@ -1,18 +1,12 @@
 import os
 
 import numpy as np
-import scipy
 import xarray as xr
-from shapely.geometry import Polygon
-import sys
 import matplotlib.pyplot as plt
 
-import zoidberg
-
 from zoidberg import field as zbfield
-from zoidberg import fieldtracer
 from zoidberg import grid as zbgrid
-from zoidberg import poloidal_grid, rzline, zoidberg
+from zoidberg import poloidal_grid, zoidberg
 
 script_dir = os.getcwd()
 
