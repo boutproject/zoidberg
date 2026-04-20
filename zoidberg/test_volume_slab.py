@@ -7,7 +7,6 @@ from shapely.geometry import Polygon
 import sys
 import matplotlib.pyplot as plt
 
-sys.path.insert(0, "/home/IPP-HGW/toto/Dokumente/my-zoidberg/zoidberg")
 import zoidberg
 
 from zoidberg import field as zbfield
