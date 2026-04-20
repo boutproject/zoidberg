@@ -295,12 +295,6 @@ class CurvedSlab(MagneticField):
         self.Bzprime = Bzprime
         self.Rmaj = Rmaj
 
-        # Set poloidal magnetic field
-        # Bpx = self.Bp + (self.grid.xarray-self.grid.Lx/2.) * self.Bpprime
-        # self.Bpxy = np.resize(Bpx, (self.grid.nz, self.grid.ny, self.grid.nx))
-        # self.Bpxy = np.transpose(self.Bpxy, (2,1,0))
-        # self.Bxy = np.sqrt(self.Bpxy**2 + self.Bt**2)
-
     def Bxfunc(self, x, z, phi):
         return np.zeros(x.shape)
 
@@ -946,10 +940,8 @@ class VMEC(MagneticField):
             rmn = np.repeat(field_slice[:, np.newaxis], lt, axis=1)
             a = rmn * cosmt
             b = np.dot(a.T, cosnz)
-            # print("a: {}, b: {}".format(a.shape, b.shape))
             c = rmn * sinmt
             d = np.dot(c.T, sinnz)
-            # print("c: {}, d: {}".format(c.shape, d.shape))
             f[k, :, :] = b - d
         return f
 
@@ -1612,10 +1604,7 @@ class W7X_vacuum(MagneticField):
             points.x3 = np.ndarray.flatten(z)  # z in Cylindrical
 
             ## call EXTENDER on web services
-            # if not (os.path.isfile(wout_file)):
             plasmafield = cl.service.getPlasmaField(None, vmecURL, points, None)
-            # else:
-            # plasmafield = cl.service.getPlasmaField(wout, None, points, None)
 
             ## Reshape to 3d array
             Br = np.ndarray.reshape(np.asarray(plasmafield.x1), (nx, ny, nz))
@@ -1778,7 +1767,7 @@ def _set_config(config, configuration):
     return config
 
 
-class W7X_vacuum_on_demand:
+class W7X_vacuum_on_demand(MagneticField):
     def __init__(self, configuration):
         self.configuration = configuration
         self.boundary = boundary.NoBoundary()  # An optional Boundary object
@@ -1948,3 +1937,49 @@ class EMC3(MagneticField):
                 vals[ni, i] = interp(si[ni])
 
         return vals
+
+
+class FusionSCField(MagneticField):
+    """
+    A wrapper for the fusionsc backend.
+
+    PyPI:     https://pypi.org/project/fusionsc/
+    Upstream: https://github.com/alexrobomind/fusionsc/
+    Docs:     https://alexrobomind.github.io/fusionsc/
+    """
+
+    def __init__(self, field):
+        self.field = field
+        self.boundary = boundary.NoBoundary()  # An optional Boundary object
+        self.attributes = {}
+
+    def Rfunc(self, x, z, phi):
+        return x
+
+    def Bmag(self, x, z, phi):
+        return np.sqrt(np.sum(self.getB(x, z, phi) ** 2, axis=0))
+
+    def pressure(self, x, z, phi):
+        return np.zeros_like(x)
+
+    def getB(self, x, z, phi):
+        X = np.cos(phi) * x
+        Y = np.sin(phi) * x
+        return self.field.interpolateXyz([X, Y, z])
+
+    def Bxfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        return B[0] * np.cos(phi) + B[1] * np.sin(phi)
+
+    def Byfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        return -B[0] * np.sin(phi) + B[1] * np.cos(phi)
+
+    def Bxyzfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        Bx = B[0] * np.cos(phi) + B[1] * np.sin(phi)
+        By = -B[0] * np.sin(phi) + B[1] * np.cos(phi)
+        return Bx, By, B[2]
+
+    def Bzfunc(self, *pos):
+        return self.getB(*pos)[2]

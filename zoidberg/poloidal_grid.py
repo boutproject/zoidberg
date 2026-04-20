@@ -335,7 +335,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
 
         return R, Z
 
-    def findIndex(self, R, Z, tol=1e-10, show=False):
+    def findIndex(self, R, Z, tol=1e-12, show=False):
         """Finds the (x, z) index corresponding to the given (R, Z) coordinate
 
         Parameters
@@ -393,6 +393,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
 
         cnt = 0
         underrelax = 1
+        extra = 0
 
         while True:
             # Use Newton iteration to find the index
@@ -407,7 +408,12 @@ class StructuredPoloidalGrid(PoloidalGrid):
             # Note: only check the points which are not in the boundary
             val = np.amax(mask * (dR**2 + dZ**2))
             if val < tol:
-                break
+                extra += 1
+                if extra > 3:
+                    break
+            else:
+                if extra:
+                    raise RuntimeError("Failed to converge")
             cnt += 1
             if cnt == 10:
                 underrelax = 1.5
@@ -520,8 +526,6 @@ class StructuredPoloidalGrid(PoloidalGrid):
             "g_xz": g[..., 0, 1],
             "gzz": ginv[..., 1, 1],
             "g_zz": g[..., 1, 1],
-            # Jacobian from BOUT++
-            # "J": self.R * (J[0, 0] * J[1, 1] - J[0, 1] * J[1, 0]),
         }
 
 

@@ -765,7 +765,6 @@ class EMC3FieldTracer(FieldTracer):
         out = np.empty((len(y_values), *x_values.shape, 2))
         ij = -1
         zid = 0
-        # print([range(x) for x in x_values.shape])
         for i in itertools.product(*[range(x) for x in x_values.shape]):
             rz = np.array((x_values[i], z_values[i]))
             ab, ij, zid = self.rz_to_ab(rz, meshes[0], ij, zid)
@@ -925,3 +924,51 @@ class EMC3FieldTracer(FieldTracer):
         mesh.phi = phi
         mesh.perBC = perBC
         return mesh
+
+
+class FusionSCTracer(FieldTracer):
+    """
+    A wrapper for the fusionsc backend.
+
+    PyPI:     https://pypi.org/project/fusionsc/
+    Upstream: https://github.com/alexrobomind/fusionsc/
+    Docs:     https://alexrobomind.github.io/fusionsc/
+    """
+
+    def __init__(self, field, **kwargs):
+        """
+        Arguments are passed to fsc.flt.poincareInPhiPlanes.
+
+        Passing rtol to follow_field_lines overwrites targetError.
+
+        See fusionsc docs: https://alexrobomind.github.io/fusionsc/
+        """
+        self.field = field
+        self.kwargs = kwargs
+
+    def follow_field_lines(self, x_values, z_values, y_values, rtol=None):
+        import fusionsc as fsc
+
+        kwargs = self.kwargs
+        if rtol is not None:
+            kwargs = kwargs.copy()
+            kwargs["targetError"] = rtol
+
+        X = np.cos(y_values[0]) * x_values
+        Y = np.sin(y_values[0]) * x_values
+        Z = z_values
+        direction = "ccw" if y_values[0] < y_values[1] else "cw"
+        pnts = fsc.flt.poincareInPhiPlanes(
+            [X, Y, Z], self.field, y_values[1:], 1, direction=direction, **self.kwargs
+        )
+        assert pnts.shape[-1] == 1
+        pnts = pnts[..., 0]
+
+        out = np.empty((len(y_values), *x_values.shape, 2))
+        out[0, ..., 0] = x_values
+        out[0, ..., 1] = z_values
+        out[1:, ..., 0] = np.sqrt(pnts[0] ** 2 + pnts[1] ** 2)
+        out[1:, ..., 1] = pnts[2]
+        # [len(y), x.shape[0], x.shape[1], 2].
+
+        return out
