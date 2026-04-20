@@ -1,8 +1,19 @@
 from math import gamma
 
 import numpy as np
-from sympy import (Piecewise, Symbol, atan2, cos, diff, factorial, lambdify,
-                   log, pi, sin, sqrt)
+from sympy import (
+    Piecewise,
+    Symbol,
+    atan2,
+    cos,
+    diff,
+    factorial,
+    lambdify,
+    log,
+    pi,
+    sin,
+    sqrt,
+)
 
 from . import boundary
 
@@ -837,9 +848,7 @@ class DommaschkPotentials(MagneticField):
             a * cos(n * self.phi - np.pi / 2) + b * sin(n * self.phi - np.pi / 2)
         ) * self.D(n, m) + (
             c * cos(n * self.phi - np.pi / 2) + d * sin(n * self.phi - np.pi / 2)
-        ) * self.N(
-            n, m - 1
-        )
+        ) * self.N(n, m - 1)
 
         return V
 
