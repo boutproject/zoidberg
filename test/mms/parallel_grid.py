@@ -7,8 +7,10 @@ from mms_helper import lst
 def ident(a, b):
     return a
 
+
 def varx(t, x):
     return (t + x) % (2 * np.pi)
+
 
 modes = [
     ("const", ident, ident),

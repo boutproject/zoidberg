@@ -47,7 +47,7 @@ def fixup(fn):
     g = np.empty((3, 3), dtype=object)
     for i in range(3):
         for j in range(3):
-            k = f"g{i+1}{j+1}"
+            k = f"g{i + 1}{j + 1}"
             if k in grid:
                 g[i, j] = grid[k]
             else:
@@ -72,7 +72,7 @@ def fixup(fn):
 
     for i in range(3):
         for j in range(3):
-            for k, d in zip([f"g_{i+1}{j+1}", f"g{i+1}{j+1}"], [ginv, g]):
+            for k, d in zip([f"g_{i + 1}{j + 1}", f"g{i + 1}{j + 1}"], [ginv, g]):
                 grid[k] = grid.g11.dims, d[..., i, j]
                 # grid[k] -= diff2(grid[k].data, 2) / 10
     # Force recalculation
