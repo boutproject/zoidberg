@@ -245,7 +245,7 @@ def gen_newr(r, z, splitedlist, bounds, plot):
         ) ** 2
         maxfac = 3
         if not (maxfac**-2 < dstart / dend < maxfac**2):
-            print(f"dstart / dend is {dstart/dend} - check has failed")
+            print(f"dstart / dend is {dstart / dend} - check has failed")
             deb += [[dstart, dend, 3]]
             have_failed = True
 

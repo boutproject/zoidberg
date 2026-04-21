@@ -448,9 +448,9 @@ class CachingFieldTracer:
             print(f"saving {ret.shape}, {x_values.shape}")
         ret.shape = -1, shape[-1]
         np.savetxt(fn, ret)
-        assert shape == self._guess_shape(
-            x_values, y_values
-        ), f"Estimated {self._guess_shape(x_values, y_values)} but got {shape}"
+        assert shape == self._guess_shape(x_values, y_values), (
+            f"Estimated {self._guess_shape(x_values, y_values)} but got {shape}"
+        )
         ret.shape = shape
         return ret
 

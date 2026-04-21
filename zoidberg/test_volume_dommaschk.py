@@ -22,7 +22,6 @@ def calc_divertortheta(x, z, x0=0.0):
 def dommaschk_grid_volume(
     nx, ny, nz, a1, a2, R0, Btor, symmetry, yperiod, plotting=False
 ):
-
     C = np.zeros((6, 3, 4))
     C[5, 2, 1] = -1.489
     C[5, 2, 2] = -1.489
@@ -43,7 +42,6 @@ def dommaschk_grid_volume(
     outer_lines = []
     pol_grids = []
     for i in range(ny):
-
         inner_line = rzline.line_from_points(
             rzcoord[:, i, 0, 0], rzcoord[:, i, 0, 1], spline_order=1
         )
@@ -93,7 +91,6 @@ def dommaschk_grid_volume(
 
 
 def torus_volume_from_sections_periodic(polygons, angles, symmetry, mode=0):
-
     V = 0.0
     N = len(polygons)
     if mode == 0:
@@ -250,7 +247,7 @@ def test_run():
     exact_volume = calculate_dommaschk_volume(
         2000, 500, symmetry, yperiod, plotting, Btor, R0, a1, a2, mode=1
     )
-    print(f"Exact volume: {np.round(exact_volume,6)} m^3")
+    print(f"Exact volume: {np.round(exact_volume, 6)} m^3")
 
     scales = [2, 4, 8]
     gridvolumes = np.zeros(len(scales))
@@ -263,7 +260,7 @@ def test_run():
         gridvolumes[i] = dommaschk_grid_volume(
             nx, ny, nz, a1, a2, R0, Btor, symmetry, yperiod, plotting=plotting
         )
-        print(f"Grid volume: {np.round(gridvolumes[i],6)} m^3")
+        print(f"Grid volume: {np.round(gridvolumes[i], 6)} m^3")
     error = np.abs(gridvolumes - exact_volume)
     print("Error:", error)
     coeffs = np.polyfit(np.log(scales), np.log(error), 1)
