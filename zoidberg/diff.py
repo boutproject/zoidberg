@@ -57,7 +57,6 @@ def c4(f, axis, periodic=False):
     slc = [slice(None) for _ in f.shape]
 
     slc[axis] = slice(2, -2)
-    # out[t(slc)] = 0.083333333333333333 * fi(-2) + -0.66666666666666666 * fi(-1) + 0.66666666666666666 * fi(1) + -0.08333333333333333 * fi(2)
     out[t(slc)] = (-fi(2) + 8 * fi(1) - 8 * fi(-1) + fi(-2)) / 12
 
     slc[axis] = 0
@@ -98,7 +97,7 @@ def c4(f, axis, periodic=False):
     return out
 
 
-def get_dist(RZ_coords, y_coords, refine=100):
+def field_line_length(RZ_coords, y_coords, refine=100):
     """
     This function takes the trace from a field line tracer and calculate
     the length along the points.
@@ -114,13 +113,8 @@ def get_dist(RZ_coords, y_coords, refine=100):
 
     y_inter = interp(np.linspace(0, 1, len(y_coords)), y_coords)
 
-    if 1:
-        y_fine = y_inter(np.linspace(0, 1, (len(y_coords) - 1) * refine + 1))
-
-        R_fine, Z_fine = [interp(y_coords, x)(y_fine) for x in RZ_coords]
-    else:
-        y_fine = y_coords
-        R_fine, Z_fine = RZ_coords
+    y_fine = y_inter(np.linspace(0, 1, (len(y_coords) - 1) * refine + 1))
+    R_fine, Z_fine = [interp(y_coords, x)(y_fine) for x in RZ_coords]
 
     slicer = [None for _ in R_fine.shape]
     slicer[0] = slice(None, None)
@@ -132,6 +126,4 @@ def get_dist(RZ_coords, y_coords, refine=100):
     dXYZs = [(x[1:] - x[:-1]) ** 2 for x in [X_fine, Y_fine, Z_fine]]
     ds2 = np.sum(dXYZs, axis=0)
     ds = np.sqrt(ds2)
-    s = np.sum(ds, axis=0)
-
-    return s
+    return np.sum(ds, axis=0)

@@ -68,15 +68,6 @@ class RZline:
 
         if anticlockwise:
             # Ensure that the line is going anticlockwise (positive theta)
-            # The first method is faster, but unreliable.
-            # mid_ind = np.argmax(r)  # Outboard midplane index
-            # ind_next = (mid_ind + 1) % n
-
-            # if z[ind_next] < z[mid_ind]:
-            #     # Line going down at outboard midplane. Need to reverse
-            #     r = r[::-1]  # r = np.flip(r)
-            #     z = z[::-1]  # z = np.flip(z)
-            # Calcculating the area should be much more robust
             A = np.sum((r - np.roll(r, 1)) * (z + np.roll(z, 1)))
             assert A != 0
             if A > 0:
@@ -448,8 +439,6 @@ def line_from_points_poly(rarray, zarray, show=False, spline_order=None):
         r, z = line.position(angle)
 
         # Next point to add
-        # plt.plot(rarray[i], zarray[i], 'o')
-
         # Find the closest point on the line
         theta = line.closestPoint(rarray[i], zarray[i])
 

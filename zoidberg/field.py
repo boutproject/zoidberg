@@ -1,8 +1,19 @@
 from math import gamma
 
 import numpy as np
-from sympy import (Piecewise, Symbol, atan2, cos, diff, factorial, lambdify,
-                   log, pi, sin, sqrt)
+from sympy import (
+    Piecewise,
+    Symbol,
+    atan2,
+    cos,
+    diff,
+    factorial,
+    lambdify,
+    log,
+    pi,
+    sin,
+    sqrt,
+)
 
 from . import boundary
 
@@ -294,12 +305,6 @@ class CurvedSlab(MagneticField):
         self.xcentre = xcentre
         self.Bzprime = Bzprime
         self.Rmaj = Rmaj
-
-        # Set poloidal magnetic field
-        # Bpx = self.Bp + (self.grid.xarray-self.grid.Lx/2.) * self.Bpprime
-        # self.Bpxy = np.resize(Bpx, (self.grid.nz, self.grid.ny, self.grid.nx))
-        # self.Bpxy = np.transpose(self.Bpxy, (2,1,0))
-        # self.Bxy = np.sqrt(self.Bpxy**2 + self.Bt**2)
 
     def Bxfunc(self, x, z, phi):
         return np.zeros(x.shape)
@@ -843,9 +848,7 @@ class DommaschkPotentials(MagneticField):
             a * cos(n * self.phi - np.pi / 2) + b * sin(n * self.phi - np.pi / 2)
         ) * self.D(n, m) + (
             c * cos(n * self.phi - np.pi / 2) + d * sin(n * self.phi - np.pi / 2)
-        ) * self.N(
-            n, m - 1
-        )
+        ) * self.N(n, m - 1)
 
         return V
 
@@ -946,10 +949,8 @@ class VMEC(MagneticField):
             rmn = np.repeat(field_slice[:, np.newaxis], lt, axis=1)
             a = rmn * cosmt
             b = np.dot(a.T, cosnz)
-            # print("a: {}, b: {}".format(a.shape, b.shape))
             c = rmn * sinmt
             d = np.dot(c.T, sinnz)
-            # print("c: {}, d: {}".format(c.shape, d.shape))
             f[k, :, :] = b - d
         return f
 
@@ -1612,10 +1613,7 @@ class W7X_vacuum(MagneticField):
             points.x3 = np.ndarray.flatten(z)  # z in Cylindrical
 
             ## call EXTENDER on web services
-            # if not (os.path.isfile(wout_file)):
             plasmafield = cl.service.getPlasmaField(None, vmecURL, points, None)
-            # else:
-            # plasmafield = cl.service.getPlasmaField(wout, None, points, None)
 
             ## Reshape to 3d array
             Br = np.ndarray.reshape(np.asarray(plasmafield.x1), (nx, ny, nz))
@@ -1950,7 +1948,15 @@ class EMC3(MagneticField):
         return vals
 
 
-class FusionSC(MagneticField):
+class FusionSCField(MagneticField):
+    """
+    A wrapper for the fusionsc backend.
+
+    PyPI:     https://pypi.org/project/fusionsc/
+    Upstream: https://github.com/alexrobomind/fusionsc/
+    Docs:     https://alexrobomind.github.io/fusionsc/
+    """
+
     def __init__(self, field):
         self.field = field
         self.boundary = boundary.NoBoundary()  # An optional Boundary object

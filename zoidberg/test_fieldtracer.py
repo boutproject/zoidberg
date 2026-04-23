@@ -84,12 +84,6 @@ def test_traceweb():
     assert np.all(dist >= 0)
     assert np.max(dist) < 0.05
 
-    # def test_traceweb_backwards():
-    #     web = setup_ftw(configId=0)
-
-    #     num = 10
-    #     start = np.linspace(5.7, 6, num), np.zeros(num)
-
     # Check reverse direction
     res = web.follow_field_lines(*start, -np.linspace(0, 0.1, 10))
     assert np.all(res[1:, :, 1] < 0)
@@ -98,23 +92,11 @@ def test_traceweb():
     # make sure step isn't to large
     assert np.max(dist) < 0.05
 
-    # def test_traceweb_forward_phi0():
-    #     web = setup_ftw(configId=0)
-
-    #     num = 10
-    #     start = np.linspace(5.7, 6, num), np.zeros(num)
-
     res = web.follow_field_lines(*start, np.linspace(0, 0.1, 10) + np.pi * 4 / 5)
     assert np.all(res[1:, :, 1] > 0)
     dist = np.sqrt(np.sum((res[:, 1:, :] - res[:, :-1, :]) ** 2, axis=2))
     assert np.all(dist >= 0)
     assert np.max(dist) < 0.05
-
-    # def test_traceweb_chunked():
-    #     web = setup_ftw(configId=0)
-
-    #     num = 10
-    #     start = np.linspace(5.7, 6, num), np.zeros(num)
 
     res = web.follow_field_lines(*start, -np.linspace(0, 0.1, 10) + np.pi * 6 / 5)
     assert np.all(res[1:, :, 1] < 0)

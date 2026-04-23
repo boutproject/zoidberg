@@ -8,7 +8,7 @@ from boututils import datafile as bdata
 from zoidberg import __version__
 
 from . import fieldtracer
-from .diff import get_dist
+from .diff import field_line_length
 from .field import Slab
 from .grid import Grid
 from .poloidal_grid import StructuredPoloidalGrid
@@ -69,6 +69,11 @@ def make_maps(
         Number of parallel slices in each direction
     quiet : bool
         Don't display progress bar
+    field_tracer:
+        Specify a field tracer, otherwise use standard tracer for the
+        given field
+    refine_parallel_integral:
+        The number of intermediate points for g_22 calculation
     kwargs
         Optional arguments for field line tracing, etc.
 
@@ -349,7 +354,7 @@ def get_metric(grid, magnetic_field):
     metric["B"] = Bmag
     metric["pressure"] = pressure
 
-    # B * J / sqrt(g22)
+    # compute B * J / sqrt(g22)
     BJg = Bmag * np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
 
     return metric, BJg
@@ -446,8 +451,6 @@ class MapWriter:
                 # See if the variable already exists
                 return self.f.impl.handle.variables[k]
             except KeyError:
-                # t = v.dtype.str
-                # dims = ("x", "y", "z")
                 var = self.f.impl.handle.createVariable(k, t, dims)
                 if init is not None:
                     var[:] = init

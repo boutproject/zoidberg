@@ -68,7 +68,10 @@ def load(fn):
 
 def getSame(lst):
     val = np.min(lst)
-    assert val == np.max(lst)
+    if not val == np.max(lst):
+        raise ValueError(
+            f"Expected a list of identical values, but there are different values in {lst}!"
+        )
     return val
 
 
@@ -86,7 +89,6 @@ def doit(pols, plot=False, isSlab=False):
     ### Go in a line around the cell
 
     Ar = np.empty((pols[0].nx, len(pols), pols[0].nz))
-    # Ar = np.empty_like(A)
     todo = enumerate(pols)
     if tqdm and len(pols) > 1:
         todo = tqdm(todo, total=len(pols))
@@ -115,7 +117,6 @@ def doit(pols, plot=False, isSlab=False):
         dy = RZ[1, ..., 1:] - RZ[1, ..., :-1]
         xx = (RZ[0, ..., :-1] + RZ[0, ..., 1:]) / 2
 
-        # A[1:-1, gi] = -np.sum(xx * dy, axis=-1)
         if isSlab:
             Ar[1:-1, gi] = -np.sum(xx * dy, axis=-1)
         else:
@@ -127,8 +128,6 @@ def doit(pols, plot=False, isSlab=False):
     RZs = RZs.transpose(1, 2, 0, 3, 4)
 
     volume = Ar
-    # f =
-    #    V = [f[k] for k in ("dx", "dy", "dz", "J")]
 
     RZ = np.array(
         [
@@ -140,10 +139,6 @@ def doit(pols, plot=False, isSlab=False):
     ).transpose(1, 2, 0, 3)
 
     RZ = np.array([(g.R, g.Z) for g in pols]).transpose(1, 2, 0, 3)
-
-    # volume = dx * dy * dz * J
-    # volume = V[0] * V[1] * V[2] * V[3]
-    # A.shape, Ar.shape, RZ.shape
 
     # AreaXplus
     # Z
@@ -166,7 +161,6 @@ def doit(pols, plot=False, isSlab=False):
     # Note that we need to split it in two parts.
 
     log("calculating pos ...")
-    # pos = RZs[..., :n]
     tmp = list(
         np.meshgrid(
             np.arange(g.nx - 1) + 0.5,
@@ -202,8 +196,6 @@ def doit(pols, plot=False, isSlab=False):
         dzR[dzR > Lz / 2] -= Lz
     dzR = 0.5 * (dzR[:, 1:] + dzR[:, :-1])
 
-    # dxR /= (np.sum(dxR**2, axis=0))
-    # dzR /= (np.sum(dzR**2, axis=0))
     log("starting solve")
     dxzR = np.array((dxR, dzR)).transpose(2, 3, 4, 1, 0)
     coefsX = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0)[..., None])[..., 0]
@@ -337,7 +329,6 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
         result[1:-1] += np.roll(this, 1, -1)
         for r, t in zip(results[2:], (-t1, -t2)):
             r[1:-1] -= t
-            # np.roll(r, -1, -1)[1:-1] += t
             r[1:-1] += np.roll(t, 1, -1)
 
     result[0] = 0
@@ -372,7 +363,6 @@ def fixup(RZ, d):
         c1[:-1] = d
     else:
         c1[1:-1] = d
-    # c1 = np.roll(c1, -1, -1)
     return c1
 
 
