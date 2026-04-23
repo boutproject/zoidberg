@@ -264,12 +264,12 @@ def make_maps(
             facs[-1] = 0.5
 
             metric = pol.metric()
-            try:
+            if not isinstance(magnetic_field, Slab):
                 Jperp0 = np.sqrt(
                     metric["g_xx"][chunk] * metric["g_zz"][chunk]
                     - metric["g_xz"][chunk] ** 2
                 )
-            except:  # Slabs only have one metric coefficient and not the whole array stored
+            else:  # Slabs only have one metric coefficient and not the whole array stored
                 Jperp0 = np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
 
             B0 = Bs[len(Bs) // 2]
