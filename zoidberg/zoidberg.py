@@ -61,6 +61,7 @@ def make_maps(
     quiet=False,
     field_tracer=None,
     refine_parallel_integral=20,
+    n_chunks=4,
     **kwargs,
 ):
     """Make the forward and backward FCI maps
@@ -80,6 +81,8 @@ def make_maps(
         given field
     refine_parallel_integral:
         The number of intermediate points for g_22 calculation
+    n_chunks:
+        Number of chunks in the x-direction the calculation of J is split up.
     kwargs
         Optional arguments for field line tracing, etc.
 
@@ -224,65 +227,79 @@ def make_maps(
     B_cell = [np.empty(shape) for _ in range(3)]
 
     for j in range(ny):
-        coords = None
-        y_all = None
+        chunks_x = np.array_split(np.arange(0, nx), n_chunks)
         pol, ycoord = grid.getPoloidalGrid(j)
 
-        for direction in [-1, +1]:
-            # Get this poloidal grid
-            _, ycoordnext = grid.getPoloidalGrid(j + direction)
+        for chunk in chunks_x:
+            coords = None
+            y_all = None
 
-            # Get the next poloidal grid
-            pol_slice = []
-            y_slices = np.linspace(ycoord, ycoordnext, refine_parallel_integral * 2 + 1)
-            if y_all is None:
-                y_all = y_slices[::-1]
-            else:
-                y_all = np.concatenate((y_all, y_slices[1:]))
+            for direction in [-1, +1]:
+                # Get this poloidal grid
+                _, ycoordnext = grid.getPoloidalGrid(j + direction)
 
-            tmp = np.array(
-                field_tracer.follow_field_lines(pol.R, pol.Z, y_slices, rtol=rtol)
-            )
-            if coords is None:
-                coords = tmp[::-1]
-            else:
-                coords = np.concatenate((coords, tmp[1:]))
-                if prog is not None:
-                    prog.update()
+                # Get the next poloidal grid
+                pol_slice = []
+                y_slices = np.linspace(
+                    ycoord, ycoordnext, refine_parallel_integral * 2 + 1
+                )
+                if y_all is None:
+                    y_all = y_slices[::-1]
+                else:
+                    y_all = np.concatenate((y_all, y_slices[1:]))
 
-        for k in range(3):
-            slc = slice(
-                refine_parallel_integral * k,
-                -refine_parallel_integral * (2 - k) if k < 2 else None,
-            )
-            sg_22[k][:, j, :] = field_line_length(coords[slc], y_all[slc])
-        coords = coords[refine_parallel_integral:-refine_parallel_integral]
-        y_all = y_all[refine_parallel_integral:-refine_parallel_integral]
+                tmp = np.array(
+                    field_tracer.follow_field_lines(
+                        pol.R[chunk], pol.Z[chunk], y_slices, rtol=rtol
+                    )
+                )
+                if coords is None:
+                    coords = tmp[::-1]
+                else:
+                    coords = np.concatenate((coords, tmp[1:]))
+                    if prog is not None:
+                        prog.update()
 
-        Bs = [
-            magnetic_field.Byfunc(coord[..., 0], coord[..., 1], y)
-            for coord, y in zip(coords, y_all)
-        ]
+            for k in range(3):
+                slc = slice(
+                    refine_parallel_integral * k,
+                    -refine_parallel_integral * (2 - k) if k < 2 else None,
+                )
+                sg_22[k][chunk, j, :] = field_line_length(coords[slc], y_all[slc])
+            coords = coords[refine_parallel_integral:-refine_parallel_integral]
+            y_all = y_all[refine_parallel_integral:-refine_parallel_integral]
 
-        B_cell[0][:, j, :] = Bs[0]
-        B_cell[1][:, j, :] = Bs[refine_parallel_integral]
-        B_cell[2][:, j, :] = Bs[-1]
+            Bs = [
+                magnetic_field.Byfunc(coord[..., 0], coord[..., 1], y)
+                for coord, y in zip(coords, y_all)
+            ]
 
-        facs = np.ones(refine_parallel_integral * 2 + 1)
-        assert len(y_all) == len(facs)
-        facs[0] = 0.5
-        facs[-1] = 0.5
+            B_cell[0][chunk, j, :] = Bs[0]
+            B_cell[1][chunk, j, :] = Bs[refine_parallel_integral]
+            B_cell[2][chunk, j, :] = Bs[-1]
 
-        metric = pol.metric()
-        Jperp0 = np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
-        B0 = Bs[len(Bs) // 2]
-        vols = [
-            Jperp0 * B0 / Bpar * fac * R
-            for Bpar, fac, R in zip(Bs, facs, coords[..., 0])
-        ]
-        assert len(vols) == len(facs)
-        J = np.sum(vols, axis=0) / (len(Bs) - 1)
-        jacobian[:, j, :] = J
+            facs = np.ones(refine_parallel_integral * 2 + 1)
+            assert len(y_all) == len(facs)
+            facs[0] = 0.5
+            facs[-1] = 0.5
+
+            metric = pol.metric()
+            if not isinstance(magnetic_field, Slab):
+                Jperp0 = np.sqrt(
+                    metric["g_xx"][chunk] * metric["g_zz"][chunk]
+                    - metric["g_xz"][chunk] ** 2
+                )
+            else:  # Slabs only have one metric coefficient and not the whole array stored
+                Jperp0 = np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
+
+            B0 = Bs[len(Bs) // 2]
+            vols = [
+                Jperp0 * B0 / Bpar * fac * R
+                for Bpar, fac, R in zip(Bs, facs, coords[..., 0])
+            ]
+            assert len(vols) == len(facs)
+            J = np.sum(vols, axis=0) / (len(Bs) - 1)
+            jacobian[chunk, j, :] = J
 
         if prog is not None:
             prog.update()
