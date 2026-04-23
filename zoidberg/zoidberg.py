@@ -44,9 +44,9 @@ def parallel_slice_field_name(field, offset):
     """
     absoffset = abs(offset)
     if absoffset < 1:
-        assert (
-            abs(absoffset - 0.5) < 1e-6
-        ), f"Expected an offset of +- 0.5 but got {offset}"
+        assert abs(absoffset - 0.5) < 1e-6, (
+            f"Expected an offset of +- 0.5 but got {offset}"
+        )
         prefix = "low" if offset < 0 else "high"
         return f"{field}_cell_y{prefix}"
     prefix = "forward" if offset > 0 else "backward"
@@ -54,7 +54,9 @@ def parallel_slice_field_name(field, offset):
     return f"{prefix}_{field}{suffix}"
 
 
-def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None,n_chunks = 1, **kwargs):
+def make_maps(
+    grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, n_chunks=1, **kwargs
+):
     """Make the forward and backward FCI maps
 
     Parameters
@@ -211,22 +213,18 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None,n_c
     B_cell = [np.empty(shape) for _ in range(3)]
 
     for j in range(ny):
-        chunks_x = np.array_split(np.arange(0,nx), n_chunks)
+        chunks_x = np.array_split(np.arange(0, nx), n_chunks)
         pol, ycoord = grid.getPoloidalGrid(j)
         num = 20
-        
+
         for chunk in chunks_x:
-            
             coords = None
             y_all = None
-            
-    
-    
-    
+
             for direction in [-1, +1]:
                 # Get this poloidal grid
                 _, ycoordnext = grid.getPoloidalGrid(j + direction)
-    
+
                 # Get the next poloidal grid
                 pol_slice = []
                 y_slices = np.linspace(ycoord, ycoordnext, num * 2 + 1)
@@ -234,43 +232,46 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None,n_c
                     y_all = y_slices[::-1]
                 else:
                     y_all = np.concatenate((y_all, y_slices[1:]))
-    
+
                 tmp = np.array(
-                    field_tracer.follow_field_lines(pol.R[chunk], pol.Z[chunk], y_slices, rtol=rtol)
+                    field_tracer.follow_field_lines(
+                        pol.R[chunk], pol.Z[chunk], y_slices, rtol=rtol
+                    )
                 )
                 if coords is None:
                     coords = tmp[::-1]
                 else:
                     coords = np.concatenate((coords, tmp[1:]))
 
-    
             for k in range(3):
                 slc = slice(num * k, -num * (2 - k) if k < 2 else None)
                 sg_22[k][chunk, j, :] = get_dist(coords[slc], y_all[slc])
             coords = coords[num:-num]
             y_all = y_all[num:-num]
-    
+
             Bs = [
                 magnetic_field.Byfunc(coord[..., 0], coord[..., 1], y)
                 for coord, y in zip(coords, y_all)
             ]
-    
+
             B_cell[0][chunk, j, :] = Bs[0]
             B_cell[1][chunk, j, :] = Bs[num]
             B_cell[2][chunk, j, :] = Bs[-1]
-    
+
             facs = np.ones(num * 2 + 1)
             assert len(y_all) == len(facs)
             facs[0] = 0.5
             facs[-1] = 0.5
-    
+
             metric = pol.metric()
             try:
-                Jperp0 = np.sqrt(metric["g_xx"][chunk] * metric["g_zz"][chunk] - metric["g_xz"][chunk] ** 2)
-            except: # Slabs only have one metric coefficient and not the whole array stored
+                Jperp0 = np.sqrt(
+                    metric["g_xx"][chunk] * metric["g_zz"][chunk]
+                    - metric["g_xz"][chunk] ** 2
+                )
+            except:  # Slabs only have one metric coefficient and not the whole array stored
                 Jperp0 = np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
-                
-                
+
             B0 = Bs[len(Bs) // 2]
             vols = [
                 Jperp0 * B0 / Bpar * fac * R
@@ -279,7 +280,7 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None,n_c
             assert len(vols) == len(facs)
             J = np.sum(vols, axis=0) / (len(Bs) - 1)
             jacobian[chunk, j, :] = J
-    
+
         if prog is not None:
             prog.update()
 
@@ -431,9 +432,9 @@ class MapWriter:
 
         assert self.grid, "The grid is needed to compute the DAGP. Set the grid first."
         assert self.is_open, "The grid file needs to be open. Call open first."
-        assert (
-            self.field
-        ), "The field is needed to compute the DAGP. Set the grid first."
+        assert self.field, (
+            "The field is needed to compute the DAGP. Set the grid first."
+        )
         handles = {}
 
         poloidal_grids = self.grid.poloidal_grids
@@ -535,9 +536,9 @@ class MapWriter:
 
         for k, v in metric.items():
             if isinstance(v, np.ndarray):
-                assert np.all(
-                    np.isfinite(v)
-                ), f"{k} is not finite in {v.size - np.sum(np.isfinite(v))} of {v.size} cells"
+                assert np.all(np.isfinite(v)), (
+                    f"{k} is not finite in {v.size - np.sum(np.isfinite(v))} of {v.size} cells"
+                )
             self.f.write(k, v)
 
     def _write_par_metric(self, maps, nslice, ypar):
@@ -546,9 +547,9 @@ class MapWriter:
         meandy = np.mean(np.diff(ypar))
         Ly = self.grid.Ly if self.grid else meandy * ny
         if self.grid and len(ypar) > 1:
-            assert np.isclose(
-                Ly, meandy * ny
-            ), f"Ly of grid (Ly={Ly}) does not seem to match the average dy (ny * dy = {ny} * {meandy} = {ny * meandy}"
+            assert np.isclose(Ly, meandy * ny), (
+                f"Ly of grid (Ly={Ly}) does not seem to match the average dy (ny * dy = {ny} * {meandy} = {ny * meandy}"
+            )
         yperiodic = self.grid.yperiodic if self.grid else True
         for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
             pypar = np.roll(ypar, -offset)
@@ -557,9 +558,9 @@ class MapWriter:
                     if meandy * (pypar[i] - pypar[i - 1]) < 0:
                         pypar[i] += np.sign(meandy) * Ly
                 if len(pypar) > 1:
-                    assert np.isclose(
-                        np.mean(np.diff(pypar)), meandy
-                    ), f"Mean of dy changes from {meandy} to {np.mean(np.diff(pypar))}. Values: {ypar} -> {pypar}"
+                    assert np.isclose(np.mean(np.diff(pypar)), meandy), (
+                        f"Mean of dy changes from {meandy} to {np.mean(np.diff(pypar))}. Values: {ypar} -> {pypar}"
+                    )
 
             RZ = np.array([maps[parallel_slice_field_name(k, offset)] for k in "RZ"])
             par_pgrids = [StructuredPoloidalGrid(*RZ[:, :, i]) for i in range(ny)]
