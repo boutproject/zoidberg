@@ -284,9 +284,7 @@ def make_maps(
             facs[-1] = 0.5
 
             metric = pol.metric()
-            if not (
-                isinstance(metric["g_xx"], np.ndarray) and len(metric["g_xx"].shape) > 1
-            ):
+            if isinstance(metric["g_xx"], np.ndarray) and len(metric["g_xx"].shape) > 1:
                 Jperp0 = np.sqrt(
                     metric["g_xx"][chunk] * metric["g_zz"][chunk]
                     - metric["g_xz"][chunk] ** 2
