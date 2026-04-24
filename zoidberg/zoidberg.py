@@ -175,7 +175,7 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
 
                     # Check boundary defined by the field
 
-                    if getattr(magnetic_field, "boundary", None) is not None:
+                    if hasattr(magnetic_field, "boundary"):
                         outside = magnetic_field.boundary.outside(
                             xcoord, y_slice, zcoord
                         )
