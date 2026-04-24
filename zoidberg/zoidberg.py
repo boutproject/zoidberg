@@ -174,9 +174,13 @@ def make_maps(grid, magnetic_field, nslice=1, quiet=False, field_tracer=None, **
                     xind, zind = pol_slice.findIndex(xcoord, zcoord)
 
                     # Check boundary defined by the field
-                    outside = magnetic_field.boundary.outside(xcoord, y_slice, zcoord)
-                    xind[outside] = -1
-                    zind[outside] = -1
+
+                    if getattr(magnetic_field, "boundary", None) is not None:
+                        outside = magnetic_field.boundary.outside(
+                            xcoord, y_slice, zcoord
+                        )
+                        xind[outside] = -1
+                        zind[outside] = -1
 
                 parallel_slice.xt_prime[:, j, :] = xind
                 parallel_slice.zt_prime[:, j, :] = zind
@@ -424,9 +428,9 @@ class MapWriter:
 
         for k, v in metric.items():
             if isinstance(v, np.ndarray):
-                assert np.all(
-                    np.isfinite(v)
-                ), f"{k} is not finite in {v.size - np.sum(np.isfinite(v))} of {v.size} cells"
+                assert np.all(np.isfinite(v)), (
+                    f"{k} is not finite in {v.size - np.sum(np.isfinite(v))} of {v.size} cells"
+                )
             self.f.write(k, v)
 
     def _write_par_metric(self, maps, nslice, ypar):
@@ -435,9 +439,9 @@ class MapWriter:
         meandy = np.mean(np.diff(ypar))
         Ly = self.grid.Ly if self.grid else meandy * ny
         if self.grid:
-            assert np.isclose(
-                Ly, meandy * ny
-            ), f"Ly of grid (Ly={Ly}) does not seem to match the average dy (ny * dy = {ny} * {meandy} = {ny * meandy}"
+            assert np.isclose(Ly, meandy * ny), (
+                f"Ly of grid (Ly={Ly}) does not seem to match the average dy (ny * dy = {ny} * {meandy} = {ny * meandy}"
+            )
         yperiodic = self.grid.yperiodic if self.grid else True
         for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
             pypar = np.roll(ypar, -offset)  # TODO: is the sign correct?
@@ -445,9 +449,9 @@ class MapWriter:
                 for i in range(1, ny):
                     if meandy * (pypar[i] - pypar[i - 1]) < 0:
                         pypar[i] += np.sign(meandy) * Ly
-                assert np.isclose(
-                    np.mean(np.diff(pypar)), meandy
-                ), f"Mean of dy changes from {meandy} to {np.mean(np.diff(pypar))}. Values: {ypar} -> {pypar}"
+                assert np.isclose(np.mean(np.diff(pypar)), meandy), (
+                    f"Mean of dy changes from {meandy} to {np.mean(np.diff(pypar))}. Values: {ypar} -> {pypar}"
+                )
 
             RZ = np.array([maps[parallel_slice_field_name(k, offset)] for k in "RZ"])
             par_pgrids = [StructuredPoloidalGrid(*RZ[:, :, i]) for i in range(ny)]
