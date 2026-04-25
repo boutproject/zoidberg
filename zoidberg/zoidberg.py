@@ -259,7 +259,6 @@ def make_maps(
                 else:
                     coords = np.concatenate((coords, tmp[1:]))
 
-
             for k in range(3):
                 slc = slice(
                     refine_parallel_integral * k,
