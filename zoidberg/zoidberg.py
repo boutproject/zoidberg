@@ -216,6 +216,7 @@ def make_maps(
 
     # We could probably skip a lot of the compuation for slab grids
     prog = None
+    total_work = ny
     if (not quiet) and (ny > 1):
         if tqdm:
             prog = tqdm(total=total_work, desc="Tracing for J")
@@ -257,8 +258,7 @@ def make_maps(
                     coords = tmp[::-1]
                 else:
                     coords = np.concatenate((coords, tmp[1:]))
-                    if prog is not None:
-                        prog.update()
+
 
             for k in range(3):
                 slc = slice(
