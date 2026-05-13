@@ -8,11 +8,15 @@ set1 = (
     "sin(phi)",
 )
 set2 = (
-    lambda grid: np.sin(extend(grid["one"] * grid.phi + grid.r_minor + grid.theta) * 5)
-    * extend(np.cos(grid.theta)),
-    lambda grid: 5
-    * np.cos(extend(grid["one"] * grid.phi + grid.r_minor + grid.theta) * 5)
-    * extend(np.cos(grid.theta)),
+    lambda grid: (
+        np.sin(extend(grid["one"] * grid.phi + grid.r_minor + grid.theta) * 5)
+        * extend(np.cos(grid.theta))
+    ),
+    lambda grid: (
+        5
+        * np.cos(extend(grid["one"] * grid.phi + grid.r_minor + grid.theta) * 5)
+        * extend(np.cos(grid.theta))
+    ),
     "sin(phi*r*theta)*cos(theta)",
 )
 

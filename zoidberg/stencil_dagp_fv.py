@@ -1,15 +1,21 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-import time
-
-time_start = time.time()  # noqa
-
+import itertools
 import sys
+import time
 
 import numpy as np
 from boututils.datafile import DataFile as DF
 
+from .poloidal_grid import RectangularPoloidalGrid
+
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = None
+
+time_start = time.time()  # noqa
 verbose = 1
 
 
@@ -60,18 +66,35 @@ def load(fn):
     return RZ, volume, coefsX, coefsZ
 
 
-def doit(pols, plot=False):
+def getSame(lst):
+    val = np.min(lst)
+    if not val == np.max(lst):
+        raise ValueError(
+            f"Expected a list of identical values, but there are different values in {lst}!"
+        )
+    return val
+
+
+def doit(pols, plot=False, isSlab=False):
     RZs = []
+
+    Lz = (
+        getSame([pol.Lz for pol in pols])
+        if getSame([isinstance(pol, RectangularPoloidalGrid) for pol in pols])
+        else None
+    )
 
     ### Calculate Volume of the cell
     #
     ### Go in a line around the cell
 
-    A = np.empty((pols[0].nx, len(pols), pols[0].nz))
-    Ar = np.empty_like(A)
+    Ar = np.empty((pols[0].nx, len(pols), pols[0].nz))
+    todo = enumerate(pols)
+    if tqdm and len(pols) > 1:
+        todo = tqdm(todo, total=len(pols))
 
-    for gi, g in enumerate(pols):
-        n = 50
+    for gi, g in todo:
+        n = 12
         x0 = np.arange(g.nx)[1:-1, None, None]
         y0 = np.arange(g.nz)[None, :, None]
         x1 = x0[:, :, 0]
@@ -94,19 +117,17 @@ def doit(pols, plot=False):
         dy = RZ[1, ..., 1:] - RZ[1, ..., :-1]
         xx = (RZ[0, ..., :-1] + RZ[0, ..., 1:]) / 2
 
-        A[1:-1, gi] = -np.sum(xx * dy, axis=-1)
-        Ar[1:-1, gi] = -np.sum(0.5 * xx * xx * dy, axis=-1)
+        if isSlab:
+            Ar[1:-1, gi] = -np.sum(xx * dy, axis=-1)
+        else:
+            Ar[1:-1, gi] = -np.sum(0.5 * xx * xx * dy, axis=-1)
 
         RZs += [RZ]
     RZs = np.array(RZs)
-    print(RZs.shape)
     # 3.160 s:  (4, 2, 6, 32, 200)
     RZs = RZs.transpose(1, 2, 0, 3, 4)
-    print(RZs.shape)
 
     volume = Ar
-    # f =
-    #    V = [f[k] for k in ("dx", "dy", "dz", "J")]
 
     RZ = np.array(
         [
@@ -118,10 +139,6 @@ def doit(pols, plot=False):
     ).transpose(1, 2, 0, 3)
 
     RZ = np.array([(g.R, g.Z) for g in pols]).transpose(1, 2, 0, 3)
-
-    # volume = dx * dy * dz * J
-    # volume = V[0] * V[1] * V[2] * V[3]
-    # A.shape, Ar.shape, RZ.shape
 
     # AreaXplus
     # Z
@@ -144,22 +161,25 @@ def doit(pols, plot=False):
     # Note that we need to split it in two parts.
 
     log("calculating pos ...")
-    # pos = RZs[..., :n]
-    tmp = np.meshgrid(
-        np.arange(g.nx - 1) + 0.5,
-        np.arange(g.nz) - 0.5,
-        np.linspace(0, 1, n),
-        indexing="ij",
+    tmp = list(
+        np.meshgrid(
+            np.arange(g.nx - 1) + 0.5,
+            np.arange(g.nz) - 0.5,
+            np.linspace(0, 1, n),
+            indexing="ij",
+        )
     )
     tmp[1] += tmp[2]
-    print(tmp[0])
-    print(tmp[1])
+
     pos = np.array([g.getCoordinate(*tmp[:2]) for g in pols]).transpose(1, 2, 0, 3, 4)
     log("done")
     # direction of edge, length ~ 1/nx
     dR = pos[..., :-1] - pos[..., 1:]
     dX = np.sqrt(np.sum(dR**2, axis=0))
-    area = dX * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5
+    if isSlab:
+        area = dX
+    else:
+        area = dX * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5
     assert area.shape[0] > 2
     # Vector in normal direction
     assert dR.shape[0] == 2
@@ -167,19 +187,18 @@ def doit(pols, plot=False):
     dRr /= np.sqrt(np.sum(dRr**2, axis=0))
     dRr *= area
     dRr = np.sum(dRr, axis=-1)
-    print(np.nanmean(dRr))
 
     # vector in derivative direction
     dxR = RZ[:, 1:] - RZ[:, :-1]
-    print("Maximum radial grid distance:", np.max(l2(dxR)))
     dzR = np.roll(RZ, -1, axis=-1) - np.roll(RZ, 1, axis=-1)
+    if Lz is not None:
+        dzR[dzR < -Lz / 2] += Lz
+        dzR[dzR > Lz / 2] -= Lz
     dzR = 0.5 * (dzR[:, 1:] + dzR[:, :-1])
 
-    # dxR /= (np.sum(dxR**2, axis=0))
-    # dzR /= (np.sum(dzR**2, axis=0))
     log("starting solve")
     dxzR = np.array((dxR, dzR)).transpose(2, 3, 4, 1, 0)
-    coefsX = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0))
+    coefsX = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0)[..., None])[..., 0]
     log("done")
 
     # AreaZplus
@@ -200,18 +219,24 @@ def doit(pols, plot=False):
     # |------------------------> x
 
     log("concatenate")
-    tmp = np.meshgrid(
-        np.arange(g.nx - 2) + 0.5,
-        np.arange(g.nz) + 0.5,
-        np.linspace(0, 1, n),
-        indexing="ij",
+    tmp = list(
+        np.meshgrid(
+            np.arange(g.nx - 2) + 0.5,
+            np.arange(g.nz) + 0.5,
+            np.linspace(0, 1, n),
+            indexing="ij",
+        )
     )
     tmp[0] += tmp[2]
     pos = np.array([g.getCoordinate(*tmp[:2]) for g in pols]).transpose(1, 2, 0, 3, 4)
 
     dR = pos[..., :-1] - pos[..., 1:]
     dX = np.sqrt(np.sum(dR**2, axis=0))
-    area = dX * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5
+    if isSlab:
+        area = dX
+    else:
+        area = dX * (pos[0, ..., 1:] + pos[0, ..., :-1]) * 0.5
+
     log("get normal vector")
     # Vector in normal direction
     dRr = np.array((dR[1], -dR[0]))
@@ -222,9 +247,26 @@ def doit(pols, plot=False):
     dxR = RZ[:, 2:] - RZ[:, :-2]
     dxR = 0.5 * (np.roll(dxR, -1, axis=-1) + dxR)
     dzR = (np.roll(RZ, -1, axis=-1) - RZ)[:, 1:-1]
+    if Lz is not None:
+        dzR[dzR < -Lz / 2] += Lz
+        dzR[dzR > Lz / 2] -= Lz
+
     dxzR = np.array((dxR, dzR)).transpose(2, 3, 4, 1, 0)
     log("solving again")
-    coefsZ = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0))
+    try:
+        coefsZ = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0)[..., None])[..., 0]
+    except np.linalg.LinAlgError:
+        dRrtrans = dRr.transpose(1, 2, 3, 0)
+        [..., None]
+        coefsZ = np.empty(dRrtrans.shape)
+        for ijk in itertools.product(*[range(x) for x in dxzR.shape[:-2]]):
+            try:
+                coefsZ[ijk] = np.linalg.solve(dxzR[ijk], dRrtrans[ijk][..., None])[
+                    ..., 0
+                ]
+            except np.linalg.LinAlgError:
+                print(f"Failed to solve for:\n{ijk}\n{dxzR[ijk]}\n\n{dRrtrans[ijk]}\n")
+                raise
     log("done")
 
     test(RZ, volume, coefsX, coefsZ, plot=plot)
@@ -287,7 +329,6 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
         result[1:-1] += np.roll(this, 1, -1)
         for r, t in zip(results[2:], (-t1, -t2)):
             r[1:-1] -= t
-            # np.roll(r, -1, -1)[1:-1] += t
             r[1:-1] += np.roll(t, 1, -1)
 
     result[0] = 0
@@ -308,7 +349,7 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
         ):
             slc = slice(1, -1), 1
             per = np.percentile(d[slc], [0, 2, 98, 100])
-            print(per)
+            print("Percentiles", per)
             p = ax.pcolormesh(*[k[slc] for k in RZ], d[slc], vmin=per[1], vmax=per[2])
             ax.set_title(t)
             plt.colorbar(p, ax=ax)
@@ -322,7 +363,6 @@ def fixup(RZ, d):
         c1[:-1] = d
     else:
         c1[1:-1] = d
-    # c1 = np.roll(c1, -1, -1)
     return c1
 
 

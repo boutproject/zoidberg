@@ -5,7 +5,9 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import boutpp as bc
 import boutconfig
 
-assert boutconfig.isMetric3D(), f"""Require 3D metric - but boutpp seems to be compiled with 2D Metrics
+assert (
+    boutconfig.isMetric3D()
+), f"""Require 3D metric - but boutpp seems to be compiled with 2D Metrics
 NB: boutpp     is {bc.__path__}
     boutconfig is {boutconfig.__path__}"""
 

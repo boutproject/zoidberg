@@ -38,22 +38,16 @@ class Grid(object):
     """
 
     def __init__(self, poloidal_grids, ycoords, Ly, yperiodic=False, name="fci_grid"):
-        try:
-            ngrids = len(poloidal_grids)
+        if not isinstance(poloidal_grids, list):
+            poloidal_grids = [poloidal_grids for _ in ycoords]
 
-            # Check this is the same length as ycoords
-            assert len(ycoords) == ngrids
+        # Check this is the same length as ycoords
+        assert len(ycoords) == len(poloidal_grids)
 
-            nx = poloidal_grids[0].nx
-            nz = poloidal_grids[0].nz
-        except TypeError:
-            # No len(), assume single poloidal grid
-            ngrids = 1
-            nx = poloidal_grids.nx
-            nz = poloidal_grids.nz
+        nx = poloidal_grids[0].nx
+        nz = poloidal_grids[0].nz
 
         self.poloidal_grids = poloidal_grids
-        self._ngrids = ngrids  # This is an implementation detail, whether we have one or multiple separate grids
         self.ycoords = np.asarray(ycoords)
         self.Ly = Ly
         self.yperiodic = yperiodic
@@ -101,16 +95,20 @@ class Grid(object):
             The value of the y coordinate at `yindex`
 
         """
-        yindex = int(yindex)
+        yindexint = int(yindex)
 
         ny = self.ycoords.size
 
+        if abs(yindexint - yindex) > 1e-6:
+            floor = np.floor(yindex)
+            _, yup = self.getPoloidalGrid(floor + 1)
+            _, ydown = self.getPoloidalGrid(floor)
+            fac = yindex - floor
+            return None, ydown + (yup - ydown) * (1 - fac)
+
         if (yindex >= 0) and (yindex < ny):
             # Within index range, so just return
-            if self._ngrids == 1:
-                # Only one grid
-                return self.poloidal_grids, self.ycoords[yindex]
-            return self.poloidal_grids[yindex], self.ycoords[yindex]
+            return self.poloidal_grids[yindexint], self.ycoords[yindexint]
 
         # Out of range
 
@@ -118,15 +116,13 @@ class Grid(object):
             # Periodic domain
 
             # Map index into domain
-            y_remap = np.remainder(yindex, ny)  # 0 <= yremap < ny
+            y_remap = np.remainder(yindexint, ny)  # 0 <= yremap < ny
 
             # Get number of periods around the domain. Note this can be negative
-            nperiods = np.floor(float(yindex) / float(ny))
+            nperiods = np.floor(yindex / float(ny))
 
             ycoord = self.ycoords[y_remap] + nperiods * self.Ly
 
-            if self._ngrids == 1:
-                return self.poloidal_grids, ycoord
             return self.poloidal_grids[y_remap], ycoord
 
         # Not periodic

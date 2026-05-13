@@ -4,9 +4,13 @@ import xarray as xr
 from mms_helper import lst
 
 
-ident = lambda a, b: a
+def ident(a, b):
+    return a
 
-varx = lambda t, x: (t + x) % (2 * np.pi)
+
+def varx(t, x):
+    return (t + x) % (2 * np.pi)
+
 
 modes = [
     ("const", ident, ident),
@@ -31,7 +35,7 @@ def gen_grid(nx, ny, nz, R0, r0, r1, mode=0):
     pol_grid = zb.poloidal_grid.StructuredPoloidalGrid(R, Z)
 
     field = zb.field.CurvedSlab(Bz=0, Bzprime=0, Rmaj=R0)
-    grid = zb.grid.Grid(pol_grid, phi, 5, yperiodic=True)
+    grid = zb.grid.Grid(pol_grid, phi, 2 * np.pi / 5, yperiodic=True)
 
     fn = gen_name(*args)
 

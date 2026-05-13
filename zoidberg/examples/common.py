@@ -179,9 +179,6 @@ def smooth_metric(
                 )
 
     if write_to_file:
-        # f.write('bxcvx',bxcvx_smooth)
-        # f.write('bxcvy',bxcvy_smooth)
-        # f.write('bxcvz',bxcvz_smooth)
         f.write("J", J_smooth)
 
         if smooth_metric:
@@ -206,5 +203,4 @@ def calc_iota(field, start_r, start_z):
     )
     peaks = argrelextrema(result[:, 0, 0], np.greater, order=10)[0]
     iota_bar = 2 * np.pi / (toroidal_angle[peaks[1]] - toroidal_angle[peaks[0]])
-    # plt.plot(toroidal_angle, result[:,0,0]); plt.show()
     return iota_bar

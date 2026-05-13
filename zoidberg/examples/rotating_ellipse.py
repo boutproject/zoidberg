@@ -5,8 +5,7 @@ from boututils.datafile import DataFile
 
 import zoidberg as zb
 
-from .common import (calc_curvilinear_curvature, calc_iota, get_lines,
-                     smooth_metric)
+from .common import calc_curvilinear_curvature, calc_iota, get_lines, smooth_metric
 
 
 def rotating_ellipse(

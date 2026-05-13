@@ -21,6 +21,7 @@ Functions
 import warnings
 
 import numpy as np
+import shapely
 from numpy import linspace, pi, zeros
 from scipy.interpolate import RectBivariateSpline
 from scipy.spatial import cKDTree as KDTree
@@ -281,17 +282,26 @@ class StructuredPoloidalGrid(PoloidalGrid):
         self.R = R
         self.Z = Z
 
-        # Create a KDTree for quick lookup of nearest points
-        n = R.size
-        data = np.concatenate((R.reshape((n, 1)), Z.reshape((n, 1))), axis=1)
-        self.tree = KDTree(data)
-
-        # Create splines for quick interpolation of coordinates
         nx, nz = R.shape
-
         self.nx = nx
         self.nz = nz
 
+        if nx > 4:
+            inner = shapely.Polygon(zip(R[2, :], Z[2, :]))
+            outer = shapely.Polygon(zip(R[-2, :], Z[-2, :]))
+
+            assert (
+                inner.area <= outer.area
+            ), f"""You are trying to create a grid with inner boundary at high x
+and outer boundary at low x. This is against the convention -
+switch inner and outer boundary.
+                {inner.area} {outer.area}"""
+
+        # Create a KDTree for quick lookup of nearest points
+        data = np.concatenate((R.reshape((-1, 1)), Z.reshape((-1, 1))), axis=1)
+        self.tree = KDTree(data)
+
+        # Create splines for quick interpolation of coordinates
         xinds = np.arange(nx)
         zinds = np.arange(nz * 3)
         # Repeat the data in z, to approximate periodicity
@@ -335,7 +345,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
 
         return R, Z
 
-    def findIndex(self, R, Z, tol=1e-10, show=False):
+    def findIndex(self, R, Z, tol=1e-12, show=False):
         """Finds the (x, z) index corresponding to the given (R, Z) coordinate
 
         Parameters
@@ -393,6 +403,7 @@ class StructuredPoloidalGrid(PoloidalGrid):
 
         cnt = 0
         underrelax = 1
+        extra = 0
 
         while True:
             # Use Newton iteration to find the index
@@ -407,7 +418,12 @@ class StructuredPoloidalGrid(PoloidalGrid):
             # Note: only check the points which are not in the boundary
             val = np.amax(mask * (dR**2 + dZ**2))
             if val < tol:
-                break
+                extra += 1
+                if extra > 3:
+                    break
+            else:
+                if extra:
+                    raise RuntimeError("Failed to converge")
             cnt += 1
             if cnt == 10:
                 underrelax = 1.5
@@ -500,19 +516,17 @@ class StructuredPoloidalGrid(PoloidalGrid):
             axis=2,
         )
 
-        assert np.all(
-            g[0, 0] > 0
-        ), f"g[0, 0] is expected to be positive, but some values are not (minimum {np.min(g[0, 0])})"
-        assert np.all(
-            g[1, 1] > 0
-        ), f"g[1, 1] is expected to be positive, but some values are not (minimum {np.min(g[1, 1])})"
+        assert np.all(g[0, 0] > 0), (
+            f"g[0, 0] is expected to be positive, but some values are not (minimum {np.min(g[0, 0])})"
+        )
+        assert np.all(g[1, 1] > 0), (
+            f"g[1, 1] is expected to be positive, but some values are not (minimum {np.min(g[1, 1])})"
+        )
         g = g.transpose(2, 3, 0, 1)
-        assert np.all(
-            np.linalg.det(g) > 0
-        ), f"All determinants of g should be positive, but some are not (minimum {np.min(np.linalg.det(g))})"
+        assert np.all(np.linalg.det(g) > 0), (
+            f"All determinants of g should be positive, but some are not (minimum {np.min(np.linalg.det(g))})"
+        )
         ginv = np.linalg.inv(g)
-        # Jacobian from BOUT++
-        JB = self.R * (J[0, 0] * J[1, 1] - J[0, 1] * J[1, 0])
         return {
             "dx": ddist[0],
             "dz": ddist[1],  # Grid spacing
@@ -522,7 +536,6 @@ class StructuredPoloidalGrid(PoloidalGrid):
             "g_xz": g[..., 0, 1],
             "gzz": ginv[..., 1, 1],
             "g_zz": g[..., 1, 1],
-            # "J": JB,
         }
 
 
@@ -605,6 +618,7 @@ def grid_elliptic(
     nx_inner=0,
     legacy_align=False,
     inner_ort=True,
+    inner_maxmode=None,
     maxfac_inner=None,
     dz_relax=None,
 ):
@@ -801,6 +815,23 @@ def grid_elliptic(
             assert False
         return x
 
+    def fft_smooth(x, maxmode=None):
+        dx = x - np.roll(x, 1)
+        dx[dx < -np.pi] += np.pi * 2
+        dx[dx > np.pi] -= np.pi * 2
+        f = np.fft.fft(dx)
+        n = len(f)
+        nh = n // 2
+        nq = maxmode
+        f[nq:nh] = 0
+        f[nh + 1 : -nq] = 0
+        dxn = np.real(np.fft.ifft(f))
+        xnew = np.empty_like(x)
+        xnew[0] = x[0]
+        for i in range(len(x) - 1):
+            xnew[i + 1] = xnew[i] + dxn[i]
+        return xnew % (np.pi * 2)
+
     if (nx > restrict_size) or (nz > restrict_size):
         # Create a coarse grid first to get a starting guess
         # Only restrict the dimensions which exceed restrict_size
@@ -826,6 +857,7 @@ def grid_elliptic(
             restrict_factor=restrict_factor,
             return_coords=True,
             inner_ort=inner_ort,
+            inner_maxmode=inner_maxmode,
             maxfac_inner=maxfac_inner,
             dz_relax=dz_relax,
         )
@@ -854,7 +886,8 @@ def grid_elliptic(
         if inner_ort:
             thetavals_inner = [inner.closestPoint(*x) for x in zip(R[-1], Z[-1])]
             thetavals_inner = laplace(thetavals_inner)
-
+            if inner_maxmode:
+                thetavals_inner = fft_smooth(thetavals_inner, inner_maxmode)
         else:
             thetavals_inner = thetavals
 
@@ -869,6 +902,8 @@ def grid_elliptic(
         if inner_ort:
             thetavals_inner = [inner.closestPoint(*x) for x in zip(Router, Zouter)]
             thetavals_inner = laplace(thetavals_inner)
+            if inner_maxmode:
+                thetavals_inner = fft_smooth(thetavals_inner, inner_maxmode)
         else:
             thetavals_inner = thetavals
 
@@ -899,7 +934,8 @@ def grid_elliptic(
         plt.plot(R[-1, :], Z[-1, :], "ro")
 
     # Start solver loop
-    for _ in range(R.size * 2):
+    maxit = max(max(R.shape) * 10, 300)
+    for _ in range(maxit):
         # Calculate coefficients, which exclude boundary points
         # Note that the domain is periodic in y so roll arrays
 
@@ -968,6 +1004,7 @@ def grid_elliptic(
         print("Convergence failure, trying to plot ...")
         if plotting_available:
             if not show:
+                plt.figure()
                 # Markers on original points on inner and outer boundaries
                 plt.plot(inner.R, inner.Z, "-o", label="inner")
                 plt.plot(outer.R, outer.Z, "-o", label="outer")

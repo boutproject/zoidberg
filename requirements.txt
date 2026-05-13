@@ -1,2 +1,2 @@
-# the following line installs requirements from setup.py
+# the following line installs requirements from pyproject.toml
 -e .

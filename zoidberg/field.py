@@ -1,8 +1,19 @@
 from math import gamma
 
 import numpy as np
-from sympy import (And, Piecewise, Sum, Symbol, atan2, cos, diff, factorial,
-                   lambdify, log, pi, sin, sqrt)
+from sympy import (
+    Piecewise,
+    Symbol,
+    atan2,
+    cos,
+    diff,
+    factorial,
+    lambdify,
+    log,
+    pi,
+    sin,
+    sqrt,
+)
 
 from . import boundary
 
@@ -295,12 +306,6 @@ class CurvedSlab(MagneticField):
         self.Bzprime = Bzprime
         self.Rmaj = Rmaj
 
-        # Set poloidal magnetic field
-        # Bpx = self.Bp + (self.grid.xarray-self.grid.Lx/2.) * self.Bpprime
-        # self.Bpxy = np.resize(Bpx, (self.grid.nz, self.grid.ny, self.grid.nx))
-        # self.Bpxy = np.transpose(self.Bpxy, (2,1,0))
-        # self.Bxy = np.sqrt(self.Bpxy**2 + self.Bt**2)
-
     def Bxfunc(self, x, z, phi):
         return np.zeros(x.shape)
 
@@ -332,7 +337,7 @@ class StraightStellarator(MagneticField):
 
     """
 
-    def coil(self, xcentre, zcentre, radius, angle, iota, I):
+    def coil(self, xcentre, zcentre, radius, angle, iota, current):
         """Defines a single coil
 
         Parameters
@@ -343,7 +348,7 @@ class StraightStellarator(MagneticField):
             Initial angle of coil
         iota : float
             Rotational transform of coil
-        I : float
+        current : float
             Current through coil
 
         Returns
@@ -354,7 +359,7 @@ class StraightStellarator(MagneticField):
         return (
             xcentre + radius * cos(angle + iota * self.phi),
             zcentre + radius * sin(angle + iota * self.phi),
-            I,
+            current,
         )
 
     def __init__(
@@ -438,7 +443,7 @@ class RotatingEllipse(MagneticField):
         Toroidal magnetic field strength
     """
 
-    def coil(self, xcentre, zcentre, radius, angle, iota, I):
+    def coil(self, xcentre, zcentre, radius, angle, iota, current):
         """Defines a single coil
         Parameters
         ----------
@@ -448,7 +453,7 @@ class RotatingEllipse(MagneticField):
             Initial angle of coil
         iota : float
             Rotational transform of coil
-        I : float
+        current : float
             Current through coil
         Returns
         -------
@@ -458,7 +463,7 @@ class RotatingEllipse(MagneticField):
         return (
             xcentre + radius * cos(angle + iota * self.phi),
             zcentre + radius * sin(angle + iota * self.phi),
-            I,
+            current,
         )
 
     def __init__(
@@ -510,7 +515,6 @@ class RotatingEllipse(MagneticField):
 
         for c in self.coil_list:
             xc, zc, Ic = c
-            rc = (xc**2 + zc**2) ** (0.5)
             r2 = (self.x - xc) ** 2 + (self.z - zc) ** 2
             theta = atan2(self.z - zc, self.x - xc)  # Angle relative to coil
 
@@ -647,26 +651,37 @@ class DommaschkPotentials(MagneticField):
         Sympy function CD_mk (R) (Dirichlet boudary conditions)
         """
 
-        alpha = lambda n, b: (
-            (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
-            if (n >= 0)
-            else 0.0
-        )
-        alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
+        def alpha(n, b):
+            return (
+                (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+                if (n >= 0)
+                else 0.0
+            )
 
-        beta = lambda n, b: (
-            gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
-            if (n >= 0 and n < b)
-            else 0.0
-        )
-        beta_st = lambda n, b: beta(n, b) * (2 * n - b)
+        def alpha_st(n, b):
+            return alpha(n, b) * (2 * n + b)
 
-        delta = lambda n, b: (
-            alpha(n, b) * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)]) / 2
-            if (n > 0)
-            else 0.0
-        )
-        delta_st = lambda n, b: delta(n, b) * (2 * n + b)
+        def beta(n, b):
+            return (
+                gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+                if (n >= 0 and n < b)
+                else 0.0
+            )
+
+        def beta_st(n, b):
+            return beta(n, b) * (2 * n - b)
+
+        def delta(n, b):
+            return (
+                alpha(n, b)
+                * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
+                / 2
+                if (n > 0)
+                else 0.0
+            )
+
+        def delta_st(n, b):
+            return delta(n, b) * (2 * n + b)
 
         CD = log(1)
         for j in range(k + 1):
@@ -697,26 +712,34 @@ class DommaschkPotentials(MagneticField):
         Sympy function CN_mk (R) (Neumann boundary conditions)
         """
 
-        alpha = lambda n, b: (
-            (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
-            if (n >= 0)
-            else 0.0
-        )
-        alpha_st = lambda n, b: alpha(n, b) * (2 * n + b)
+        def alpha(n, b):
+            return (
+                (-1.0) ** n / (gamma(b + n + 1) * gamma(n + 1) * 2.0 ** (2 * n + b))
+                if (n >= 0)
+                else 0.0
+            )
 
-        beta = lambda n, b: (
-            gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
-            if (n >= 0 and n < b)
-            else 0.0
-        )
-        beta_st = lambda n, b: beta(n, b) * (2 * n - b)
+        def alpha_st(n, b):
+            return alpha(n, b) * (2 * n + b)
 
-        delta = lambda n, b: (
-            alpha(n, b) * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)]) / 2
-            if (n > 0)
-            else 0.0
-        )
-        delta_st = lambda n, b: delta(n, b) * (2 * n + b)
+        def beta(n, b):
+            return (
+                gamma(b - n) / (gamma(n + 1) * 2.0 ** (2 * n - b + 1))
+                if (n >= 0 and n < b)
+                else 0.0
+            )
+
+        def beta_st(n, b):
+            return beta(n, b) * (2 * n - b)
+
+        def delta(n, b):
+            if n <= 0:
+                return 0.0
+            return (
+                alpha(n, b)
+                * np.sum([1.0 / i + 1.0 / (b + i) for i in range(1, n + 1)])
+                / 2
+            )
 
         CN = log(1)
         for j in range(k + 1):
@@ -730,12 +753,12 @@ class DommaschkPotentials(MagneticField):
 
         return CN
 
-    def D(self, m, n):
+    def D(self, n, v):
         """
         Parameters
         ----------
-        m: torodial mode number
-        n: summation index in  V
+        n: torodial mode number
+        v: summation index in  V
 
         Returns:
         --------
@@ -743,19 +766,19 @@ class DommaschkPotentials(MagneticField):
         """
 
         D = log(1)
-        k_arr = np.arange(0, int(n / 2) + 1, 1)
+        k_arr = np.arange(0, int(v / 2) + 1, 1)
 
         for k in k_arr:
-            D += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CD(m, k)
+            D += (self.Z ** (v - 2 * k)) / factorial(v - 2 * k) * self.CD(n, k)
 
         return D
 
-    def N(self, m, n):
+    def N(self, n, v):
         """
         Parameters
         ----------
-        m: torodial mode number
-        n: summation index in V
+        n: torodial mode number
+        v: summation index in V
 
         Returns:
         --------
@@ -763,19 +786,19 @@ class DommaschkPotentials(MagneticField):
         """
 
         N = log(1)
-        k_arr = np.arange(0, int(n / 2) + 1, 1)
+        k_arr = np.arange(0, int(v / 2) + 1, 1)
 
         for k in k_arr:
-            N += (self.Z ** (n - 2 * k)) / factorial(n - 2 * k) * self.CN(m, k)
+            N += (self.Z ** (v - 2 * k)) / factorial(v - 2 * k) * self.CN(n, k)
 
         return N
 
-    def V(self, m, l, a, b, c, d):
+    def V(self, n, m, a, b, c, d):
         """
         Parameters
         ----------
-        m: torodial mode number
-        l: polodial mode number
+        n: torodial mode number
+        m: polodial mode number
         a,b,c,d: Coefficients for m,l-th Dommaschk potential (elements of matrix A)
 
         Returns:
@@ -783,9 +806,9 @@ class DommaschkPotentials(MagneticField):
         Sympy function V_ml
         """
 
-        V = (a * cos(m * self.phi) + b * sin(m * self.phi)) * self.D(m, l) + (
-            c * cos(m * self.phi) + d * sin(m * self.phi)
-        ) * self.N(m, l - 1)
+        V = (a * cos(n * self.phi) + b * sin(n * self.phi)) * self.D(n, m) + (
+            c * cos(n * self.phi) + d * sin(n * self.phi)
+        ) * self.N(n, m - 1)
 
         return V
 
@@ -808,12 +831,12 @@ class DommaschkPotentials(MagneticField):
 
         return U
 
-    def V_hat(self, m, l, a, b, c, d):
+    def V_hat(self, n, m, a, b, c, d):
         """
         Parameters
         ----------
-        m: torodial mode number
-        l: polodial mode number
+        n: torodial mode number
+        m: polodial mode number
         a,b,c,d: Coefficients for m,l-th Dommaschk potential (elements of matrix A)
 
         Returns:
@@ -822,12 +845,10 @@ class DommaschkPotentials(MagneticField):
         """
 
         V = (
-            a * cos(m * self.phi - np.pi / 2) + b * sin(m * self.phi - np.pi / 2)
-        ) * self.D(m, l) + (
-            c * cos(m * self.phi - np.pi / 2) + d * sin(m * self.phi - np.pi / 2)
-        ) * self.N(
-            m, l - 1
-        )
+            a * cos(n * self.phi - np.pi / 2) + b * sin(n * self.phi - np.pi / 2)
+        ) * self.D(n, m) + (
+            c * cos(n * self.phi - np.pi / 2) + d * sin(n * self.phi - np.pi / 2)
+        ) * self.N(n, m - 1)
 
         return V
 
@@ -928,10 +949,8 @@ class VMEC(MagneticField):
             rmn = np.repeat(field_slice[:, np.newaxis], lt, axis=1)
             a = rmn * cosmt
             b = np.dot(a.T, cosnz)
-            # print("a: {}, b: {}".format(a.shape, b.shape))
             c = rmn * sinmt
             d = np.dot(c.T, sinnz)
-            # print("c: {}, d: {}".format(c.shape, d.shape))
             f[k, :, :] = b - d
         return f
 
@@ -1147,9 +1166,6 @@ class SmoothedMagneticField(MagneticField):
         Not modified by smoothing
         """
         return self.field.Byfunc(x, z, phi)
-
-    def Bxfunc(self, x, z, phi):
-        pass
 
     def Rfunc(self, x, z, phi):
         return self.field.Rfunc(x, z, phi)
@@ -1597,10 +1613,7 @@ class W7X_vacuum(MagneticField):
             points.x3 = np.ndarray.flatten(z)  # z in Cylindrical
 
             ## call EXTENDER on web services
-            # if not (os.path.isfile(wout_file)):
             plasmafield = cl.service.getPlasmaField(None, vmecURL, points, None)
-            # else:
-            # plasmafield = cl.service.getPlasmaField(wout, None, points, None)
 
             ## Reshape to 3d array
             Br = np.ndarray.reshape(np.asarray(plasmafield.x1), (nx, ny, nz))
@@ -1631,9 +1644,6 @@ class W7X_vacuum(MagneticField):
             res.axis.vertices.x2
         )  # (m) -- REAL SPACE from an arbitrary start point
         magnetic_axis_z = np.asarray(res.axis.vertices.x3)  # (m)
-        magnetic_axis_rmaj = np.sqrt(
-            magnetic_axis_x**2 + magnetic_axis_y**2 + magnetic_axis_z**2
-        )
 
         magnetic_axis_r = np.sqrt(
             np.asarray(magnetic_axis_x) ** 2 + np.asarray(magnetic_axis_y**2)
@@ -1680,7 +1690,7 @@ class W7X_vacuum(MagneticField):
         global tracer
         tracer = tracer or Client(
             "http://esb.ipp-hgw.mpg.de:8280/services/FieldLineProxy?wsdl",
-            osa_timeout=0.1,
+            osa_timeout=1,
         )
 
         assert x.shape[0] == 3
@@ -1700,7 +1710,7 @@ class W7X_vacuum(MagneticField):
                 res = tracer.service.magneticField(
                     pos, config, osa_timeout=(10 + len(pos.x1) / 1000)
                 )
-            except:
+            except:  # noqa
                 # Catch any error. Different errors might be
                 # reported, but we want to retry anyway.
                 # Do not except Exception, as that would also
@@ -1766,7 +1776,7 @@ def _set_config(config, configuration):
     return config
 
 
-class W7X_vacuum_on_demand:
+class W7X_vacuum_on_demand(MagneticField):
     def __init__(self, configuration):
         self.configuration = configuration
         self.boundary = boundary.NoBoundary()  # An optional Boundary object
@@ -1889,3 +1899,96 @@ class W7X_VMEC(MagneticField):
     def Rfunc(self, x, z, phi):
         phi = np.mod(phi, 2.0 * np.pi)
         return x
+
+
+class EMC3(MagneticField):
+    """Field based on a EMC3 grid file"""
+
+    def __init__(self, ds):
+        self.ds = ds
+        assert hasattr(ds, "emc3"), "Expected an xemc3 dataset. Is xemc3 imported?"
+        self.ds["Bmean"] = ds["bf_bounds"].mean(
+            dim=("delta_r", "delta_phi", "delta_theta")
+        )
+
+    def Bxfunc(self, x, z, phi):
+        raise NotImplementedError("Use maybe EMC3 tracer?")
+
+    def Byfunc(self, x, z, phi):
+        return self.Bmag(x, z, phi)
+
+    def Bzfunc(self, x, z, phi):
+        raise NotImplementedError("Use maybe EMC3 tracer?")
+
+    def Bxyzfunc(self, x, z, phi):
+        raise NotImplementedError("Use maybe EMC3 tracer?")
+
+    def Bmag(self, x, z, phi):
+        vals = self.ds.emc3.evaluate_at_rpz(x, phi, z, "Bmean", delta_phi=1e-6)[
+            "Bmean"
+        ].values
+        nans = np.isnan(vals)
+        if np.any(nans):
+            from scipy.interpolate import CubicSpline as CS
+
+            for i in range(x.shape[1]):
+                ni = nans[:, i]
+                if not np.any(ni):
+                    continue
+                xi = x[:, i]
+                zi = z[:, i]
+                vi = vals[:, i]
+                si = np.zeros_like(xi)
+                si[1:] = np.cumsum(
+                    np.sqrt((xi[1:] - xi[:-1]) ** 2 + (zi[1:] - zi[:-1]) ** 2)
+                )
+                interp = CS(si[~ni], vi[~ni])
+                vals[ni, i] = interp(si[ni])
+
+        return vals
+
+
+class FusionSCField(MagneticField):
+    """
+    A wrapper for the fusionsc backend.
+
+    PyPI:     https://pypi.org/project/fusionsc/
+    Upstream: https://github.com/alexrobomind/fusionsc/
+    Docs:     https://alexrobomind.github.io/fusionsc/
+    """
+
+    def __init__(self, field):
+        self.field = field
+        self.boundary = boundary.NoBoundary()  # An optional Boundary object
+        self.attributes = {}
+
+    def Rfunc(self, x, z, phi):
+        return x
+
+    def Bmag(self, x, z, phi):
+        return np.sqrt(np.sum(self.getB(x, z, phi) ** 2, axis=0))
+
+    def pressure(self, x, z, phi):
+        return np.zeros_like(x)
+
+    def getB(self, x, z, phi):
+        X = np.cos(phi) * x
+        Y = np.sin(phi) * x
+        return self.field.interpolateXyz([X, Y, z])
+
+    def Bxfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        return B[0] * np.cos(phi) + B[1] * np.sin(phi)
+
+    def Byfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        return -B[0] * np.sin(phi) + B[1] * np.cos(phi)
+
+    def Bxyzfunc(self, x, z, phi):
+        B = self.getB(x, z, phi)
+        Bx = B[0] * np.cos(phi) + B[1] * np.sin(phi)
+        By = -B[0] * np.sin(phi) + B[1] * np.cos(phi)
+        return Bx, By, B[2]
+
+    def Bzfunc(self, *pos):
+        return self.getB(*pos)[2]

@@ -8,6 +8,8 @@ from boututils import datafile as bdata
 from zoidberg import __version__
 
 from . import fieldtracer
+from .diff import field_line_length
+from .field import Slab
 from .grid import Grid
 from .poloidal_grid import StructuredPoloidalGrid
 
@@ -40,9 +42,16 @@ def parallel_slice_field_name(field, offset):
         Parallel slice offset
 
     """
+    absoffset = abs(offset)
+    if absoffset < 1:
+        assert abs(absoffset - 0.5) < 1e-6, (
+            f"Expected an offset of +- 0.5 but got {offset}"
+        )
+        prefix = "low" if offset < 0 else "high"
+        return f"{field}_cell_y{prefix}"
     prefix = "forward" if offset > 0 else "backward"
-    suffix = "_{}".format(abs(offset)) if abs(offset) > 1 else ""
-    return "{}_{}{}".format(prefix, field, suffix)
+    suffix = f"_{absoffset}" if abs(offset) > 1 else ""
+    return f"{prefix}_{field}{suffix}"
 
 
 def make_maps(
@@ -52,6 +61,8 @@ def make_maps(
     quiet=False,
     field_tracer=None,
     samples_per_dim: int = 1,
+    refine_parallel_integral=20,
+    n_chunks=4,
     **kwargs,
 ):
     """Make the forward and backward FCI maps
@@ -70,6 +81,13 @@ def make_maps(
         Trace multiple field-lines within each cell. This is the
         number of points per dimension so the number of points
         per 2D cell is samples_per_dim**2.
+    field_tracer:
+        Specify a field tracer, otherwise use standard tracer for the
+        given field
+    refine_parallel_integral:
+        The number of intermediate points for g_22 calculation
+    n_chunks:
+        Number of chunks in the x-direction the calculation of J is split up.
     kwargs
         Optional arguments for field line tracing, etc.
 
@@ -148,76 +166,86 @@ def make_maps(
         ["offset", "R", "Z", "xt_prime", "zt_prime", "xt_primes", "zt_primes"],
     )
     # A list of the above data structures for each offset we want
-    parallel_slices = []
+    parallel_slices_list = []
 
     # Loop over offsets {1, ... nslice, -1, ... -nslice}
-    for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
-        # Unique names of the field line maps for this offset
-        field_names = [
-            parallel_slice_field_name(field, offset)
-            for field in ["R", "Z", "xt_prime", "zt_prime"]
-        ]
+    for direction in 1, -1:
+        parallel_slices_list.append([])
+        for absoffset in [0.5, *range(1, nslice + 1)]:
+            offset = absoffset * direction
+            # Unique names of the field line maps for this offset
+            field_names = [
+                parallel_slice_field_name(field, offset)
+                for field in ["R", "Z", "xt_prime", "zt_prime"]
+            ]
 
-        # Initialise the field arrays -- puts them straight into the result dict
-        for field in field_names:
-            maps[field] = np.zeros(shape)
-        # Sub-sampled maps, multiple samples per cell
-        for field in [
-            parallel_slice_field_name("xt_primes", offset),
-            parallel_slice_field_name("zt_primes", offset),
-        ]:
-            maps[field] = np.zeros(shape + (nsamples,))
-            field_names.append(field)
+            # Initialise the field arrays -- puts them straight into the result dict
+            for field in field_names:
+                maps[field] = np.zeros(shape)
+            # Sub-sampled maps, multiple samples per cell
+            for field in [
+                    parallel_slice_field_name("xt_primes", offset),
+                    parallel_slice_field_name("zt_primes", offset),
+            ]:
+                maps[field] = np.zeros(shape + (nsamples,))
+                field_names.append(field)
 
-        # Get the field arrays we just made and wrap them up in our helper tuple
-        fields = map(lambda x: maps[x], field_names)
-        parallel_slices.append(ParallelSlice(offset, *fields))
+            # Get the field arrays we just made and wrap them up in our helper tuple
+            fields = map(lambda x: maps[x], field_names)
+            parallel_slices_list[-1].append(ParallelSlice(offset, *fields))
 
     # Total size of the progress bar
-    total_work = len(parallel_slices) * ny
+    total_work = len(parallel_slices_list) * ny
 
     # TODO: if axisymmetric, don't loop, do one slice and copy
-    # TODO: restart tracing for adjacent offsets
     if (not quiet) and (ny > 1):
         if tqdm:
             prog = tqdm(total=total_work, desc="Tracing")
         else:
             update_progress(0, **kwargs)
-    for slice_index, parallel_slice in enumerate(parallel_slices):
+    for slice_index, parallel_slices in enumerate(parallel_slices_list):
         for j in range(ny):
             # Get this poloidal grid
             pol, ycoord = grid.getPoloidalGrid(j)
 
             # Get the next poloidal grid
-            pol_slice, y_slice = grid.getPoloidalGrid(j + parallel_slice.offset)
+            pol_slices = []
+            y_slices = [ycoord]
+            for parallel_slice in parallel_slices:
+                pol_slice, y_slice = grid.getPoloidalGrid(j + parallel_slice.offset)
+                pol_slices.append(pol_slice)
+                y_slices.append(y_slice)
 
             # We only want the end point, as [0,...] is the initial position
-            coord = field_tracer.follow_field_lines(
-                pol.R, pol.Z, [ycoord, y_slice], rtol=rtol
-            )[1, ...]
+            coords = field_tracer.follow_field_lines(pol.R, pol.Z, y_slices, rtol=rtol)[
+                1:, ...
+            ]
 
-            # Store the coordinates in real space
-            parallel_slice.R[:, j, :] = coord[:, :, 0]
-            parallel_slice.Z[:, j, :] = coord[:, :, 1]
+            for parallel_slice, coord, pol_slice in zip(
+                parallel_slices, coords, pol_slices
+            ):
+                # Store the coordinates in real space
+                parallel_slice.R[:, j, :] = coord[:, :, 0]
+                parallel_slice.Z[:, j, :] = coord[:, :, 1]
 
-            # Get the indices into the slice poloidal grid
-            if pol_slice is None:
-                # No slice grid, so hit a boundary
-                xind = -1
-                zind = -1
-            else:
-                # Find the indices for these new locations on the slice poloidal grid
-                xcoord = coord[:, :, 0]
-                zcoord = coord[:, :, 1]
-                xind, zind = pol_slice.findIndex(xcoord, zcoord)
+                # Get the indices into the slice poloidal grid
+                if pol_slice is None:
+                    # No slice grid, so hit a boundary
+                    xind = -1
+                    zind = -1
+                else:
+                    # Find the indices for these new locations on the slice poloidal grid
+                    xcoord = coord[:, :, 0]
+                    zcoord = coord[:, :, 1]
+                    xind, zind = pol_slice.findIndex(xcoord, zcoord)
 
-                # Check boundary defined by the field
-                outside = magnetic_field.boundary.outside(xcoord, y_slice, zcoord)
-                xind[outside] = -1
-                zind[outside] = -1
+                    # Check boundary defined by the field
+                    outside = magnetic_field.boundary.outside(xcoord, y_slice, zcoord)
+                    xind[outside] = -1
+                    zind[outside] = -1
 
-            parallel_slice.xt_prime[:, j, :] = xind
-            parallel_slice.zt_prime[:, j, :] = zind
+                parallel_slice.xt_prime[:, j, :] = xind
+                parallel_slice.zt_prime[:, j, :] = zind
 
             if nsamples == 1:
                 # Only one sample per cell
@@ -278,7 +306,106 @@ def make_maps(
                     prog.update()
                 else:
                     update_progress((slice_index * ny + j + 1) / total_work, **kwargs)
+    for k in list(maps.keys()):
+        if "_cell_y" in k and "t_prime" in k:
+            del maps[k]
 
+    # We could probably skip a lot of the compuation for slab grids
+    prog = None
+    if (not quiet) and (ny > 1):
+        if tqdm:
+            prog = tqdm(total=total_work, desc="Tracing for J")
+        else:
+            update_progress(0, **kwargs)
+
+    jacobian = np.empty(shape)
+    sg_22 = [np.empty(shape) for _ in range(3)]
+    B_cell = [np.empty(shape) for _ in range(3)]
+
+    for j in range(ny):
+        chunks_x = np.array_split(np.arange(0, nx), n_chunks)
+        pol, ycoord = grid.getPoloidalGrid(j)
+
+        for chunk in chunks_x:
+            coords = None
+            y_all = None
+
+            for direction in [-1, +1]:
+                # Get this poloidal grid
+                _, ycoordnext = grid.getPoloidalGrid(j + direction)
+
+                # Get the next poloidal grid
+                pol_slice = []
+                y_slices = np.linspace(
+                    ycoord, ycoordnext, refine_parallel_integral * 2 + 1
+                )
+                if y_all is None:
+                    y_all = y_slices[::-1]
+                else:
+                    y_all = np.concatenate((y_all, y_slices[1:]))
+
+                tmp = np.array(
+                    field_tracer.follow_field_lines(
+                        pol.R[chunk], pol.Z[chunk], y_slices, rtol=rtol
+                    )
+                )
+                if coords is None:
+                    coords = tmp[::-1]
+                else:
+                    coords = np.concatenate((coords, tmp[1:]))
+                    if prog is not None:
+                        prog.update()
+
+            for k in range(3):
+                slc = slice(
+                    refine_parallel_integral * k,
+                    -refine_parallel_integral * (2 - k) if k < 2 else None,
+                )
+                sg_22[k][chunk, j, :] = field_line_length(coords[slc], y_all[slc])
+            coords = coords[refine_parallel_integral:-refine_parallel_integral]
+            y_all = y_all[refine_parallel_integral:-refine_parallel_integral]
+
+            Bs = [
+                magnetic_field.Byfunc(coord[..., 0], coord[..., 1], y)
+                for coord, y in zip(coords, y_all)
+            ]
+
+            B_cell[0][chunk, j, :] = Bs[0]
+            B_cell[1][chunk, j, :] = Bs[refine_parallel_integral]
+            B_cell[2][chunk, j, :] = Bs[-1]
+
+            facs = np.ones(refine_parallel_integral * 2 + 1)
+            assert len(y_all) == len(facs)
+            facs[0] = 0.5
+            facs[-1] = 0.5
+
+            metric = pol.metric()
+            if isinstance(metric["g_xx"], np.ndarray) and len(metric["g_xx"].shape) > 1:
+                Jperp0 = np.sqrt(
+                    metric["g_xx"][chunk] * metric["g_zz"][chunk]
+                    - metric["g_xz"][chunk] ** 2
+                )
+            else:  # Slabs only have one metric coefficient and not the whole array stored
+                Jperp0 = np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
+
+            B0 = Bs[len(Bs) // 2]
+            vols = [
+                Jperp0 * B0 / Bpar * fac * R
+                for Bpar, fac, R in zip(Bs, facs, coords[..., 0])
+            ]
+            assert len(vols) == len(facs)
+            J = np.sum(vols, axis=0) / (len(Bs) - 1)
+            jacobian[chunk, j, :] = J
+
+        if prog is not None:
+            prog.update()
+
+    if not isinstance(magnetic_field, Slab):
+        maps["J"] = jacobian
+        for post, vals in zip(("_cell_ylow", "", "_cell_yhigh"), sg_22):
+            maps[f"Ly{post}"] = vals
+    for post, vals in zip(("_cell_ylow", "", "_cell_yhigh"), B_cell):
+        maps[f"By{post}"] = vals
     return maps
 
 
@@ -286,7 +413,8 @@ def update_metric_names(metric):
     # Translate between output variable names and metric names
     # Map from new to old names. Anything not in this dict
     # is unchanged
-    name_changes = {
+    name_changes = {}
+    for k, v in {
         "g_yy": "g_22",
         "gyy": "g22",
         "gxx": "g11",
@@ -295,7 +423,10 @@ def update_metric_names(metric):
         "g_xx": "g_11",
         "g_xz": "g_13",
         "g_zz": "g_33",
-    }
+    }.items():
+        for post in "", "_cell_ylow", "_cell_yhigh":
+            name_changes[k + post] = v + post
+
     return {name_changes.get(key, key): value for key, value in metric.items()}
 
 
@@ -309,6 +440,7 @@ def get_metric(grid, magnetic_field):
     pol_grid, ypos = grid.getPoloidalGrid(0)
     Rmaj = magnetic_field.Rfunc(pol_grid.R, pol_grid.Z, ypos)
     if Rmaj is not None:
+        assert np.all(np.isfinite(Rmaj))
         # In cylindrical coordinates
         Rmaj = np.zeros(grid.shape)
         for yindex in range(grid.numberOfPoloidalGrids()):
@@ -320,7 +452,7 @@ def get_metric(grid, magnetic_field):
     # Get magnetic field and pressure
     Bmag = np.zeros(grid.shape)
     pressure = np.zeros(grid.shape)
-    print("starting Bfield stuff")
+
     for yindex in range(grid.numberOfPoloidalGrids()):
         pol_grid, ypos = grid.getPoloidalGrid(yindex)
         Bmag[:, yindex, :] = magnetic_field.Bmag(pol_grid.R, pol_grid.Z, ypos)
@@ -328,9 +460,300 @@ def get_metric(grid, magnetic_field):
         By = magnetic_field.Byfunc(pol_grid.R, pol_grid.Z, ypos)
         metric["g_yy"][:, yindex, :] *= (Bmag[:, yindex, :] / By) ** 2
         metric["gyy"][:, yindex, :] *= (By / Bmag[:, yindex, :]) ** 2
-    print("done Bfield stuff")
 
-    return metric, Bmag, pressure
+    metric["Bxy"] = Bmag
+    metric["B"] = Bmag
+    metric["pressure"] = pressure
+
+    # compute B * J / sqrt(g22)
+    BJg = Bmag * np.sqrt(metric["g_xx"] * metric["g_zz"] - metric["g_xz"] ** 2)
+
+    return metric, BJg
+
+
+class MapWriter:
+    """
+    with MapWriter(...) as mw:
+        mw.add_grid_field(grid, field)
+        ...
+        # Add some additional things
+        mw.write_dict(dict(a=f3d, b=f3d))
+        ...
+        mw.add_maps(maps)
+        mw.add_dagp()
+
+    Unlike map_write() this allows to delete objects when they are not needed
+    any more. This can help avoid OOM issues for generating large grids.
+
+    It also allows to update grids, if new fields are added to zoidberg, that
+    old grids are missing.
+    """
+
+    def __init__(
+        self,
+        gridfile="fci.grid.nc",
+        new_names=False,
+        metric2d=False,
+        quiet=False,
+        create=True,
+    ):
+        self.fn = gridfile
+        self.new_names = new_names
+        self.metric2d = metric2d
+        self.quiet = quiet
+        self.is_open = False
+        self.create = create
+
+        self.BJg = None
+        self.grid = None
+        self.field = None
+        self.metric_done = False
+        self.maps_done = False
+        self.final_done = False
+
+    def __enter__(self):
+        f = bdata.DataFile(self.fn, write=True, create=self.create)
+        self.f = f.__enter__()
+        self.is_open = True
+        if not self.create:
+            if "B" in self.f.list():
+                B = self.f["B"]
+                self.nxyz = B.shape
+        return self
+
+    def open(self):
+        return self.__enter__()
+
+    def __exit__(self, *exc_details):
+        self.is_open = False
+        self.f.__exit__(*exc_details)
+
+    def add_grid(self, grid):
+        """Add information from the grid to the grid file"""
+        self.grid = grid
+        self.nxyz = grid.shape
+
+        shape = self.nxyz
+        R = np.zeros(shape)
+        Z = np.zeros(shape)
+        for j in range(shape[1]):
+            pol, _ = self.grid.getPoloidalGrid(j)
+            R[:, j, :] = pol.R
+            Z[:, j, :] = pol.Z
+        self.write_dict(dict(R=R, Z=Z))
+
+    def add_dagp(self):
+        """Add the coefficient for the finite-volume div-a-grad-perp implementation suitable for FCI."""
+        from .stencil_dagp_fv import doit
+
+        assert self.grid, "The grid is needed to compute the DAGP. Set the grid first."
+        assert self.is_open, "The grid file needs to be open. Call open first."
+        assert self.field, (
+            "The field is needed to compute the DAGP. Set the grid first."
+        )
+        handles = {}
+
+        poloidal_grids = self.grid.poloidal_grids
+        if tqdm:
+            poloidal_grids = tqdm(poloidal_grids, desc="compute DAGP terms")
+
+        def getHandle(k, t=None, dims=("x", "y", "z"), init=None):
+            try:
+                # See if the variable already exists
+                return self.f.impl.handle.variables[k]
+            except KeyError:
+                var = self.f.impl.handle.createVariable(k, t, dims)
+                if init is not None:
+                    var[:] = init
+                return var
+
+        isSlab = isinstance(self.field, Slab)
+        i = np.int32(0)
+        prog = getHandle("_dagp_generation_progress", i.dtype.str, (), init=i)
+
+        for ind, pol in enumerate(poloidal_grids):
+            if ind < prog[0]:
+                continue
+            dagp = doit([pol], isSlab=isSlab)
+            for k, v in dagp.items():
+                if k not in handles:
+                    handles[k] = getHandle(k, v.dtype.str)
+
+                handles[k][:, ind, :] = v
+            prog[0] = ind + 1
+
+    def add_field(self, field):
+        """Add the information from the field to the grid"""
+        self.field = field
+
+    def add_grid_field(self, grid, field):
+        """Add the information from the grid and the field to the grid file.
+
+        Short for
+        mw.add_grid(grid)
+        mw.add_field(field)
+        """
+        self.add_field(field)
+        self.add_grid(grid)
+
+    def _write_metric(self, maps):
+        if self.metric_done:
+            return
+
+        metric, self.BJg = get_metric(self.grid, self.field)
+
+        if "Ly" in maps:
+            metric["g_yy_old"] = metric["g_yy"]
+            for post in "", "_cell_ylow", "_cell_yhigh":
+                metric[f"g_yy{post}"] = (maps[f"Ly{post}"] / metric["dy"]) ** 2
+            metric["g_yy_correct"] = (maps["Ly"] / metric["dy"]) ** 2
+        else:
+            for post in "_cell_ylow", "_cell_yhigh":
+                metric[f"g_yy{post}"] = metric["g_yy"]
+        if not self.new_names:
+            metric = update_metric_names(metric)
+
+        self.write_dict(metric, always3d=False)
+
+        self.grid._metric_cache = None
+
+        # Get attributes from magnetic field (e.g. psi)
+        attributes = {}
+        for name in self.field.attributes:
+            attribute = np.zeros(self.grid.shape)
+            for yindex in range(self.grid.numberOfPoloidalGrids()):
+                pol_grid, ypos = self.grid.getPoloidalGrid(yindex)
+                attribute[:, yindex, :] = self.field.attributes[name](
+                    pol_grid.R, pol_grid.Z, ypos
+                )
+            attributes[name] = attribute
+        self.write_dict(attributes)
+
+    def write_dict(self, metric, always3d=True):
+        """
+        Add data to the grid file"""
+
+        assert self.is_open, "File needs to be open. Call open first."
+        # Metric is now 3D
+        if self.metric2d and not always3d:
+            # Remove the Z dimension from metric components
+            if not self.quiet:
+                print("WARNING: Outputting 2D metrics, discarding metric information.")
+            for key in metric:
+                try:
+                    metric[key] = metric[key][:, :, 0]
+                except TypeError:
+                    pass
+            # Make dz a constant
+            if "dz" in metric:
+                metric["dz"] = metric["dz"][0, 0]
+
+        for k, v in metric.items():
+            if isinstance(v, np.ndarray):
+                assert np.all(np.isfinite(v)), (
+                    f"{k} is not finite in {v.size - np.sum(np.isfinite(v))} of {v.size} cells"
+                )
+            self.f.write(k, v)
+
+    def _write_par_metric(self, maps, nslice, ypar):
+        # Loop over offsets {1, ... nslice, -1, ... -nslice}
+        ny = len(ypar)
+        meandy = np.mean(np.diff(ypar))
+        Ly = self.grid.Ly if self.grid else meandy * ny
+        if self.grid and len(ypar) > 1:
+            assert np.isclose(Ly, meandy * ny), (
+                f"Ly of grid (Ly={Ly}) does not seem to match the average dy (ny * dy = {ny} * {meandy} = {ny * meandy}"
+            )
+        yperiodic = self.grid.yperiodic if self.grid else True
+        for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
+            pypar = np.roll(ypar, -offset)
+            if yperiodic:
+                for i in range(1, ny):
+                    if meandy * (pypar[i] - pypar[i - 1]) < 0:
+                        pypar[i] += np.sign(meandy) * Ly
+                if len(pypar) > 1:
+                    assert np.isclose(np.mean(np.diff(pypar)), meandy), (
+                        f"Mean of dy changes from {meandy} to {np.mean(np.diff(pypar))}. Values: {ypar} -> {pypar}"
+                    )
+
+            RZ = np.array([maps[parallel_slice_field_name(k, offset)] for k in "RZ"])
+            par_pgrids = [StructuredPoloidalGrid(*RZ[:, :, i]) for i in range(ny)]
+            par_grid = Grid(
+                par_pgrids,
+                pypar,
+                Ly=Ly,
+                yperiodic=yperiodic,
+            )
+
+            par_metric, par_BJg = get_metric(par_grid, self.field)
+
+            # Check flux conservation
+            if self.BJg is not None and self.BJg.shape[0] > 4:
+                mymax = np.max(np.abs(par_BJg / self.BJg - 1)[2:-2], axis=(0, 2))
+                if np.max(mymax) > 1e-6:
+                    print("FluxError", mymax)
+
+            if not self.new_names:
+                par_metric = update_metric_names(par_metric)
+
+            self.write_dict(
+                {parallel_slice_field_name(k, offset): v for k, v in par_metric.items()}
+            )
+
+    def add_maps(self, maps):
+        """Add mapping information to the grid field.
+
+        Also adds additionally needed data like parallel metric components and
+        grid id.
+        """
+        if "Rxy" not in maps:
+            maps["Rxy"] = maps["R"]
+        self.write_dict(maps)
+        keep = {}
+        nslice = maps["MYG"]
+        for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
+            for k in "RZ":
+                n = parallel_slice_field_name(k, offset)
+                keep[n] = maps[n]
+        assert self.field, "Ensure field is set before calling add_maps"
+        assert self.grid, "Ensure grid is set before calling add_maps"
+        self._write_metric(maps)
+        del maps
+        ypar = self.grid.ycoords
+        self._write_par_metric(keep, nslice, ypar)
+        self._final()
+
+    def _final(self, update=False):
+        f = self.f
+
+        grid_id = str(uuid.uuid1())
+        attrs = {
+            "title": "BOUT++ grid file",
+            "software_name": "zoidberg",
+            "software_version": __version__,
+            "id": grid_id,  # conventional name
+            "grid_id": grid_id,  # BOUT++ specific name
+        }
+        if update:
+            oldattrs = f.list_file_attributes()
+            for k in list(attrs.keys()):
+                if k in oldattrs:
+                    oldattr = f"old_{k}"
+                    j = 0
+                    while oldattr in oldattrs:
+                        oldattr = f"old{j}_{k}"
+                        j += 1
+                    attrs[oldattr] = f.read_file_attribute(k)
+        for kv in attrs.items():
+            f.write_file_attribute(*kv)
+
+        nx, ny, nz = self.nxyz
+        f.write("nx", nx)
+        f.write("ny", ny)
+        f.write("nz", nz)
+
+        f.write("ixseps1", nx + 1)
+        f.write("ixseps2", nx + 1)
 
 
 def write_maps(
@@ -340,7 +763,7 @@ def write_maps(
     gridfile="fci.grid.nc",
     new_names=False,
     metric2d=True,
-    format="NETCDF4",
+    format=None,
     quiet=False,
 ):
     """Write FCI maps to BOUT++ grid file
@@ -359,8 +782,8 @@ def write_maps(
         Write "g_yy" rather than "g_22"
     metric2d : bool, optional
         Output only 2D metrics
-    format : str, optional
-        Specifies file format to use, passed to boutdata.DataFile
+    format : optional
+        deprecated and ignored
     quiet : bool, optional
         Don't warn about 2D metrics
 
@@ -371,101 +794,9 @@ def write_maps(
 
 
     """
-    metric, Bmag, pressure = get_metric(grid, magnetic_field)
-
-    nx, ny, nz = grid.shape
-
-    # Add Rxy, Bxy
-    metric["Rxy"] = maps["R"]
-    metric["Bxy"] = Bmag
-
-    nslice = maps["MYG"]
-    # Loop over offsets {1, ... nslice, -1, ... -nslice}
-    for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
-        par_pgrids, ypar = np.array(
-            [grid.getPoloidalGrid(i + offset) for i in range(ny)], dtype=object
-        ).T
-        par_pgrids = [StructuredPoloidalGrid(p.R, p.Z) for p in par_pgrids]
-        par_grid = Grid(
-            par_pgrids,
-            ypar,
-            Ly=grid.Ly,
-            yperiodic=grid.yperiodic,
-        )
-
-        par_metric, _, _ = get_metric(par_grid, magnetic_field)
-        if not new_names:
-            par_metric = update_metric_names(par_metric)
-
-        for k, v in par_metric.items():
-            name = parallel_slice_field_name(k, offset)
-            assert name not in metric
-            metric[name] = v
-
-    # Get attributes from magnetic field (e.g. psi)
-    attributes = {}
-    for name in magnetic_field.attributes:
-        attribute = np.zeros(grid.shape)
-        for yindex in range(grid.numberOfPoloidalGrids()):
-            pol_grid, ypos = grid.getPoloidalGrid(yindex)
-            attribute[:, yindex, :] = magnetic_field.attributes[name](
-                pol_grid.R, pol_grid.Z, ypos
-            )
-            attributes[name] = attribute
-
-    # Metric is now 3D
-    if metric2d:
-        # Remove the Z dimension from metric components
-        if not quiet:
-            print("WARNING: Outputting 2D metrics, discarding metric information.")
-        for key in metric:
-            try:
-                metric[key] = metric[key][:, :, 0]
-            except TypeError:
-                pass
-        # Make dz a constant
-        metric["dz"] = metric["dz"][0, 0]
-
-    if not new_names:
-        metric = update_metric_names(metric)
-
-    with bdata.DataFile(gridfile, write=True, create=True, format=format) as f:
-        f.write_file_attribute("title", "BOUT++ grid file")
-        f.write_file_attribute("software_name", "zoidberg")
-        f.write_file_attribute("software_version", __version__)
-        grid_id = str(uuid.uuid1())
-        f.write_file_attribute("id", grid_id)  # conventional name
-        f.write_file_attribute("grid_id", grid_id)  # BOUT++ specific name
-
-        ixseps = nx + 1
-        f.write("nx", nx)
-        f.write("ny", ny)
-        f.write("nz", nz)
-
-        f.write("dx", metric["dx"])
-        f.write("dy", metric["dy"])
-        f.write("dz", metric["dz"])
-
-        f.write("ixseps1", ixseps)
-        f.write("ixseps2", ixseps)
-
-        # Metric tensor
-        for key in metric:
-            f.write(key, metric[key])
-
-        # Magnetic field
-        f.write("B", Bmag)
-
-        # Pressure
-        f.write("pressure", pressure)
-
-        # Attributes
-        for name in attributes:
-            f.write(name, attributes[name])
-
-        # Maps - write everything to file
-        for key in maps:
-            f.write(key, maps[key])
+    with MapWriter(gridfile, new_names=new_names, metric2d=metric2d, quiet=quiet) as mw:
+        mw.add_grid_field(grid, magnetic_field)
+        mw.add_maps(maps)
 
 
 def write_Bfield_to_vtk(

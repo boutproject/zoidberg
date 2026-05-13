@@ -25,15 +25,16 @@ keywords = [
     "plasma",
     "physics",
 ]
-requires-python = ">=3.10"
+requires-python = ">= 3.11"
 dependencies = [
-    "boututils >= 0.1",
-    "numpy >= 1.24",
+    "boutdata >= 0.3",
+    "numpy >= 2.0.0",
     "sympy >= 1.7",
-    "scipy >= 1.10",
-    "matplotlib >= 3.7",
+    "scipy >= 1.12.0",
+    "matplotlib >= 3.8.0",
     "netCDF4 >= 1.7",
     "freeqdsk >= 0.4.0",
+    "shapely",
 ]
 dynamic = ["version"]
 
@@ -43,7 +44,11 @@ Repository = "https://github.com/boutproject/zoidberg"
 Tracker = "https://github.com/boutproject/zoidberg/issues"
 
 [project.optional-dependencies]
-tests = ["pytest >= 3.3.0"]
+tests = [
+    "pytest >= 3.3.0",
+    "xarray",
+    "shapely",
+]
 
 [project.scripts]
 zoidberg-rotating-ellipse = "zoidberg.examples.rotating_ellipse:main"
@@ -52,3 +57,8 @@ zoidberg-screwpinch = "zoidberg.examples.screwpinch:main"
 [tool.setuptools_scm]
 write_to = "zoidberg/_version.py"
 git_describe_command = "git describe --dirty --tags --first-parent"
+
+
+[tool.setuptools.packages.find]
+include = ["zoidberg*"]  # alternatively: `exclude = ["additional*"]`
+namespaces = false

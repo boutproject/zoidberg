@@ -57,7 +57,6 @@ def c4(f, axis, periodic=False):
     slc = [slice(None) for _ in f.shape]
 
     slc[axis] = slice(2, -2)
-    # out[t(slc)] = 0.083333333333333333 * fi(-2) + -0.66666666666666666 * fi(-1) + 0.66666666666666666 * fi(1) + -0.08333333333333333 * fi(2)
     out[t(slc)] = (-fi(2) + 8 * fi(1) - 8 * fi(-1) + fi(-2)) / 12
 
     slc[axis] = 0
@@ -96,3 +95,35 @@ def c4(f, axis, periodic=False):
         + 2.08333333333333333 * fi(0)
     )
     return out
+
+
+def field_line_length(RZ_coords, y_coords, refine=100):
+    """
+    This function takes the trace from a field line tracer and calculate
+    the length along the points.
+
+    This is done by interpolating the points in cylindircal coordinates using
+    a spline. Then the line is transformed to cartesian coordinates, where the
+    sum of the point wise distance is computed.
+    """
+    from scipy.interpolate import CubicSpline as interp
+
+    assert RZ_coords.shape[-1] == 2
+    RZ_coords = RZ_coords[..., 0], RZ_coords[..., 1]
+
+    y_inter = interp(np.linspace(0, 1, len(y_coords)), y_coords)
+
+    y_fine = y_inter(np.linspace(0, 1, (len(y_coords) - 1) * refine + 1))
+    R_fine, Z_fine = [interp(y_coords, x)(y_fine) for x in RZ_coords]
+
+    slicer = [None for _ in R_fine.shape]
+    slicer[0] = slice(None, None)
+    y_fine = y_fine[tuple(slicer)]
+
+    X_fine = np.cos(y_fine) * R_fine
+    Y_fine = np.sin(y_fine) * R_fine
+
+    dXYZs = [(x[1:] - x[:-1]) ** 2 for x in [X_fine, Y_fine, Z_fine]]
+    ds2 = np.sum(dXYZs, axis=0)
+    ds = np.sqrt(ds2)
+    return np.sum(ds, axis=0)
