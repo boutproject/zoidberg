@@ -410,9 +410,13 @@ def build_leg_weight_vector(leg_space):
 
                 if has_interior_leg[x, y, z]:
                     row = interior_leg_number[x, y, z]
+                    if row < 0:
+                        raise IndexError(f"interior_leg_number[{x}, {y}, {z}] < 0")
                     weights[row] = interior_fraction[x, y, z] if split else 1.0
                 if has_boundary_leg[x, y, z]:
                     row = boundary_leg_number[x, y, z]
+                    if row < 0:
+                        raise IndexError(f"boundary_leg_number[{x}, {y}, {z}] < 0")
                     weights[row] = boundary_fraction[x, y, z] if split else 1.0
 
     return weights
@@ -589,6 +593,79 @@ def calculate_parallel_map_operators(maps):
         "backward_rows": backward_operator["rows"],
     }
 
+def modify_maps(maps, partial_boundaries = True):
+    """
+    Modify the forward/backward maps, adding forward/backward weights.
+
+    Ensures consistency of boundaries and forward/backward operators,
+    depending on whether cells can partially intersect boundaries.
+
+    Parameters
+    ----------
+    maps : dict
+        Field-line map dictionary.
+
+    """
+    mxg = maps["MXG"]
+    if partial_boundaries:
+        # If any part of the map hits a boundary then it must be marked
+        # as a boundary cell so that applyBoundary() will work correctly.
+        for dirname in ['forward', 'backward']:
+            xts = maps[dirname + '_xt_primes']
+            xt = maps[dirname + '_xt_prime']
+
+            nx, ny, nz, nw = xts.shape
+            for i in range(nx):
+                for j in range(ny):
+                    for k in range(nz):
+                        for w in range(nw):
+                            if hits_radial_boundary(xts[i,j,k,w], nx, mxg):
+                                xt[i,j,k] = -1
+                                break
+            maps[dirname + '_xt_prime'] = xt
+
+    else:
+        # Filter maps to remove partial boundary intersection
+        for dirname in ['forward', 'backward']:
+            xts = maps[dirname + '_xt_primes']
+            xt = maps[dirname + '_xt_prime']
+            zts = maps[dirname + '_zt_primes']
+            zt = maps[dirname + '_zt_prime']
+
+            nx, ny, nz, nw = xts.shape
+            for i in range(nx):
+                for j in range(ny):
+                    for k in range(nz):
+                        hit_bndry = [hits_radial_boundary(xts[i,j,k,w], nx, mxg) for w in range(nw)]
+                        if np.any(hit_bndry) and not np.all(hit_bndry):
+                            # Partial intersection
+                            # Set boundary if center point hits boundary
+                            if hits_radial_boundary(xt[i,j,k], nx, mxg):
+                                # Center point hits boundary
+                                # Set all points to the same
+                                xts[i,j,k,:] = xt[i,j,k]
+                                zts[i,j,k,:] = zt[i,j,k]
+                            else:
+                                # Center brand does not hit boundary
+                                # Set boundary points to the center value
+                                xts[i,j,k,hit_bndry] = xt[i,j,k]
+                                zts[i,j,k,hit_bndry] = zt[i,j,k]
+            maps[dirname + '_xt_primes'] = xts
+            maps[dirname + '_zt_primes'] = zts
+
+    weight_vars = calculate_parallel_map_operators(maps)
+    maps.update(weight_vars)
+    # Remove sub-sampled maps from output
+    for var in [
+            "forward_xt_primes",
+            "forward_zt_primes",
+            "backward_xt_primes",
+            "backward_zt_primes",
+            "subcell_weights",
+    ]:
+        maps.pop(var, None)
+
+    return maps
 
 __all__ = [
     "assign_cell_space_numbers",
@@ -596,4 +673,5 @@ __all__ = [
     "build_leg_weight_vector",
     "build_leg_destination_operator",
     "calculate_parallel_map_operators",
+    "modify_maps",
 ]
