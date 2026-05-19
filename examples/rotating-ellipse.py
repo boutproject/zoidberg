@@ -77,7 +77,7 @@ partial_boundaries = True
 
 maps = zoidberg.make_maps(grid, magnetic_field, samples_per_dim=samples_per_dim)
 
-maps = zoidberg.weights.modify_maps(maps, partial_boundaries = partial_boundaries)
+maps = zoidberg.weights.modify_maps(maps, partial_boundaries=partial_boundaries)
 
 #############################################################################
 # Write grid file

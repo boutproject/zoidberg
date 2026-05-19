@@ -184,8 +184,8 @@ def make_maps(
                 maps[field] = np.zeros(shape)
             # Sub-sampled maps, multiple samples per cell
             for field in [
-                    parallel_slice_field_name("xt_primes", offset),
-                    parallel_slice_field_name("zt_primes", offset),
+                parallel_slice_field_name("xt_primes", offset),
+                parallel_slice_field_name("zt_primes", offset),
             ]:
                 maps[field] = np.zeros(shape + (nsamples,))
                 field_names.append(field)
