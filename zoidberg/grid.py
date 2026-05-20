@@ -49,8 +49,26 @@ class Grid(object):
 
         self.poloidal_grids = poloidal_grids
         self.ycoords = np.asarray(ycoords)
+
+        if len(self.ycoords.shape) != 1:
+            raise ValueError("ycoords must be 1-dimensional")
+
+        def is_monotonic(a):
+            return np.all(a[1:] >= a[:-1])
+
+        if not is_monotonic(self.ycoords):
+            raise ValueError("ycoords must be monotonically increasing")
+
         self.Ly = Ly
         self.yperiodic = yperiodic
+
+        if yperiodic:
+            if (
+                Ly <= self.ycoords[-1] - self.ycoords[0] + 1e-10
+            ):  # Note: Catch case where they are equal
+                raise ValueError(
+                    f"Ly={Ly} must be > max(ycoords) - min(ycoords) = {ycoords[-1]} - {ycoords[0]}"
+                )
 
         self._metric_cache = None
 
