@@ -603,6 +603,118 @@ def grid_annulus(inner, outer, nx, nz, show=True, return_coords=False):
     return StructuredPoloidalGrid(R, Z)
 
 
+def _ensure_monotonic(R, Z):
+    import shapely
+    import shapely.ops
+
+    outer = shapely.LineString(zip(R[-1, :], Z[-1, :]))
+    inner = shapely.LineString(zip(R[0, :], Z[0, :]))
+    area = shapely.Polygon(outer, [inner])
+
+    # for i, z in itertools.product(*[range(x) for x in R.shape])
+
+    for i in range(1, R.shape[0] - 1):
+        for j in range(R.shape[1]):
+            pnt = shapely.Point(R[i, j], Z[i, j])
+            if not area.contains(pnt):
+                p1, p2 = shapely.ops.nearest_points(area, pnt)
+                dx = p1.x - p2.x
+                dz = p1.y - p2.y
+                R[i, j] += dx * 1.1
+                Z[i, j] += dz * 1.1
+
+    i = -1
+    last = shapely.LineString(zip(R[:, i], Z[:, i]))
+    for i in range(1, R.shape[1]):
+        cur = shapely.LineString(zip(R[:, i], Z[:, i]))
+        if cur.intersects(last):
+            inter = cur.intersection(last)
+            if isinstance(inter, shapely.geometry.point.Point):
+                print(R.shape, i, inter.xy)
+            elif isinstance(inter, shapely.geometry.multipoint.MultiPoint):
+                print(R.shape, i, len(inter.geoms))
+                # print(R.shape, i, inter.coords)
+            else:
+                print(i, type(inter))
+
+            plt.figure()
+            for j in i, i - 1:
+                plt.plot(R[:, j], Z[:, j])
+            for j in -1, 0:
+                plt.plot(R[j, :], Z[j, :])
+            if isinstance(inter, shapely.geometry.point.Point):
+                plt.plot(inter.x, inter.y, "ro")
+            elif isinstance(inter, shapely.geometry.multipoint.MultiPoint):
+                for pnt in inter.geoms:
+                    plt.plot(pnt.x, pnt.y, "ro")
+
+        last = cur
+
+    # isbad = np.zeros((R.shape[1]), dtype=bool)
+    # for i in range(R.shape[1]):
+    #     cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+    #     if cur.intersects(inner) or cur.intersects(outer):
+    #         isbad[i] = True
+    # print(np.sum(isbad))
+
+    # badchunks = []
+    # i = -1
+    # last = isbad[i]
+    # if last:
+    #     while isbad[i]:
+    #         i -= 1
+    #     badchunks.append([i + 1])
+    # for i in range(R.shape[1]):
+    #     if isbad[i] and not last:
+    #         badchunks.append([i])
+    #     elif not isbad[i] and last:
+    #         badchunks[-1].append(i - 1)
+    #     # print(i, isbad[i], last, badchunks)
+    #     last = isbad[i]
+    # if len(badchunks[-1]):
+    #     badchunks = badchunks[:-1]
+    # print(badchunks)
+
+    # for zs, ze in badchunks:
+    #     prev = R[:, zs - 1], Z[:, zs - 1]
+    #     next = R[:, ze + 1], Z[:, ze + 1]
+    #     dz = ze - zs + 3
+    #     print(zs, ze, dz)
+    #     assert dz > 0
+    #     fac = np.linspace(0, 1, dz)[None, 1:-1]
+    #     fill = [b[:, None] * fac + a[:, None] * (1 - fac) for a, b in zip(prev, next)]
+    #     zep = None if ze == -1 else ze + 1
+    #     print(fill[0].shape, zs, zep)
+    #     R[:, zs:zep] = fill[0]
+    #     Z[:, zs:zep] = fill[1]
+    # allgood = True
+
+    # for i in range(R.shape[1]):
+    #     cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+    #     if cur.intersects(inner) or cur.intersects(outer):
+    #         print(i, cur.intersects(inner), cur.intersects(outer))
+    #         allgood = False
+    #         break
+    # if not allgood:
+    #     plt.figure()
+    #     for ind in -1, 0:
+    #         plt.plot(R[ind, :], Z[ind, :])
+    #     for i in range(R.shape[1]):
+    #         cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+    #         if cur.intersects(inner) or cur.intersects(outer):
+    #             plt.plot(R[:, i], Z[:, i], "x-")
+    #             plt.plot(R[1:-1, i], Z[1:-1, i], "x-")
+    #             for bound in inner, outer:
+    #                 if cur.intersects(bound):
+    #                     inter = cur.intersection(bound)
+    #                     print(inter)
+    #                     plt.plot(inter.x, inter.y, "ro")
+    #     plt.show()
+
+    # # assert allgood
+    return R, Z
+
+
 def grid_elliptic(
     inner,
     outer,
@@ -623,80 +735,80 @@ def grid_elliptic(
     dz_relax=None,
 ):
     """Create a structured grid between inner and outer boundaries using
-    elliptic method
+     elliptic method
 
     Coordinates x = x(R, Z) and z = z(R,Z) obey an elliptic equation:
 
-    .. math::
+     .. math::
 
-        d^2x/dR^2 + d^2x/dZ^2 = 0
+         d^2x/dR^2 + d^2x/dZ^2 = 0
 
-        d^2z/dR^2 + d^2z/dZ^2 = 0
+         d^2z/dR^2 + d^2z/dZ^2 = 0
 
-    where here x is in in the domain (0, 1) and z in (0, 2pi)
+     where here x is in in the domain (0, 1) and z in (0, 2pi)
 
-    The above equations are inverted, giving:
+     The above equations are inverted, giving:
 
-    .. math::
+     .. math::
 
-        a*R_xx - 2*b*R_xz + c*R_zz = 0
+         a*R_xx - 2*b*R_xz + c*R_zz = 0
 
-        a*Z_xx - 2*b*Z_xz + c*Z_zz = 0
+         a*Z_xx - 2*b*Z_xz + c*Z_zz = 0
 
-    where
+     where
 
-    .. math::
+     .. math::
 
-        a &= R_z^2 + Z_z^2
+         a &= R_z^2 + Z_z^2
 
-        b &= R_z*R_x + Z_x*Z_z
+         b &= R_z*R_x + Z_x*Z_z
 
-        c &= R_x^2 + Z_x^2
+         c &= R_x^2 + Z_x^2
 
-    This is a nonlinear system of equations which is solved
-    iteratively.
+     This is a nonlinear system of equations which is solved
+     iteratively.
 
-    Parameters
-    ----------
-    inner, outer : `RZline`
-        Inner and outer boundaries of the domain
-    nx : int
-        The required radial resolution, including boundaries
-    nz : int
-        The required poloidal resolution
-    show : bool, optional
-        Display plots of intermediate results
-    tol : float, optional
-        Controls when iteration stops
-    align : bool, optional
-        Attempt to align the inner and outer boundaries
-    restrict_size : int, optional
-        The size (nx or nz) above which the grid is coarsened
-    restrict_factor : int, optional
-        The factor by which the grid is divided if coarsened
-    nx_outer: int, optional
-        The number of additional points outside of the outer boundary
-    nx_inner: int, optional
-        The number of additional points outside of the inner boundary
-    inner_ort: bool, optional
-        Whether to place the inner points as close as possible to the
-        corresponding outer ones. That increases orthogonality of the grid.
-    maxfac_inner : int, optional
-        If given, ensure the spacing between smalles and largest distance on
-        the inner boundary. Only used with inner_ort. Must be larger than 1.
-    return_coords : bool, optional
-        If True, return the R, Z coordinates of the grid points,
-        instead of a `StructuredPoloidalGrid`
+     Parameters
+     ----------
+     inner, outer : `RZline`
+         Inner and outer boundaries of the domain
+     nx : int
+         The required radial resolution, including boundaries
+     nz : int
+         The required poloidal resolution
+     show : bool, optional
+         Display plots of intermediate results
+     tol : float, optional
+         Controls when iteration stops
+     align : bool, optional
+         Attempt to align the inner and outer boundaries
+     restrict_size : int, optional
+         The size (nx or nz) above which the grid is coarsened
+     restrict_factor : int, optional
+         The factor by which the grid is divided if coarsened
+     nx_outer: int, optional
+         The number of additional points outside of the outer boundary
+     nx_inner: int, optional
+         The number of additional points outside of the inner boundary
+     inner_ort: bool, optional
+         Whether to place the inner points as close as possible to the
+         corresponding outer ones. That increases orthogonality of the grid.
+     maxfac_inner : int, optional
+         If given, ensure the spacing between smalles and largest distance on
+         the inner boundary. Only used with inner_ort. Must be larger than 1.
+     return_coords : bool, optional
+         If True, return the R, Z coordinates of the grid points,
+         instead of a `StructuredPoloidalGrid`
 
-    Returns
-    -------
-    If return_coords is true, returns R,Z as arrays.
-    If return_coords is false, returns a `StructuredPoloidalGrid` object
+     Returns
+     -------
+     If return_coords is true, returns R,Z as arrays.
+     If return_coords is false, returns a `StructuredPoloidalGrid` object
 
-    References
-    ----------
-    https://web.archive.org/web/20040530002835/https://www.nada.kth.se/kurser/kth/2D1263/l2.pdf
-    https://en.wikipedia.org/wiki/Principles_of_grid_generation
+     References
+     ----------
+     https://web.archive.org/web/20040530002835/https://www.nada.kth.se/kurser/kth/2D1263/l2.pdf
+     https://en.wikipedia.org/wiki/Principles_of_grid_generation
 
     """
     if nx_outer:
@@ -893,6 +1005,7 @@ def grid_elliptic(
 
         R[0, :] = inner.Rvalue(thetavals_inner)
         Z[0, :] = inner.Zvalue(thetavals_inner)
+        R, Z = _ensure_monotonic(R, Z)
 
     else:
         # Interpolate coordinates of inner and outer boundary
