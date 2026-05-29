@@ -202,7 +202,11 @@ class Grid(object):
         # Calculate the gradient of the y coordinate w.r.t index
         # To avoid edge effects, repeat array three times then take the middle
         ycoords = np.concatenate(
-            (self.ycoords - self.Ly, self.ycoords, self.ycoords + self.Ly)
+            (
+                self.ycoords - self.Ly,
+                self.ycoords,
+                self.ycoords + self.Ly,
+            )
         )
         ny = self.ycoords.size
         if ny == 1:

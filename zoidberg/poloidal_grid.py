@@ -603,7 +603,7 @@ def grid_annulus(inner, outer, nx, nz, show=True, return_coords=False):
     return StructuredPoloidalGrid(R, Z)
 
 
-def _ensure_monotonic(R, Z):
+def _ensure_monotonic(R, Z, overshoot=1.05):
     import shapely
     import shapely.ops
 
@@ -620,36 +620,114 @@ def _ensure_monotonic(R, Z):
                 p1, p2 = shapely.ops.nearest_points(area, pnt)
                 dx = p1.x - p2.x
                 dz = p1.y - p2.y
-                R[i, j] += dx * 1.1
-                Z[i, j] += dz * 1.1
+                R[i, j] += dx * overshoot
+                Z[i, j] += dz * overshoot
 
     i = -1
     last = shapely.LineString(zip(R[:, i], Z[:, i]))
-    for i in range(1, R.shape[1]):
+    frac = R.shape[1] // 2
+    for i in range(0, R.shape[1]):
         cur = shapely.LineString(zip(R[:, i], Z[:, i]))
         if cur.intersects(last):
-            inter = cur.intersection(last)
-            if isinstance(inter, shapely.geometry.point.Point):
-                print(R.shape, i, inter.xy)
-            elif isinstance(inter, shapely.geometry.multipoint.MultiPoint):
-                print(R.shape, i, len(inter.geoms))
-                # print(R.shape, i, inter.coords)
+            outerr = R[-1], Z[-1]
+            inerr = R[0], Z[0]
+            curisgood = shapely.Point(R[-1, i], Z[-1, i]).distance(
+                last
+            ) < shapely.Point(R[-1, i - 1], Z[-1, i - 1]).distance(cur)
+            if curisgood:
+                # last is bad
+                badi = i - 1
+                goodi = i
+                slc = slice(-frac, -1)
+                direc = -1
             else:
-                print(i, type(inter))
+                badi = i
+                goodi = i - 1
+                slc = slice(0, frac)
+                direc = 1
+            outerr = [np.roll(x, -goodi + direc) for x in outerr]
+            outerr = [x[slc][::direc] for x in outerr]
+            inerr = [np.roll(x, -goodi + direc) for x in inerr]
+            inerr = [x[slc][::-direc] for x in inerr]
+            # print(slc, outerr[0].shape)
+            # inerr = [
+            # plt.figure()
+            # plt.plot(R[:, badi], Z[:, badi], "r-")
+            allowed = [np.array([]), np.array([])]
+            for a, b in (
+                (R[:, goodi], Z[:, goodi]),
+                outerr,
+                (R[::-1, goodi - frac], Z[::-1, goodi - frac]),
+                inerr,
+            ):
+                allowed[0] = np.append(allowed[0], a)
+                allowed[1] = np.append(allowed[1], b)
 
-            plt.figure()
-            for j in i, i - 1:
-                plt.plot(R[:, j], Z[:, j])
-            for j in -1, 0:
-                plt.plot(R[j, :], Z[j, :])
-            if isinstance(inter, shapely.geometry.point.Point):
-                plt.plot(inter.x, inter.y, "ro")
-            elif isinstance(inter, shapely.geometry.multipoint.MultiPoint):
-                for pnt in inter.geoms:
-                    plt.plot(pnt.x, pnt.y, "ro")
+            # plt.plot(*allowed, "g-")
+            poly = shapely.Polygon(shapely.LineString(zip(*allowed)))
+            for j in range(1, R.shape[0] - 1):
+                pnt = shapely.Point(R[j, badi], Z[j, badi])
+                if not poly.contains(pnt):
+                    p1, p2 = shapely.ops.nearest_points(poly, pnt)
+                    dx = p1.x - p2.x
+                    dz = p1.y - p2.y
+                    R[j, badi] += dx * overshoot
+                    Z[j, badi] += dz * overshoot
 
-        last = cur
+    # for i in range( R.shape[0] -2, 0, -1):
+    #     outer = shapely.LineString(zip(R[i+1, :], Z[i+1, :]))
+    #  #    poly = shapely.Polygon(outer)
+    # #     for j in range(R.shape[1]):
+    # #         pnt = shapely.Point(R[i, j], Z[i, j])
+    # #         if not poly.contains(pnt):
+    # #             p1, p2 = shapely.ops.nearest_points(poly, pnt)
+    # #             dx = p1.x - p2.x
+    # #             dz = p1.y - p2.y
+    # #             R[i, j] += dx * 1.1
+    # #             Z[i, j] += dz * 1.1
 
+    # i = -1
+    # last = shapely.LineString(zip(R[:, i], Z[:, i]))
+    # for i in range(1, R.shape[1]):
+    #     cur = shapely.LineString(zip(R[:, i], Z[:, i]))
+    #     if cur.intersects(last):
+    #         if shapely.Point(R[-1, i], Z[-1, i]).distance(last) <  shapely.Point(R[-1, i-1], Z[-1, i-1]).distance(cur):
+    #             # last is bad
+    #             lastl='r-'
+    #             curl='g-'
+    #         else:
+    #             lastl='g-'
+    #             curl='r-'
+    #         print(i, i-1)
+    #         plt.figure()
+    #         plt.plot(R[:, i], Z[:, i], curl)
+    #         plt.plot(R[:, i-1], Z[:, i-1], lastl)
+    #         # inter = cur.intersection(last)
+    #         # if isinstance(inter, shapely.geometry.point.Point):
+    #         #     print(R.shape, i, inter.xy)
+    #         # elif isinstance(inter, shapely.geometry.multipoint.MultiPoint):
+    #         #     print(R.shape, i, len(inter.geoms))
+    #         #     # print(R.shape, i, inter.coords)
+    #         # else:
+    #         #     print(i, type(inter))
+
+    #         # plt.figure()
+    #         # for j in i, i - 1:
+    #         #     plt.plot(R[:, j], Z[:, j])
+    #         # for j in -1, 0:
+    #         #     plt.plot(R[j, :], Z[j, :])
+    #         # if isinstance(inter, shapely.geometry.point.Point):
+    #         #     plt.plot(inter.x, inter.y, "ro")
+    #         # elif isinstance(inter, shapely.geometry.multipoint.MultiPoint):
+    #         #     for pnt in inter.geoms:
+    #         #         plt.plot(pnt.x, pnt.y, "ro")
+
+    # #
+    # last = cur
+    # if 1:
+    #     plt.figure()
+    #     plt.plot(R.T, Z.T)
+    #     plt.plot(R, Z)
     # isbad = np.zeros((R.shape[1]), dtype=bool)
     # for i in range(R.shape[1]):
     #     cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
@@ -733,6 +811,7 @@ def grid_elliptic(
     inner_maxmode=None,
     maxfac_inner=None,
     dz_relax=None,
+    guess=None,
 ):
     """Create a structured grid between inner and outer boundaries using
      elliptic method
@@ -882,6 +961,7 @@ def grid_elliptic(
 
         extra = 0
         if maxfac_inner:
+            assert maxfac_inner >= 1, "maxfac_inner needs to be at least 1"
 
             def getfac(x):
                 d = dx(x, -1)
@@ -926,6 +1006,102 @@ def grid_elliptic(
             plt.show()
             assert False
         return x
+
+    # Start solver loop
+    def solve_equation(R, Z, dz_relax, dx, dz, plotonfailure=True):
+        maxit = max(max(R.shape) * 10, 300)
+        for _ in range(maxit):
+            # Calculate coefficients, which exclude boundary points
+            # Note that the domain is periodic in y so roll arrays
+
+            R_xm = R[:-2, :]  # R(x-1,z)
+            R_xp = R[2:, :]  # R(x+1,z)
+            R_zm = np.roll(R, 1, axis=1)  # R(x, z-1)
+            R_zp = np.roll(R, -1, axis=1)  # R(x, z+1)
+            R_xmzm = R_zm[:-2, :]  # R(x-1, z-1)
+            R_xpzm = R_zm[2:, :]  # R(x+1, z-1)
+            R_xmzp = R_zp[:-2, :]  # R(x-1, z+1)
+            R_xpzp = R_zp[2:, :]  # R(x+1, z+1)
+            R_zm = R_zm[1:-1, :]  # Now chop off x boundaries
+            R_zp = R_zp[1:-1, :]  # This is done to minimise number of rolls
+
+            Z_xm = Z[:-2, :]
+            Z_xp = Z[2:, :]
+            Z_zm = np.roll(Z, 1, axis=1)
+            Z_zp = np.roll(Z, -1, axis=1)
+            Z_xmzm = Z_zm[:-2, :]
+            Z_xpzm = Z_zm[2:, :]
+            Z_xmzp = Z_zp[:-2, :]
+            Z_xpzp = Z_zp[2:, :]
+            Z_zm = Z_zm[1:-1, :]
+            Z_zp = Z_zp[1:-1, :]
+
+            dz_relax = dz_relax or 10 / 3
+            dRdz = dz_relax * (R_zp - R_zm) / (2.0 * dz)
+            dRdx = (R_xp - R_xm) / (2.0 * dx)
+
+            dZdz = dz_relax * (Z_zp - Z_zm) / (2.0 * dz)
+            dZdx = (Z_xp - Z_xm) / (2.0 * dx)
+
+            a = dRdz**2 + dZdz**2
+            b = dRdz * dRdx + dZdx * dZdz
+            c = dRdx**2 + dZdx**2
+
+            # Now solve a*R_xx - 2*b*R_xz + c*R_zz = 0
+            # For now using Jacobi update
+
+            a_dx2 = a / dx**2
+            b_dxdz = b / (2.0 * dx * dz)
+            c_dz2 = c / dz**2
+            inv_diag = 1.0 / (2 * a / dx**2 + 2 * c / dz**2)
+
+            Rold = R.copy()
+            Zold = Z.copy()
+
+            R[1:-1, :] = (
+                a_dx2 * (R_xm + R_xp)
+                - b_dxdz * (R_xpzp - R_xmzp - R_xpzm + R_xmzm)
+                + c_dz2 * (R_zm + R_zp)
+            ) * inv_diag
+
+            Z[1:-1, :] = (
+                a_dx2 * (Z_xm + Z_xp)
+                - b_dxdz * (Z_xpzp - Z_xmzp - Z_xpzm + Z_xmzm)
+                + c_dz2 * (Z_zm + Z_zp)
+            ) * inv_diag
+            maxchange_sq = np.amax((R - Rold) ** 2 + (Z - Zold) ** 2)
+            R, Z = _ensure_monotonic(R, Z, overshoot=1.5)
+
+            if maxchange_sq < tol:
+                return R, Z
+
+        else:
+            if plotonfailure:
+                print("Convergence failure, trying to plot ...")
+                if plotting_available:
+                    if not show:
+                        plt.figure()
+                        # Markers on original points on inner and outer boundaries
+                        plt.plot(inner.R, inner.Z, "-o", label="inner")
+                        plt.plot(outer.R, outer.Z, "-o", label="outer")
+
+                        # Black lines through inner and outer boundaries
+                        r, z = inner.position(np.linspace(0, 2 * np.pi, 10 * nz))
+                        plt.plot(r, z, "k")
+                        r, z = outer.position(np.linspace(0, 2 * np.pi, 10 * nz))
+                        plt.plot(r, z, "k")
+
+                        # Red dots to mark the inner and outer boundaries
+                        plt.plot(R[0, :], Z[0, :], "ro")
+                        plt.plot(R[-1, :], Z[-1, :], "ro")
+
+                        plt.plot(R, Z, "k-")
+                        plt.plot(R.T, Z.T, "g-")
+                    plt.show()
+
+            raise RuntimeError(
+                f"Failed to converge - grid shape {R.shape}: Error was {maxchange_sq} > {tol}"
+            )
 
     def fft_smooth(x, maxmode=None):
         dx = x - np.roll(x, 1)
@@ -979,6 +1155,7 @@ def grid_elliptic(
             0, 2 * pi, nz_r + 1, endpoint=True
         )  # Add on the final point duplicating the first
         x_r = linspace(0, 1.0, nx_r, endpoint=True)
+        # x_r[0] = 0
 
         # Note: Upper case R,Z are real-space locations
         R_r = np.concatenate((R_r, np.reshape(R_r[:, 0], (nx_r, 1))), axis=1)
@@ -1007,6 +1184,8 @@ def grid_elliptic(
         Z[0, :] = inner.Zvalue(thetavals_inner)
         R, Z = _ensure_monotonic(R, Z)
 
+    elif guess is not None:
+        R, Z = guess
     else:
         # Interpolate coordinates of inner and outer boundary
         Router = outer.Rvalue(thetavals)
@@ -1025,10 +1204,73 @@ def grid_elliptic(
 
         # Interpolate in x between inner and outer
         # to get starting guess for a grid
-        R = xvals[:, None] * Router[None, :] + (1 - xvals[:, None]) * Rinner[None, :]
-        Z = xvals[:, None] * Zouter[None, :] + (1 - xvals[:, None]) * Zinner[None, :]
+        # R = xvals[:, None] * Router[None, :] + (1 - xvals[:, None]) * Rinner[None, :]
+        # Z = xvals[:, None] * Zouter[None, :] + (1 - xvals[:, None]) * Zinner[None, :]
+        def interpolate(xvals, inner, outer, fft=True, smoothfac=1):
+            if not fft:
+                return (
+                    xvals[:, None] * Router[None, :]
+                    + (1 - xvals[:, None]) * Rinner[None, :]
+                )
+            inf = np.fft.fft(inner)
+            outf = np.fft.fft(outer)
+            n = len(inner)
+            nh = n // 2
+            nq = 5
+            inf[nq:nh] *= smoothfac
+            inf[nh + 1 : -nq] *= smoothfac
+            outf[nq:nh] *= smoothfac
+            outf[nh + 1 : -nq] *= smoothfac
 
-    dx = xvals[1] - xvals[0]
+            f = xvals[:, None] * outf[None, :] + (1 - xvals[:, None]) * inf[None, :]
+            # plt.figure()
+            # plt.plot(inf)
+            # plt.plot(outf)
+            # plt.plot(f)
+            # plt.show(block=True)
+            return np.real(np.fft.ifft(f))
+
+        usefft = True
+        sf = 1
+        working = 0
+        reset = 0.9
+        lastgood = None
+        while True:
+            print(sf)
+            R = interpolate(xvals, Rinner, Router, usefft, sf)
+            Z = interpolate(xvals, Zinner, Zouter, usefft, sf)
+            if lastgood is not None:
+                R[1:-1] = lastgood[0][1:-1]
+                Z[1:-1] = lastgood[1][1:-1]
+            # plt.figure()
+            # plt.plot(R, Z)
+            # plt.plot(R.T, Z.T)
+            # plt.show(block=True)
+            try:
+                R, Z = solve_equation(
+                    R,
+                    Z,
+                    dz_relax,
+                    xvals[1] - xvals[0],
+                    thetavals[1] - thetavals[0],
+                    False,
+                )
+            except RuntimeError:
+                failed = sf
+                sf = (sf + working) / 2
+            else:
+                if sf == 1:
+                    break
+                working_ = sf
+                sf = sf * 2 - working
+                working = working_
+                lastgood = R, Z
+                if sf > reset:
+                    sf = 1
+                    reset = (reset + 1) / 2
+            print(sf, failed, working, reset)
+
+    R, Z = _ensure_monotonic(R, Z)
     dz = thetavals[1] - thetavals[0]
 
     if show and plotting_available:
@@ -1046,96 +1288,9 @@ def grid_elliptic(
         plt.plot(R[0, :], Z[0, :], "ro")
         plt.plot(R[-1, :], Z[-1, :], "ro")
 
-    # Start solver loop
-    maxit = max(max(R.shape) * 10, 300)
-    for _ in range(maxit):
-        # Calculate coefficients, which exclude boundary points
-        # Note that the domain is periodic in y so roll arrays
-
-        R_xm = R[:-2, :]  # R(x-1,z)
-        R_xp = R[2:, :]  # R(x+1,z)
-        R_zm = np.roll(R, 1, axis=1)  # R(x, z-1)
-        R_zp = np.roll(R, -1, axis=1)  # R(x, z+1)
-        R_xmzm = R_zm[:-2, :]  # R(x-1, z-1)
-        R_xpzm = R_zm[2:, :]  # R(x+1, z-1)
-        R_xmzp = R_zp[:-2, :]  # R(x-1, z+1)
-        R_xpzp = R_zp[2:, :]  # R(x+1, z+1)
-        R_zm = R_zm[1:-1, :]  # Now chop off x boundaries
-        R_zp = R_zp[1:-1, :]  # This is done to minimise number of rolls
-
-        Z_xm = Z[:-2, :]
-        Z_xp = Z[2:, :]
-        Z_zm = np.roll(Z, 1, axis=1)
-        Z_zp = np.roll(Z, -1, axis=1)
-        Z_xmzm = Z_zm[:-2, :]
-        Z_xpzm = Z_zm[2:, :]
-        Z_xmzp = Z_zp[:-2, :]
-        Z_xpzp = Z_zp[2:, :]
-        Z_zm = Z_zm[1:-1, :]
-        Z_zp = Z_zp[1:-1, :]
-
-        dz_relax = dz_relax or 10 / 3
-        dRdz = dz_relax * (R_zp - R_zm) / (2.0 * dz)
-        dRdx = (R_xp - R_xm) / (2.0 * dx)
-
-        dZdz = dz_relax * (Z_zp - Z_zm) / (2.0 * dz)
-        dZdx = (Z_xp - Z_xm) / (2.0 * dx)
-
-        a = dRdz**2 + dZdz**2
-        b = dRdz * dRdx + dZdx * dZdz
-        c = dRdx**2 + dZdx**2
-
-        # Now solve a*R_xx - 2*b*R_xz + c*R_zz = 0
-        # For now using Jacobi update
-
-        a_dx2 = a / dx**2
-        b_dxdz = b / (2.0 * dx * dz)
-        c_dz2 = c / dz**2
-        inv_diag = 1.0 / (2 * a / dx**2 + 2 * c / dz**2)
-
-        Rold = R.copy()
-        Zold = Z.copy()
-
-        R[1:-1, :] = (
-            a_dx2 * (R_xm + R_xp)
-            - b_dxdz * (R_xpzp - R_xmzp - R_xpzm + R_xmzm)
-            + c_dz2 * (R_zm + R_zp)
-        ) * inv_diag
-
-        Z[1:-1, :] = (
-            a_dx2 * (Z_xm + Z_xp)
-            - b_dxdz * (Z_xpzp - Z_xmzp - Z_xpzm + Z_xmzm)
-            + c_dz2 * (Z_zm + Z_zp)
-        ) * inv_diag
-
-        maxchange_sq = np.amax((R - Rold) ** 2 + (Z - Zold) ** 2)
-
-        if maxchange_sq < tol:
-            break
-
-    else:
-        print("Convergence failure, trying to plot ...")
-        if plotting_available:
-            if not show:
-                plt.figure()
-                # Markers on original points on inner and outer boundaries
-                plt.plot(inner.R, inner.Z, "-o", label="inner")
-                plt.plot(outer.R, outer.Z, "-o", label="outer")
-
-                # Black lines through inner and outer boundaries
-                r, z = inner.position(np.linspace(0, 2 * np.pi, 10 * nz))
-                plt.plot(r, z, "k")
-                r, z = outer.position(np.linspace(0, 2 * np.pi, 10 * nz))
-                plt.plot(r, z, "k")
-
-                # Red dots to mark the inner and outer boundaries
-                plt.plot(R[0, :], Z[0, :], "ro")
-                plt.plot(R[-1, :], Z[-1, :], "ro")
-            plt.show()
-
-        raise RuntimeError(
-            f"Failed to converge - grid shape {R.shape}: Error was {maxchange_sq} > {tol}"
-        )
+    R, Z = solve_equation(
+        R, Z, dz_relax, xvals[1] - xvals[0], thetavals[1] - thetavals[0]
+    )
 
     if nx_outer:
         dn = np.arange(nx_outer) + 1

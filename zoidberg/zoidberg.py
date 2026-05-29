@@ -920,7 +920,10 @@ def make_surfaces(grid, magnetic_field, nsurfaces=10, revs=100):
     psi = np.zeros_like(grid.x_3d)
     for y_slice in range(grid.ny):
         points_2d = np.column_stack(
-            (points[:, y_slice, :, 0].flatten(), points[:, y_slice, :, 1].flatten())
+            (
+                points[:, y_slice, :, 0].flatten(),
+                points[:, y_slice, :, 1].flatten(),
+            )
         )
         psi[:, y_slice, :] = griddata(
             points_2d,
@@ -1007,7 +1010,12 @@ def upscale(field, maps, upscale_factor=4, quiet=True):
     # Index space coordinates of our upscaled field
     index_4d = np.mgrid[0:upscale_factor, 0:nx, 0:ny, 0:nz]
     hires_points = np.array(
-        [new_points, index_4d[1, ...], index_4d[2, ...], index_4d[3, ...]]
+        [
+            new_points,
+            index_4d[1, ...],
+            index_4d[2, ...],
+            index_4d[3, ...],
+        ]
     )
 
     # Upscale the field

@@ -106,7 +106,12 @@ def gen_newr(r, z, splitedlist, bounds, plot):
             )
 
         b = np.array(
-            [r[end_index] - r[start_index], z[end_index] - z[start_index], 0, 0]
+            [
+                r[end_index] - r[start_index],
+                z[end_index] - z[start_index],
+                0,
+                0,
+            ]
         )
 
         def lenofs(x):
