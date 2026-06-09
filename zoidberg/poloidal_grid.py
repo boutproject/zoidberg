@@ -603,77 +603,675 @@ def grid_annulus(inner, outer, nx, nz, show=True, return_coords=False):
     return StructuredPoloidalGrid(R, Z)
 
 
-def _ensure_monotonic(R, Z, overshoot=1.05):
+class PlotDelayed:
+    def __init__(self):
+        self.store = {}
+
+    def add(self, R, Z, label):
+        self.store[label] = R.copy(), Z.copy()
+
+    def plot(self, block=True):
+        for k, v in self.store.items():
+            plt.figure()
+            R, Z = v
+            plt.plot(R, Z)
+            plt.plot(R.T, Z.T)
+            plt.title(k)
+
+        plt.show(block=block)
+
+    def clear(self):
+        self.store = {}
+
+
+def contains(inner, outer, pnt):
+    import eudist
+
+    if eudist.winding_number(inner, pnt) == 0:
+        return eudist.winding_number(outer, pnt) != 0
+    return False
+
+
+class ForceField:
+    def __init__(self, mins, maxs, step, dims=1):
+        # import itertools
+        self.mins = mins
+        self.step = step
+        dists = (maxs - mins) / step
+        dists = np.ceil(dists).astype(int)
+        self.field = np.zeros((*dists, dims))
+
+    def getAt(self, point):
+        offsets = (point - self.mins) / self.step
+        if any(offsets < 0) or any(offsets - 1 > self.field.shape[:-1]):
+            return np.zeros(self.field[-1])
+        offset_ints = np.floor(offsets).astype(int)
+        facs = offsets - offset_ints
+        slc = [slice(i, i + 2) for i in offset_ints]
+        local = self.field[slc]
+        for f in facs:
+            assert 0 <= f < 1, facs
+            local = local[0] * (1 - f) + local[1] * f
+        return local
+
+
+class ForceFieldPoor:
+    def __init__(self, mins, maxs, step, dims=1):
+        # import itertools
+        self.mins = mins
+        self.step = step
+        dists = (maxs - mins) / step
+        dists = np.ceil(dists).astype(int)
+        self.field = np.zeros((*dists, dims))
+
+    def getAt(self, point):
+        offsets = np.round((point - self.mins) / self.step).astype(int)
+        if any(offsets < 0):
+            return np.zeros(self.field[-1])
+        try:
+            return self.field[*offsets]
+        except IndexError:
+            return np.zeros(self.field[-1])
+
+
+def calc_force_field(field, RZi):
+    F = np.zeros_like(RZi)
+    for j in range(RZi.shape[1]):
+        F[:, j] = field.getAt(RZi[:, j])
+    return F
+
+
+def calc_force_part(useinner, inner, outer, RZi):
+    import eudist
+    import numpy as np
+
+    F = np.zeros_like(RZi)
+    for j in range(RZi.shape[1]):
+        oij = slice(None), j
+        #
+        # inside = domain.contains(point)
+        inside = contains(inner, outer, RZi[oij])
+        dist = -eudist.line_segments_dot_vec(
+            inner if useinner else outer, RZi[oij], periodic=True
+        )
+
+        dist1d = np.sum(dist**2)
+        assert False, "use sqrt!"
+        sign = -1 if inside else +1
+        # if not inside:
+        #    print(inside, sign, dist1d, np.exp(dist1d * sign / 100))
+        maxdist = 0.05
+        if dist1d > 1e-8 and dist1d < maxdist:
+            force = (
+                sign
+                * dist
+                / dist1d
+                * (np.exp(dist1d * sign / 100) - np.exp(-maxdist / 100))
+            )
+            F[:, j] -= force / 10
+    return F
+
+
+class BucketMesh:
+    def __init__(self, polygon, maxdist):
+        from tqdm.contrib import itertools
+        import eudist
+
+        self.md = maxdist
+        mins = np.min(polygon, axis=0)
+        maxs = np.max(polygon, axis=0)
+        print("bucket", mins, maxs, polygon.shape)
+        mins = np.floor(mins / maxdist) - 1
+        maxs = np.ceil(maxs / maxdist) + 1
+        dists = maxs - mins
+        print(maxs, mins, dists)
+        dists = dists.astype(int)
+        self.mins = mins
+        self.maxs = maxs
+        self.buckets = np.zeros(dists, dtype=object)
+        for ij in itertools.product(*[range(x) for x in dists]):
+            coords = (np.array(ij) - self.mins) * self.md
+            for offsets in itertools.product(*[(0, maxdist) for _ in mins]):
+                for i in range(polygon.shape[1]):
+                    if eudist.line_segment_dot(polygon[i - 1], polygon):
+                        pass
+                coords + np.array(offsets)
+        print(dists)
+        assert False
+
+
+def _ensure_monotonic_force(R, Z):
+    import eudist
+    from tqdm.contrib import itertools
+
+    RZ = np.array((R, Z))
+    nx, nz = R.shape
+    outer = shapely.LineString(RZ[:, -1, :].T)
+    inner = shapely.LineString(RZ[:, 0, :].T)
+    # domain = shapely.Polygon(outer, [inner])
+    inner_eudist = np.ascontiguousarray(RZ[:, 0, :].T)
+    outer_eudist = np.ascontiguousarray(RZ[:, -1, :].T)
+
+    # inner_buckets = BucketMesh(inner_eudist, 0.05)
+    mins = np.min(outer_eudist, axis=0) - 0.07
+    if 0:
+        step = 0.01
+        force_field = ForceField(mins, np.max(outer_eudist, axis=0) + 0.07, step, 2)
+    else:
+        step = 0.001
+        force_field = ForceFieldPoor(mins, np.max(outer_eudist, axis=0) + 0.07, step, 2)
+    for ij in itertools.product(*[range(x) for x in force_field.field.shape[:2]]):
+        aij = np.array(ij) * step
+        pos = aij + mins
+        inside = contains(inner_eudist, outer_eudist, pos)
+        for poly in (inner_eudist, outer_eudist):
+            dist = -eudist.line_segments_dot_vec(poly, pos, periodic=True)
+
+            dist1d = np.sqrt(np.sum(dist**2))
+            sign = -1 if inside else +1
+            # if not inside:
+            #    print(inside, sign, dist1d, np.exp(dist1d * sign / 100))
+            maxdist = 0.005
+            if (
+                dist1d > 1e-8
+                and (dist1d < maxdist and inside)
+                or (not inside and dist1d < 0.05)
+            ):
+                force = (
+                    sign
+                    * dist
+                    / dist1d
+                    * (np.exp(dist1d * sign * 500) - np.exp(-maxdist * 500))
+                )
+                force_field.field[ij] -= force
+    if 0:
+        plt.figure()
+        Rf = np.arange(0, force_field.field.shape[0]) * step + mins[0]
+        Zf = np.arange(0, force_field.field.shape[1]) * step + mins[1]
+        plt.quiver(
+            Rf[:, None] + 0 * Zf[None, :],
+            0 * Rf[:, None] + Zf[None, :],
+            force_field.field[:, :, 0],
+            force_field.field[:, :, 1],
+        )
+        plt.plot(*RZ[:, 0], "r-")
+        plt.plot(*RZ[:, -1], "r-")
+        plt.gca().set_aspect(1)
+        plt.figure()
+        plt.pcolormesh(
+            Rf[:, None] + 0 * Zf[None, :],
+            0 * Rf[:, None] + Zf[None, :],
+            force_field.field[:, :, 0],
+        )
+        plt.colorbar()
+        plt.plot(*RZ[:, 0], "r-")
+        plt.plot(*RZ[:, -1], "r-")
+        plt.gca().set_aspect(1)
+        plt.figure()
+        plt.pcolormesh(
+            Rf[:, None] + 0 * Zf[None, :],
+            0 * Rf[:, None] + Zf[None, :],
+            force_field.field[:, :, 1],
+            vmax=10,
+        )
+        plt.colorbar()
+        plt.plot(*RZ[:, 0], "r-")
+        plt.plot(*RZ[:, -1], "r-")
+        plt.gca().set_aspect(1)
+        plt.show(block=True)
+
+    assert inner_eudist.flags["C_CONTIGUOUS"]
+
+    def allGood(R, Z):
+        i = -1
+        last = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+        for i in range(R.shape[1]):
+            cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+            if cur.intersects(inner) or cur.intersects(outer):
+                return False
+            if cur.intersects(last):
+                return False
+            last = cur
+        return True
+
+    def contains_eudist(pnt):
+        if eudist.winding_number(inner_eudist, pnt) == 0:
+            return eudist.winding_number(outer_eudist, pnt) != 0
+        return False
+
+    def contains_(pnt):
+        tmp = contains_eudist(pnt)
+        # print("shapely", domain.contains(shapely.Point(pnt)))
+        # assert domain.contains(shapely.Point(pnt)) == tmp
+        return tmp
+
+    def force(RZ, scale=1):
+        Dx = 10
+        Dz = 1
+        RZi = RZ[:, 1:-1]
+        Fz = 0
+        Fx = 0
+        Fz = np.roll(RZi, 1, axis=-1) - RZi
+        Fz += np.roll(RZi, -1, axis=-1) - RZi
+        Fx = RZ[:, 2:] - RZi
+        Fx += RZ[:, :-2] - RZi
+        F = Fz * Dz + Fx * Dx
+        # for i in [1, 2, nx - 3, nx - 2]:  # range(1, RZ.shape[1] - 1):
+        # from concurrent.futures import InterpreterPoolExecutor as Executor
+        # from concurrent.futures import ThreadPoolExecutor as Executor
+        from concurrent.futures import ProcessPoolExecutor as Executor
+
+        if False:
+            with Executor(max_workers=64) as executor:
+                futures = [
+                    executor.submit(
+                        calc_force_part,
+                        i < nx // 2,
+                        inner_eudist,
+                        outer_eudist,
+                        RZ[:, i],
+                    )
+                    for i in range(1, RZ.shape[1] - 1)
+                ]
+                for i, f in enumerate(futures):
+                    F[:, i] += f.result()
+        elif 1:
+            for i in range(1, RZ.shape[1] - 1):
+                Fi = calc_force_field(force_field, RZ[:, i])
+                F[:, i - 1] += Fi
+        else:
+            for i in range(1, RZ.shape[1] - 1):
+                Fi = calc_force_part(i < nx // 2, inner_eudist, outer_eudist, RZ[:, i])
+                F[:, i - 1] += Fi
+            # for j in range(RZ.shape[2]):
+            #     oij = slice(None), i, j
+            #     #
+            #     # inside = domain.contains(point)
+            #     inside = contains(RZ[oij])
+            #     dist = -eudist.line_segments_dot_vec(
+            #         inner_eudist if i < nx // 2 else outer_eudist,
+            #         RZ[oij],
+            #         periodic=True,
+            #     )
+            #     if False:
+            #         point = shapely.Point(*RZ[oij])
+            #         try:
+            #             p1, p2 = shapely.ops.nearest_points(
+            #                 point, inner if i < nx // 2 else outer
+            #             )
+            #         except shapely.errors.GEOSException:
+            #             plt.plot(*RZ[oij], "go")
+            #             plt.plot(*RZ[:, 0 if i < nx // 2 else -1, :])
+            #             plt.show(block=True)
+            #             raise
+            #         dist_slow = np.array((p1.x - p2.x, p1.y - p2.y))
+            #         if not (np.mean((dist - dist_slow) ** 2) < 1e-8):
+            #             print(dist_slow, dist, dist - dist_slow)
+            #             plt.plot(*outer_eudist.T)
+            #             plt.plot(*inner_eudist.T)
+            #             plt.plot(*RZ[oij], "go")
+            #             plt.plot(*(RZ[oij] - dist), "ro")
+            #             plt.plot(*(RZ[oij] - dist_slow), "bo")
+            #             plt.show(block=True)
+
+            #     dist1d = np.sum(dist**2)
+            #     sign = -1 if inside else +1
+            #     if dist1d > 0:
+            #         force = sign * dist / dist1d * np.exp(dist1d * sign / 100)
+            #         F[:, i - 1, j] -= force / 1000
+        return F, Fz * Dz, Fx * Dx
+
+    def force_1d(t, y):
+        RZ[:, 1:-1] = y.reshape((2, nx - 2, nz))
+        F = force(RZ)
+        return F.ravel()
+
+    def jacobian(t, y):
+        pass
+
+    def sparsity(nx, nz):
+        N = nx * nz
+        # ret = scipy.sparse.bsr_array((N, N), dtype=bool)
+        ret = np.zeros((N, N), dtype=bool)
+
+        def ind(i, j):
+            return i * nz + (j % nz)
+
+        for i in range(nx):
+            for j in range(nz):
+                ij = ind(i, j)
+                ret[ij, ij] = True
+                ret[ij, ind(i, j + 1)] = True
+                ret[ij, ind(i, j - 1)] = True
+                if i > 0:
+                    ret[ij, ind(i - 1, j)] = True
+                if i < nx - 1:
+                    ret[ij, ind(i + 1, j)] = True
+
+    scale = 1
+    # import scipy
+
+    # ode = scipy.integrate.BDF(
+    #     force_1d, 0, RZ[:, 1:-1].ravel(), 1e-5, jac_sparsity=sparsity(nx - 2, nz)
+    # )
+    todo = 1
+    noPlot = 1000
+    while todo != 0:
+        # not allGood(*RZ):
+        if allGood(*RZ):
+            todo -= 1
+        else:
+            todo += 1
+        scale *= 0.998
+        try:
+            F, Fz, Fx = force(RZ, scale)
+        except:
+            plt.figure()
+            plt.quiver(*RZ[:, 1:-1], *F)
+            plt.plot(*RZ[:, 0], "r-")
+            plt.plot(*RZ[:, -1], "r-")
+            plt.figure()
+            plt.plot(*RZ)
+            plt.plot(*RZ.transpose(0, 2, 1))
+            plt.figure()
+            for ind in 0, 1, -2, -1:
+                plt.plot(*RZ[:, ind], label=ind)
+            plt.legend()
+            plt.show(block=True)
+            raise
+
+        maxforce = np.max(np.sum(F**2, axis=0))
+        print(noPlot, todo, scale, maxforce, RZ.shape)
+
+        if noPlot == 0:
+            noPlot = 1000
+            RZm = RZ[:, 1:] + RZ[:, :-1]
+            RZm /= 2
+            # for f in F:
+            #     plt.figure()
+            #     #plt.pcolormesh(*RZ[:, 2:-1], f[1:])
+            #     plt.plot(f)
+            #     #plt.colorbar()
+            plt.figure()
+            plt.quiver(*RZ[:, 1:-1], *F, color="black")
+            plt.quiver(*RZ[:, 1:-1], *Fx, color="green")
+            plt.quiver(*RZ[:, 1:-1], *Fz, color="pink")
+            plt.quiver(*RZ[:, 1:-1], *(F - Fz - Fx), color="blue")
+            plt.plot(*RZ[:, 0], "r-")
+            plt.plot(*RZ[:, -1], "r-")
+            plt.gca().set_aspect(1)
+            # plt.figure()
+            # plt.plot(*RZ)
+            # plt.plot(*RZ.transpose(0, 2, 1))
+            # plt.figure()
+            # for ind in 0, 1, -2, -1:
+            #     plt.plot(*RZ[:, ind], label=ind)
+            # plt.legend()
+            plt.show(block=True)
+
+        RZ[:, 1:-1] += F / maxforce * 1e-3
+        print("Starting integration!")
+        # ret = ode.step()
+        # print(ret)
+        # print(dir(ret))
+        noPlot -= 1
+    return RZ
+
+
+def _ensure_monotonic(R, Z, overshoot=1.05, do=None, args=[]):
     import shapely
     import shapely.ops
 
-    outer = shapely.LineString(zip(R[-1, :], Z[-1, :]))
-    inner = shapely.LineString(zip(R[0, :], Z[0, :]))
-    area = shapely.Polygon(outer, [inner])
+    outer = shapely.LinearRing(zip(R[-1, :], Z[-1, :]))
+    inner = shapely.LinearRing(zip(R[0, :], Z[0, :]))
 
-    # for i, z in itertools.product(*[range(x) for x in R.shape])
-
-    for i in range(1, R.shape[0] - 1):
-        for j in range(R.shape[1]):
-            pnt = shapely.Point(R[i, j], Z[i, j])
-            if not area.contains(pnt):
-                p1, p2 = shapely.ops.nearest_points(area, pnt)
-                dx = p1.x - p2.x
-                dz = p1.y - p2.y
-                R[i, j] += dx * overshoot
-                Z[i, j] += dz * overshoot
-
-    i = -1
-    last = shapely.LineString(zip(R[:, i], Z[:, i]))
-    frac = R.shape[1] // 2
-    for i in range(0, R.shape[1]):
-        cur = shapely.LineString(zip(R[:, i], Z[:, i]))
-        if cur.intersects(last):
-            outerr = R[-1], Z[-1]
-            inerr = R[0], Z[0]
-            curisgood = shapely.Point(R[-1, i], Z[-1, i]).distance(
-                last
-            ) < shapely.Point(R[-1, i - 1], Z[-1, i - 1]).distance(cur)
-            if curisgood:
-                # last is bad
-                badi = i - 1
-                goodi = i
-                slc = slice(-frac, -1)
-                direc = -1
-            else:
-                badi = i
-                goodi = i - 1
-                slc = slice(0, frac)
-                direc = 1
-            outerr = [np.roll(x, -goodi + direc) for x in outerr]
-            outerr = [x[slc][::direc] for x in outerr]
-            inerr = [np.roll(x, -goodi + direc) for x in inerr]
-            inerr = [x[slc][::-direc] for x in inerr]
-            # print(slc, outerr[0].shape)
-            # inerr = [
-            # plt.figure()
-            # plt.plot(R[:, badi], Z[:, badi], "r-")
-            allowed = [np.array([]), np.array([])]
-            for a, b in (
-                (R[:, goodi], Z[:, goodi]),
-                outerr,
-                (R[::-1, goodi - frac], Z[::-1, goodi - frac]),
-                inerr,
-            ):
-                allowed[0] = np.append(allowed[0], a)
-                allowed[1] = np.append(allowed[1], b)
-
-            # plt.plot(*allowed, "g-")
-            poly = shapely.Polygon(shapely.LineString(zip(*allowed)))
-            for j in range(1, R.shape[0] - 1):
-                pnt = shapely.Point(R[j, badi], Z[j, badi])
-                if not poly.contains(pnt):
-                    p1, p2 = shapely.ops.nearest_points(poly, pnt)
+    def push_in(R, Z, overshoot, overshoot2=None, restore=0.5):
+        counter = 0
+        plotter = PlotDelayed()
+        plotter.add(R, Z, "before")
+        # push points inside
+        for i in range(R.shape[0] - 2, 0, -1):
+            area = shapely.Polygon(zip(R[i + 1, :], Z[i + 1, :]))
+            for j in range(R.shape[1]):
+                pnt = shapely.Point(R[i, j], Z[i, j])
+                if not area.contains(pnt):
+                    p1, p2 = shapely.ops.nearest_points(area, pnt)
                     dx = p1.x - p2.x
                     dz = p1.y - p2.y
-                    R[j, badi] += dx * overshoot
-                    Z[j, badi] += dz * overshoot
+                    R[i, j] += dx * overshoot
+                    Z[i, j] += dz * overshoot
 
+        # push lines inside
+        for i in range(R.shape[0] - 1, 1, -1):
+            if overshoot2 is not None:
+                overshoot = overshoot2
+            line = shapely.LinearRing(zip(R[i - 1, :], Z[i - 1, :]))
+            area = shapely.Polygon(line, [inner])
+            for j in range(R.shape[1]):
+                pnt = shapely.Point(R[i, j], Z[i, j])
+                if area.contains(pnt):
+                    doplotnow = False
+                    if doplotnow:
+                        plt.plot(R[i - 1], Z[i - 1], ls="--", color="grey")
+                    p1, p2 = shapely.ops.nearest_points(line, pnt)
+                    dx = p1.x - p2.x
+                    dz = p1.y - p2.y
+                    # proposed = R[i-1, j], Z[i-1, j]
+                    # for k, dd in enumerate((dx, dz)):
+                    #     proposed[k] -= dd * overshoot
+                    # for k, org in enumerate((R, Z)):
+                    #     proposed[k] = (proposed[k] + org[i, j]) / 2
+
+                    R[i - 1, j] -= dx * overshoot
+                    Z[i - 1, j] -= dz * overshoot
+                    R[i - 1, j] = R[i - 1, j] * restore + R[i, j] * (1 - restore)
+                    Z[i - 1, j] = Z[i - 1, j] * restore + Z[i, j] * (1 - restore)
+
+                    if doplotnow:
+                        plt.plot(R[i - 1 : i + 1], Z[i - 1 : i + 1])
+                        plt.plot(R[i - 1 : i + 1].T, Z[i - 1 : i + 1].T)
+                        for pi in p1, p2:
+                            plt.plot(pi.x, pi.y, "ro")
+                        plt.gca().set_aspect(1)
+                        plt.show(block=True)
+                    line = shapely.LinearRing(zip(R[i - 1, :], Z[i - 1, :]))
+                    area = shapely.Polygon(line, [inner])
+
+        counter += 1
+        overshoot = (overshoot + 1) / 2
+        plotter.add(R, Z, f"iteration {counter}")
+        if counter > 3:
+            plotter.plot()
+            raise RuntimeError("Failed to push points in/out")
+        return R, Z
+
+    def push_poloidally(R, Z, overshoot, doplot=False, other=False):
+        i = -1
+        isgood = np.empty(R.shape[1], dtype=bool)
+        last = shapely.LineString(zip(R[:, i], Z[:, i]))
+        for i in range(0, R.shape[1]):
+            cur = shapely.LineString(zip(R[:, i], Z[:, i]))
+            if cur.intersects(last):
+                outerr = R[-1], Z[-1]
+                inerr = R[0], Z[0]
+                curisgood = shapely.Point(R[-1, i], Z[-1, i]).distance(
+                    last
+                ) < shapely.Point(R[-1, i - 1], Z[-1, i - 1]).distance(cur)
+                if curisgood:
+                    isgood[i] = False
+                else:
+                    isgood[i - 1] = False
+            last = cur
+
+        last = shapely.LineString(zip(R[:, i], Z[:, i]))
+        frac = R.shape[1] // 2
+        plotter = PlotDelayed()
+        plotter.add(R, Z, "before")
+        for i in range(0, R.shape[1]):
+            cur = shapely.LineString(zip(R[:, i], Z[:, i]))
+            if cur.intersects(last):
+                outerr = R[-1], Z[-1]
+                inerr = R[0], Z[0]
+                curisgood = shapely.Point(R[-1, i], Z[-1, i]).distance(
+                    last
+                ) < shapely.Point(R[-1, i - 1], Z[-1, i - 1]).distance(cur)
+                if other:
+                    curisgood = not curisgood
+                if curisgood:
+                    # last is bad
+                    badi = i - 1
+                    goodi = i
+                    slc = slice(-frac, -1)
+                    direc = -1
+                else:
+                    badi = i
+                    goodi = i - 1
+                    slc = slice(0, frac)
+                    direc = 1
+                outerr = [np.roll(x, -goodi + direc) for x in outerr]
+                outerr = [x[slc][::direc] for x in outerr]
+                inerr = [np.roll(x, -goodi + direc) for x in inerr]
+                inerr = [x[slc][::-direc] for x in inerr]
+                # print(slc, outerr[0].shape)
+                # plt.figure()
+                allowed = [np.array([]), np.array([])]
+                for a, b in (
+                    (R[:, goodi], Z[:, goodi]),
+                    outerr,
+                    (R[::-1, goodi - frac], Z[::-1, goodi - frac]),
+                    inerr,
+                ):
+                    allowed[0] = np.append(allowed[0], a)
+                    allowed[1] = np.append(allowed[1], b)
+                # print("ind", goodi, goodi-frac)
+                # plt.plot(*allowed, "g-")
+                # plt.plot(R[1:-1, badi], Z[1:-1, badi], "rx")
+                # print(R[:, goodi], Z[:, goodi], "b-")
+                # print(R[:, goodi-frac], Z[:, goodi-frac], "o-")
+                # plt.title("HERE")
+                # plt.show(block=True)
+                poly = shapely.Polygon(shapely.LineString(zip(*allowed)))
+                for j in range(1, R.shape[0] - 1):
+                    pnt = shapely.Point(R[j, badi], Z[j, badi])
+                    if not poly.contains(pnt):
+                        p1, p2 = shapely.ops.nearest_points(poly, pnt)
+                        dx = p1.x - p2.x
+                        dz = p1.y - p2.y
+                        R[j, badi] += dx * overshoot
+                        Z[j, badi] += dz * overshoot
+
+            cur = shapely.LineString(zip(R[:, i], Z[:, i]))
+            if cur.intersects(last) and doplot:
+                plotter.add(R, Z, "after")
+                plotter.plot()
+
+            last = cur
+        return R, Z
+
+    def push_poloidally_all(R, Z, fac=0.5):
+        i = -1
+        isgood = np.ones(R.shape[1], dtype=bool)
+        last = shapely.LineString(zip(R[:, i], Z[:, i]))
+        for i in range(0, R.shape[1]):
+            cur = shapely.LineString(zip(R[:, i], Z[:, i]))
+            if cur.intersects(last):
+                curisgood = shapely.Point(R[-1, i], Z[-1, i]).distance(
+                    last
+                ) < shapely.Point(R[-1, i - 1], Z[-1, i - 1]).distance(cur)
+                if not curisgood:
+                    isgood[i] = False
+                else:
+                    isgood[i - 1] = False
+            last = cur
+        print(isgood)
+        assert isgood[-1]
+        for i in range(len(isgood)):
+            if not isgood[i]:
+                cur = shapely.LineString(zip(R[:, i], Z[:, i]))
+                for igood in i - 1, i + 1:
+                    other = shapely.LineString(zip(R[:, igood], Z[:, igood]))
+                    if not cur.intersects(other):
+                        print(f"Moving {i} in direction {igood}")
+                        R[1:-1, i] = R[1:-1, i] * fac + R[1:-1, igood] * (1 - fac)
+        return R, Z
+
+    def allGood():
+        i = -1
+        last = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+        for i in range(R.shape[1]):
+            cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+            if cur.intersects(inner) or cur.intersects(outer):
+                print("leave domain", i)
+                return False
+            if cur.intersects(last):
+                print("overlap last", i)
+                return False
+            last = cur
+        return True
+
+    def plotBad(R, Z):
+        plt.figure()
+        for ind in -1, 0:
+            plt.plot(R[ind, :], Z[ind, :])
+        i = -1
+        last = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+        for i in range(R.shape[1]):
+            cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+            if cur.intersects(inner) or cur.intersects(outer):
+                plt.plot(R[:, i], Z[:, i], "x-")
+                plt.plot(R[1:-1, i], Z[1:-1, i], "x-")
+            if cur.intersects(last):
+                plt.plot(R[1:-1, i], Z[1:-1, i], "x-", color="red")
+                plt.plot(R[1:-1, i - 1], Z[1:-1, i - 1], "x-", color="magenta")
+            last = cur
+            # for bound in inner, outer:
+            #     if cur.intersects(bound):
+            #         inter = cur.intersection(bound)
+            #         print(inter)
+            #         plt.plot(inter.x, inter.y, "ro")
+        plt.show(block=True)
+
+    if do is not None:
+        todos = dict(pol=push_poloidally, rad=push_in, pol2=push_poloidally_all)
+        return todos[do](R, Z, *args)
+    p = PlotDelayed()
+    p.add(R, Z, "init")
+    if allGood():
+        return R, Z
+    R, Z = push_poloidally(R, Z, overshoot)
+    p.add(R, Z, "pol1")
+    for a, b in ((1.05, 0.5), (1.1, 0.3)):
+        if allGood():
+            return R, Z
+        R, Z = push_in(R, Z, overshoot, 1.5, restore=0.3)
+    p.add(R, Z, "in1")
+    if allGood():
+        return R, Z
+    R, Z = push_poloidally(R, Z, overshoot)
+    p.add(R, Z, "pol2")
+    if allGood():
+        return R, Z
+    R, Z = push_poloidally(R, Z, overshoot, other=True)
+    if allGood():
+        return R, Z
+    R, Z = push_poloidally_all(R, Z, 0.5)
+    for a, b in ((overshoot, 0.5), (1.5, 0.3), (1.8, 0.2), (2.2, 0.2)):
+        if allGood():
+            return R, Z
+        R, Z = push_in(R, Z, overshoot, a, restore=b)
+        if allGood():
+            return R, Z
+        R, Z = push_poloidally(R, Z, overshoot)
+        R, Z = push_poloidally(R, Z, 1.5)
+
+        if allGood():
+            return R, Z
+    R, Z = push_poloidally_all(R, Z, 0.5)
+    if allGood():
+        return R, Z
+    p.plot(block=False)
+    plotBad(R, Z)
+    raise RuntimeError("Failed to make it monotonic")
     # for i in range( R.shape[0] -2, 0, -1):
     #     outer = shapely.LineString(zip(R[i+1, :], Z[i+1, :]))
     #  #    poly = shapely.Polygon(outer)
@@ -765,29 +1363,6 @@ def _ensure_monotonic(R, Z, overshoot=1.05):
     #     print(fill[0].shape, zs, zep)
     #     R[:, zs:zep] = fill[0]
     #     Z[:, zs:zep] = fill[1]
-    # allgood = True
-
-    # for i in range(R.shape[1]):
-    #     cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
-    #     if cur.intersects(inner) or cur.intersects(outer):
-    #         print(i, cur.intersects(inner), cur.intersects(outer))
-    #         allgood = False
-    #         break
-    # if not allgood:
-    #     plt.figure()
-    #     for ind in -1, 0:
-    #         plt.plot(R[ind, :], Z[ind, :])
-    #     for i in range(R.shape[1]):
-    #         cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
-    #         if cur.intersects(inner) or cur.intersects(outer):
-    #             plt.plot(R[:, i], Z[:, i], "x-")
-    #             plt.plot(R[1:-1, i], Z[1:-1, i], "x-")
-    #             for bound in inner, outer:
-    #                 if cur.intersects(bound):
-    #                     inter = cur.intersection(bound)
-    #                     print(inter)
-    #                     plt.plot(inter.x, inter.y, "ro")
-    #     plt.show()
 
     # # assert allgood
     return R, Z
@@ -906,7 +1481,9 @@ def grid_elliptic(
     thetavals = linspace(0, 2 * pi, nz, endpoint=False)
 
     # Radial coordinate
-    xvals = linspace(0, 1.0, nx, endpoint=True)
+    xvals = linspace(0, 1, nx, endpoint=True)
+    # xvals[-1] = 1
+    # print(xvals)
 
     if align and not inner_ort:
         # Align inner and outer boundaries
@@ -1070,7 +1647,7 @@ def grid_elliptic(
                 + c_dz2 * (Z_zm + Z_zp)
             ) * inv_diag
             maxchange_sq = np.amax((R - Rold) ** 2 + (Z - Zold) ** 2)
-            R, Z = _ensure_monotonic(R, Z, overshoot=1.5)
+            R, Z = _ensure_monotonic(R, Z, overshoot=1.2)
 
             if maxchange_sq < tol:
                 return R, Z
@@ -1162,6 +1739,7 @@ def grid_elliptic(
         Z_r = np.concatenate((Z_r, np.reshape(Z_r[:, 0], (nx_r, 1))), axis=1)
 
         # Now interpolate
+        print("Interpolating!")
         spl = RectBivariateSpline(x_r, z_r, R_r)
         R = spl(xvals, thetavals, grid=True)
         spl = RectBivariateSpline(x_r, z_r, Z_r)
@@ -1182,7 +1760,7 @@ def grid_elliptic(
 
         R[0, :] = inner.Rvalue(thetavals_inner)
         Z[0, :] = inner.Zvalue(thetavals_inner)
-        R, Z = _ensure_monotonic(R, Z)
+        R, Z = _ensure_monotonic(R, Z, overshoot=1.1)
 
     elif guess is not None:
         R, Z = guess
@@ -1207,11 +1785,22 @@ def grid_elliptic(
         # R = xvals[:, None] * Router[None, :] + (1 - xvals[:, None]) * Rinner[None, :]
         # Z = xvals[:, None] * Zouter[None, :] + (1 - xvals[:, None]) * Zinner[None, :]
         def interpolate(xvals, inner, outer, fft=True, smoothfac=1):
+
             if not fft:
-                return (
-                    xvals[:, None] * Router[None, :]
-                    + (1 - xvals[:, None]) * Rinner[None, :]
-                )
+
+                def smooth(values, smoothfac):
+                    fac = np.fft.fft(values)
+                    n = len(values)
+                    nh = n // 2
+                    nq = 5
+                    fac[nq:nh] *= smoothfac
+                    fac[nh + 1 : -nq] *= smoothfac
+                    return np.real(np.fft.ifft(fac))
+
+                Ro = smooth(outer, smoothfac)
+                Ri = smooth(inner, smoothfac)
+                print(xvals, Ro.mean(), Ri.mean(), outer.mean(), inner.mean())
+                return xvals[:, None] * Ro[None, :] + (1 - xvals[:, None]) * Ri[None, :]
             inf = np.fft.fft(inner)
             outf = np.fft.fft(outer)
             n = len(inner)
@@ -1223,14 +1812,18 @@ def grid_elliptic(
             outf[nh + 1 : -nq] *= smoothfac
 
             f = xvals[:, None] * outf[None, :] + (1 - xvals[:, None]) * inf[None, :]
-            # plt.figure()
-            # plt.plot(inf)
-            # plt.plot(outf)
-            # plt.plot(f)
-            # plt.show(block=True)
+            plt.figure()
+            plt.plot(inf, label="inf")
+            plt.plot(outf, label="outf")
+            plt.plot(inf, label="inf")
+            plt.plot(outf, label="outf")
+            # plt.plot(f, label=f)
+            plt.show(block=True)
             return np.real(np.fft.ifft(f))
 
-        usefft = True
+        xvals = linspace(0, 1, nx, endpoint=True)
+        xvals[-1] = 1
+        usefft = False
         sf = 1
         working = 0
         reset = 0.9
@@ -1242,20 +1835,24 @@ def grid_elliptic(
             if lastgood is not None:
                 R[1:-1] = lastgood[0][1:-1]
                 Z[1:-1] = lastgood[1][1:-1]
-            # plt.figure()
-            # plt.plot(R, Z)
-            # plt.plot(R.T, Z.T)
-            # plt.show(block=True)
+                assert False
+            R, Z = _ensure_monotonic_force(R, Z)
+            plt.figure()
+            plt.plot(R, Z)
+            plt.plot(R.T, Z.T)
+            plt.show(block=True)
             try:
+                R, Z = _ensure_monotonic(R, Z)
                 R, Z = solve_equation(
                     R,
                     Z,
                     dz_relax,
                     xvals[1] - xvals[0],
                     thetavals[1] - thetavals[0],
-                    False,
+                    True,
                 )
             except RuntimeError:
+                # raise
                 failed = sf
                 sf = (sf + working) / 2
             else:
@@ -1270,7 +1867,7 @@ def grid_elliptic(
                     reset = (reset + 1) / 2
             print(sf, failed, working, reset)
 
-    R, Z = _ensure_monotonic(R, Z)
+    R, Z = _ensure_monotonic(R, Z, overshoot=1.1)
     dz = thetavals[1] - thetavals[0]
 
     if show and plotting_available:

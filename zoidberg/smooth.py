@@ -22,6 +22,31 @@ def find_outliers(r, z, cutoff=0.75, bounds=10):
     return outliers
 
 
+def get_pseudoangle(r, z, bounds=10):
+    pseudo_angle = np.empty(len(z))
+    for item in range(len(z)):
+        point1 = np.array([z[item], r[item]])
+        point2 = np.array([z[item - bounds], r[item - bounds]])
+        point3 = np.array([z[item - bounds * 2], r[item - bounds * 2]])
+        ### calculate pseudoangle without artan
+        a = point1 - point2
+        b = point1 - point3
+        product = np.dot(a, b)
+        magn_a = np.sqrt(a.dot(a))
+        magn_b = np.sqrt(b.dot(b))
+        pseudo_angle[item] = product / (magn_a * magn_b)
+    return pseudo_angle
+
+
+def plot_pseudoangle(r, z, bounds=10, ax=None):
+    pa = get_pseudoangle(r, z, bounds)
+    if ax is None:
+        ax = plt.gca()
+    sc = plt.scatter(r, z, pa)
+    plt.colorbar()
+    return sc
+
+
 def generate_points_tosmooth(bounds, outliers, length):
     ### for every position to be smoothed, get all points within a range surrouding that point
     if not outliers:
