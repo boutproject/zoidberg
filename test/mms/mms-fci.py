@@ -41,8 +41,6 @@ def fixup(fn):
 
     dzn = np.sqrt((diff(R, 2)) ** 2 + (diff(Z, 2)) ** 2)
     dzn /= np.mean(dzn) * R.shape[2] / 2 / np.pi
-    ny = R.shape[1]
-    dy = 2 * np.pi / 5 / ny
 
     g = np.empty((3, 3), dtype=object)
     for i in range(3):

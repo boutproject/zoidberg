@@ -695,20 +695,22 @@ def calc_force_part(useinner, inner, outer, RZi):
             inner if useinner else outer, RZi[oij], periodic=True
         )
 
-        dist1d = np.sum(dist**2)
-        assert False, "use sqrt!"
+        dist1d = np.sqrt(np.sum(dist**2))
         sign = -1 if inside else +1
-        # if not inside:
-        #    print(inside, sign, dist1d, np.exp(dist1d * sign / 100))
-        maxdist = 0.05
-        if dist1d > 1e-8 and dist1d < maxdist:
+        maxdist = 0.005
+        falloff = 5e2
+        if (
+            dist1d > 1e-8
+            and (dist1d < maxdist and inside)
+            or (not inside and dist1d < 0.05)
+        ):
             force = (
                 sign
                 * dist
                 / dist1d
-                * (np.exp(dist1d * sign / 100) - np.exp(-maxdist / 100))
+                * (np.exp(dist1d * sign * falloff) - np.exp(-maxdist * falloff))
             )
-            F[:, j] -= force / 10
+            F[:, j] -= force / 1e3
     return F
 
 
@@ -740,6 +742,32 @@ class BucketMesh:
         assert False
 
 
+class _allGood:
+    def __init__(self, R, Z):
+        self.outer = shapely.LinearRing(zip(R[0], Z[0]))
+        self.inner = shapely.LinearRing(zip(R[-1], Z[-1]))
+
+    def check(self, R, Z, onlyIO=False):
+        i = -1
+        last = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+        for i in range(R.shape[1]):
+            cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+            if cur.intersects(self.inner) or cur.intersects(self.outer):
+                return False
+            if onlyIO:
+                if cur.intersects(last):
+                    return False
+            last = cur
+        return True
+
+    def checkOuter(self, R, Z):
+        for i in range(R.shape[1]):
+            cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
+            if cur.intersects(self.outer):
+                return False
+        return True
+
+
 def _ensure_monotonic_force(R, Z):
     import eudist
     from tqdm.contrib import itertools
@@ -753,72 +781,74 @@ def _ensure_monotonic_force(R, Z):
     outer_eudist = np.ascontiguousarray(RZ[:, -1, :].T)
 
     # inner_buckets = BucketMesh(inner_eudist, 0.05)
-    mins = np.min(outer_eudist, axis=0) - 0.07
     if 0:
-        step = 0.01
-        force_field = ForceField(mins, np.max(outer_eudist, axis=0) + 0.07, step, 2)
-    else:
-        step = 0.001
-        force_field = ForceFieldPoor(mins, np.max(outer_eudist, axis=0) + 0.07, step, 2)
-    for ij in itertools.product(*[range(x) for x in force_field.field.shape[:2]]):
-        aij = np.array(ij) * step
-        pos = aij + mins
-        inside = contains(inner_eudist, outer_eudist, pos)
-        for poly in (inner_eudist, outer_eudist):
-            dist = -eudist.line_segments_dot_vec(poly, pos, periodic=True)
+        mins = np.min(outer_eudist, axis=0) - 0.07
+        if 0:
+            step = 0.01
+            force_field = ForceField(mins, np.max(outer_eudist, axis=0) + 0.07, step, 2)
+        else:
+            step = 0.001
+            force_field = ForceFieldPoor(
+                mins, np.max(outer_eudist, axis=0) + 0.07, step, 2
+            )
+        for ij in itertools.product(*[range(x) for x in force_field.field.shape[:2]]):
+            aij = np.array(ij) * step
+            pos = aij + mins
+            inside = contains(inner_eudist, outer_eudist, pos)
+            for poly in (inner_eudist, outer_eudist):
+                dist = -eudist.line_segments_dot_vec(poly, pos, periodic=True)
 
-            dist1d = np.sqrt(np.sum(dist**2))
-            sign = -1 if inside else +1
-            # if not inside:
-            #    print(inside, sign, dist1d, np.exp(dist1d * sign / 100))
-            maxdist = 0.005
-            if (
-                dist1d > 1e-8
-                and (dist1d < maxdist and inside)
-                or (not inside and dist1d < 0.05)
-            ):
-                force = (
-                    sign
-                    * dist
-                    / dist1d
-                    * (np.exp(dist1d * sign * 500) - np.exp(-maxdist * 500))
-                )
-                force_field.field[ij] -= force
-    if 0:
-        plt.figure()
-        Rf = np.arange(0, force_field.field.shape[0]) * step + mins[0]
-        Zf = np.arange(0, force_field.field.shape[1]) * step + mins[1]
-        plt.quiver(
-            Rf[:, None] + 0 * Zf[None, :],
-            0 * Rf[:, None] + Zf[None, :],
-            force_field.field[:, :, 0],
-            force_field.field[:, :, 1],
-        )
-        plt.plot(*RZ[:, 0], "r-")
-        plt.plot(*RZ[:, -1], "r-")
-        plt.gca().set_aspect(1)
-        plt.figure()
-        plt.pcolormesh(
-            Rf[:, None] + 0 * Zf[None, :],
-            0 * Rf[:, None] + Zf[None, :],
-            force_field.field[:, :, 0],
-        )
-        plt.colorbar()
-        plt.plot(*RZ[:, 0], "r-")
-        plt.plot(*RZ[:, -1], "r-")
-        plt.gca().set_aspect(1)
-        plt.figure()
-        plt.pcolormesh(
-            Rf[:, None] + 0 * Zf[None, :],
-            0 * Rf[:, None] + Zf[None, :],
-            force_field.field[:, :, 1],
-            vmax=10,
-        )
-        plt.colorbar()
-        plt.plot(*RZ[:, 0], "r-")
-        plt.plot(*RZ[:, -1], "r-")
-        plt.gca().set_aspect(1)
-        plt.show(block=True)
+                dist1d = np.sqrt(np.sum(dist**2))
+                sign = -1 if inside else +1
+                maxdist = 0.005
+                falloff = 5e3
+                if (
+                    dist1d > 1e-8
+                    and (dist1d < maxdist and inside)
+                    or (not inside and dist1d < 0.05)
+                ):
+                    force = (
+                        sign
+                        * dist
+                        / dist1d
+                        * (np.exp(dist1d * sign * falloff) - np.exp(-maxdist * falloff))
+                    )
+                    force_field.field[ij] -= force / 1e3
+        if 0:
+            plt.figure()
+            Rf = np.arange(0, force_field.field.shape[0]) * step + mins[0]
+            Zf = np.arange(0, force_field.field.shape[1]) * step + mins[1]
+            plt.quiver(
+                Rf[:, None] + 0 * Zf[None, :],
+                0 * Rf[:, None] + Zf[None, :],
+                force_field.field[:, :, 0],
+                force_field.field[:, :, 1],
+            )
+            plt.plot(*RZ[:, 0], "r-")
+            plt.plot(*RZ[:, -1], "r-")
+            plt.gca().set_aspect(1)
+            plt.figure()
+            plt.pcolormesh(
+                Rf[:, None] + 0 * Zf[None, :],
+                0 * Rf[:, None] + Zf[None, :],
+                force_field.field[:, :, 0],
+            )
+            plt.colorbar()
+            plt.plot(*RZ[:, 0], "r-")
+            plt.plot(*RZ[:, -1], "r-")
+            plt.gca().set_aspect(1)
+            plt.figure()
+            plt.pcolormesh(
+                Rf[:, None] + 0 * Zf[None, :],
+                0 * Rf[:, None] + Zf[None, :],
+                force_field.field[:, :, 1],
+                vmax=10,
+            )
+            plt.colorbar()
+            plt.plot(*RZ[:, 0], "r-")
+            plt.plot(*RZ[:, -1], "r-")
+            plt.gca().set_aspect(1)
+            plt.show(block=True)
 
     assert inner_eudist.flags["C_CONTIGUOUS"]
 
@@ -841,8 +871,6 @@ def _ensure_monotonic_force(R, Z):
 
     def contains_(pnt):
         tmp = contains_eudist(pnt)
-        # print("shapely", domain.contains(shapely.Point(pnt)))
-        # assert domain.contains(shapely.Point(pnt)) == tmp
         return tmp
 
     def force(RZ, scale=1):
@@ -856,7 +884,6 @@ def _ensure_monotonic_force(R, Z):
         Fx = RZ[:, 2:] - RZi
         Fx += RZ[:, :-2] - RZi
         F = Fz * Dz + Fx * Dx
-        # for i in [1, 2, nx - 3, nx - 2]:  # range(1, RZ.shape[1] - 1):
         # from concurrent.futures import InterpreterPoolExecutor as Executor
         # from concurrent.futures import ThreadPoolExecutor as Executor
         from concurrent.futures import ProcessPoolExecutor as Executor
@@ -875,7 +902,7 @@ def _ensure_monotonic_force(R, Z):
                 ]
                 for i, f in enumerate(futures):
                     F[:, i] += f.result()
-        elif 1:
+        elif 0:
             for i in range(1, RZ.shape[1] - 1):
                 Fi = calc_force_field(force_field, RZ[:, i])
                 F[:, i - 1] += Fi
@@ -883,42 +910,6 @@ def _ensure_monotonic_force(R, Z):
             for i in range(1, RZ.shape[1] - 1):
                 Fi = calc_force_part(i < nx // 2, inner_eudist, outer_eudist, RZ[:, i])
                 F[:, i - 1] += Fi
-            # for j in range(RZ.shape[2]):
-            #     oij = slice(None), i, j
-            #     #
-            #     # inside = domain.contains(point)
-            #     inside = contains(RZ[oij])
-            #     dist = -eudist.line_segments_dot_vec(
-            #         inner_eudist if i < nx // 2 else outer_eudist,
-            #         RZ[oij],
-            #         periodic=True,
-            #     )
-            #     if False:
-            #         point = shapely.Point(*RZ[oij])
-            #         try:
-            #             p1, p2 = shapely.ops.nearest_points(
-            #                 point, inner if i < nx // 2 else outer
-            #             )
-            #         except shapely.errors.GEOSException:
-            #             plt.plot(*RZ[oij], "go")
-            #             plt.plot(*RZ[:, 0 if i < nx // 2 else -1, :])
-            #             plt.show(block=True)
-            #             raise
-            #         dist_slow = np.array((p1.x - p2.x, p1.y - p2.y))
-            #         if not (np.mean((dist - dist_slow) ** 2) < 1e-8):
-            #             print(dist_slow, dist, dist - dist_slow)
-            #             plt.plot(*outer_eudist.T)
-            #             plt.plot(*inner_eudist.T)
-            #             plt.plot(*RZ[oij], "go")
-            #             plt.plot(*(RZ[oij] - dist), "ro")
-            #             plt.plot(*(RZ[oij] - dist_slow), "bo")
-            #             plt.show(block=True)
-
-            #     dist1d = np.sum(dist**2)
-            #     sign = -1 if inside else +1
-            #     if dist1d > 0:
-            #         force = sign * dist / dist1d * np.exp(dist1d * sign / 100)
-            #         F[:, i - 1, j] -= force / 1000
         return F, Fz * Dz, Fx * Dx
 
     def force_1d(t, y):
@@ -949,72 +940,86 @@ def _ensure_monotonic_force(R, Z):
                     ret[ij, ind(i + 1, j)] = True
 
     scale = 1
-    # import scipy
-
-    # ode = scipy.integrate.BDF(
-    #     force_1d, 0, RZ[:, 1:-1].ravel(), 1e-5, jac_sparsity=sparsity(nx - 2, nz)
-    # )
     todo = 1
     noPlot = 1000
-    while todo != 0:
-        # not allGood(*RZ):
-        if allGood(*RZ):
-            todo -= 1
-        else:
-            todo += 1
-        scale *= 0.998
-        try:
-            F, Fz, Fx = force(RZ, scale)
-        except:
-            plt.figure()
-            plt.quiver(*RZ[:, 1:-1], *F)
-            plt.plot(*RZ[:, 0], "r-")
-            plt.plot(*RZ[:, -1], "r-")
-            plt.figure()
-            plt.plot(*RZ)
-            plt.plot(*RZ.transpose(0, 2, 1))
-            plt.figure()
-            for ind in 0, 1, -2, -1:
-                plt.plot(*RZ[:, ind], label=ind)
-            plt.legend()
-            plt.show(block=True)
-            raise
+    import sys
+    import select
+    import tty
+    import termios
 
-        maxforce = np.max(np.sum(F**2, axis=0))
-        print(noPlot, todo, scale, maxforce, RZ.shape)
+    def isData():
+        return select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], [])
 
-        if noPlot == 0:
-            noPlot = 1000
-            RZm = RZ[:, 1:] + RZ[:, :-1]
-            RZm /= 2
-            # for f in F:
-            #     plt.figure()
-            #     #plt.pcolormesh(*RZ[:, 2:-1], f[1:])
-            #     plt.plot(f)
-            #     #plt.colorbar()
-            plt.figure()
-            plt.quiver(*RZ[:, 1:-1], *F, color="black")
-            plt.quiver(*RZ[:, 1:-1], *Fx, color="green")
-            plt.quiver(*RZ[:, 1:-1], *Fz, color="pink")
-            plt.quiver(*RZ[:, 1:-1], *(F - Fz - Fx), color="blue")
-            plt.plot(*RZ[:, 0], "r-")
-            plt.plot(*RZ[:, -1], "r-")
-            plt.gca().set_aspect(1)
-            # plt.figure()
-            # plt.plot(*RZ)
-            # plt.plot(*RZ.transpose(0, 2, 1))
-            # plt.figure()
-            # for ind in 0, 1, -2, -1:
-            #     plt.plot(*RZ[:, ind], label=ind)
-            # plt.legend()
-            plt.show(block=True)
+    def getData():
+        if isData():
+            return sys.stdin.read(1)
+        return None
 
-        RZ[:, 1:-1] += F / maxforce * 1e-3
-        print("Starting integration!")
-        # ret = ode.step()
-        # print(ret)
-        # print(dir(ret))
-        noPlot -= 1
+    stepsize = 1e-2
+    old_settings = termios.tcgetattr(sys.stdin)
+    try:
+        tty.setcbreak(sys.stdin.fileno())
+        while todo != 0:
+            # not allGood(*RZ):
+            if allGood(*RZ):
+                todo -= 1
+            else:
+                todo += 1
+            scale *= 0.998
+            try:
+                F, Fz, Fx = force(RZ, scale)
+            except:
+                plt.figure()
+                plt.quiver(*RZ[:, 1:-1], *F)
+                plt.plot(*RZ[:, 0], "r-")
+                plt.plot(*RZ[:, -1], "r-")
+                plt.figure()
+                plt.plot(*RZ)
+                plt.plot(*RZ.transpose(0, 2, 1))
+                plt.figure()
+                for ind in 0, 1, -2, -1:
+                    plt.plot(*RZ[:, ind], label=ind)
+                plt.legend()
+                plt.show(block=True)
+                raise
+
+            maxforce = np.max(np.sqrt(np.sum(F**2, axis=0)))
+            print(noPlot, todo, scale, maxforce, RZ.shape, stepsize)
+
+            d = getData()
+            if d:
+                if d == "p":
+                    print("Plotting forces!")
+                    noPlot = 1000
+                    RZm = RZ[:, 1:] + RZ[:, :-1]
+                    RZm /= 2
+                    plt.figure()
+                    plt.quiver(*RZ[:, 1:-1], *F, color="black")
+                    plt.quiver(*RZ[:, 1:-1], *Fx, color="green")
+                    plt.quiver(*RZ[:, 1:-1], *Fz, color="pink")
+                    plt.quiver(*RZ[:, 1:-1], *(F - Fz - Fx), color="blue")
+                    plt.plot(*RZ[:, 0], "r-")
+                    plt.plot(*RZ[:, -1], "r-")
+                    plt.gca().set_aspect(1)
+                    plt.show(block=True)
+                if d == "g":
+                    print("Plotting grid")
+                    plt.figure()
+                    plt.plot(*RZ.transpose(0, 2, 1))
+                    plt.plot(*RZ)
+                    plt.gca().set_aspect(1)
+                    plt.show(block=True)
+                if d == "e":
+                    todo = 0
+                if d == "r":
+                    stepsize /= 2
+                if d == "i":
+                    stepsize *= 2
+
+            RZ[:, 1:-1] += F / maxforce * stepsize
+            noPlot -= 1
+    finally:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
     return RZ
 
 
@@ -1196,15 +1201,24 @@ def _ensure_monotonic(R, Z, overshoot=1.05, do=None, args=[]):
         return R, Z
 
     def allGood():
+        def doplot():
+            plt.figure()
+            plt.plot(R, Z)
+            plt.plot(R.T, Z.T)
+            plt.show(block=True)
+            assert False
+
         i = -1
         last = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
         for i in range(R.shape[1]):
             cur = shapely.LineString(zip(R[1:-1, i], Z[1:-1, i]))
             if cur.intersects(inner) or cur.intersects(outer):
                 print("leave domain", i)
+                doplot()
                 return False
             if cur.intersects(last):
                 print("overlap last", i)
+                doplot()
                 return False
             last = cur
         return True
@@ -1245,6 +1259,7 @@ def _ensure_monotonic(R, Z, overshoot=1.05, do=None, args=[]):
             return R, Z
         R, Z = push_in(R, Z, overshoot, 1.5, restore=0.3)
     p.add(R, Z, "in1")
+    return R, Z
     if allGood():
         return R, Z
     R, Z = push_poloidally(R, Z, overshoot)
@@ -1271,7 +1286,7 @@ def _ensure_monotonic(R, Z, overshoot=1.05, do=None, args=[]):
         return R, Z
     p.plot(block=False)
     plotBad(R, Z)
-    raise RuntimeError("Failed to make it monotonic")
+    # raise RuntimeError("Failed to make it monotonic")
     # for i in range( R.shape[0] -2, 0, -1):
     #     outer = shapely.LineString(zip(R[i+1, :], Z[i+1, :]))
     #  #    poly = shapely.Polygon(outer)
@@ -1368,6 +1383,146 @@ def _ensure_monotonic(R, Z, overshoot=1.05, do=None, args=[]):
     return R, Z
 
 
+def _find_inner(outer, inner):
+    rz = rzline.RZline(*inner.T)
+    thetavals_inner = [rz.closestPoint(*x) for x in outer.T]
+    thetavals_inner = _laplace(thetavals_inner, 50, minsteps=0)
+    return np.array((rz.Rvalue(thetavals_inner), rz.Zvalue(thetavals_inner)))
+
+
+def _get_guess(target_outer, target_inner, nx, nz):
+    import shapely.geometry as sg
+
+    outer_ring = sg.LinearRing(target_outer.T)
+    inner_ring = sg.LinearRing(target_inner.T)
+    inter = _get_intermediate_contours(inner_ring, outer_ring, nx)
+    grid_guess = np.empty((2, nx, nz))
+    last = target_outer
+    grid_guess[:, 0, :] = last
+
+    for k, i in enumerate(inter):
+        grid_guess[:, k + 1, :] = _find_inner(last, i)
+    grid_guess[:, -1, :] = target_inner  # _find_inner(target_outer.T, target_inner)
+    return grid_guess
+
+
+def _get_intermediate_contours(inner_poly, outer_poly, n_levels):
+    max_buffer = inner_poly.hausdorff_distance(outer_poly)
+
+    def buffered_inner(d):
+        return inner_poly.buffer(d, join_style="round", cap_style="round")
+
+    # Find max buffer distance where buffered inner fits inside outer
+    lo, hi = 0.0, max_buffer * 2
+    for _ in range(10):
+        mid = (lo + hi) / 2
+        buffered = buffered_inner(mid)
+        if outer_poly.distance(buffered):
+            lo = mid
+        else:
+            hi = mid
+    max_valid_buffer = lo
+    print(
+        f"Max valid buffer distance: {max_valid_buffer:.10f}; started with {max_buffer:.10f}"
+    )
+    out = []
+    for x in np.linspace(0, max_valid_buffer, n_levels)[1:-1]:
+        buf = outer_poly.buffer(x)
+        assert len(buf.interiors) == 1, len(buf.interiors)
+        out.append(np.array(buf.interiors[0].coords))
+    return out
+
+
+def _laplace(x, maxfac_inner, minsteps=100):
+
+    def dx(x, sign):
+        dxv = np.roll(x, sign) - x
+        dxv = np.remainder(dxv + np.pi, 2 * np.pi) - np.pi
+        return dxv
+
+    nz = len(x)
+
+    fac = 0.01 * nz / 192
+    steps = minsteps
+    if fac > 0.01:
+        steps = int(steps * fac / 0.1)
+        fac = 0.01
+    x0 = x.copy()
+    for i in range(steps):
+        x += fac * (dx(x, 1) + dx(x, -1))
+
+    extra = 0
+    if maxfac_inner:
+        assert maxfac_inner >= 1, "maxfac_inner needs to be at least 1"
+
+        def getfac(x):
+            d = dx(x, -1)
+            return np.max(d) / np.min(d)
+
+        while not np.all(dx(x, -1) > 0):
+            x += fac * (dx(x, 1) + dx(x, -1))
+            extra += 1
+
+        if maxfac_inner == 1:
+            x1 = x.copy()
+            for i in range(1, len(x0)):
+                if x1[i - 1] > x1[i]:
+                    x1[i] += 2 * np.pi
+            x2 = (
+                np.mean(x1)
+                + np.linspace(-np.pi, np.pi, len(x0), endpoint=False)
+                + np.pi / len(x0)
+            )
+            gf = getfac(x0)
+            ratio = (maxfac_inner - 1) / (gf - 1)
+            x = x2 * (1 - ratio) + np.array(x1) * (ratio)
+            x %= 2 * np.pi
+        else:
+            while getfac(x) > maxfac_inner:
+                extra += 1
+                x += fac * (dx(x, 1) + dx(x, -1))
+    else:
+        while not np.all(dx(x, -1) > 0):
+            x += fac * (dx(x, 1) + dx(x, -1))
+            extra += 1
+        if extra:
+            print(f"Required {extra} extra steps in smoothing!")
+
+    if not np.all(dx(x, -1) > 0):
+        plt.plot(x, label="result")
+        plt.plot(x0, label="init")
+        plt.plot(dx(x0, -1))
+        plt.plot(dx(x, -1))
+        plt.legend()
+        plt.title("Not monotonic!")
+        plt.show()
+        assert False
+    return x
+
+
+def _densify(eq2, exp, plot=False):
+    from . import smooth as zs
+
+    pa = 1 - zs.get_pseudoangle(eq2.R, eq2.Z)
+    density = np.exp((0.02 + pa) * exp)
+    density /= np.sum(density) / len(density)
+    densint = np.cumsum(density)
+    densint = np.append(densint, np.sum(density))
+    points = []
+    for i in range(len(densint)):
+        while densint[i] > len(points):
+            points.append((len(points) - densint[i]) / density[i] + i + 1)
+    # assert len(points) == len(density), (len(points), len(density))
+    if len(points) == len(density) + 1:
+        points = points[:-1]
+    assert len(points) == len(density), (
+        f"Expected length to be conserved, but found {len(points)} instead of {len(density)}"
+    )
+    theta = np.array(points)
+    theta *= np.pi * 2 / len(density)
+    return theta
+
+
 def grid_elliptic(
     inner,
     outer,
@@ -1387,6 +1542,7 @@ def grid_elliptic(
     maxfac_inner=None,
     dz_relax=None,
     guess=None,
+    densify_outer=None,
 ):
     """Create a structured grid between inner and outer boundaries using
      elliptic method
@@ -1479,7 +1635,8 @@ def grid_elliptic(
     # which should now be equally spaced
     # in distance along inner and outer boundaries
     thetavals = linspace(0, 2 * pi, nz, endpoint=False)
-
+    if densify_outer:
+        thetavals = _densify(outer.equallySpaced(n=nz), densify_outer)
     # Radial coordinate
     xvals = linspace(0, 1, nx, endpoint=True)
     # xvals[-1] = 1
@@ -1521,72 +1678,356 @@ def grid_elliptic(
             outer = shorter
             inner = longer
 
-    def laplace(x):
-        def dx(x, sign):
-            dxv = np.roll(x, sign) - x
-            dxv = np.remainder(dxv + np.pi, 2 * np.pi) - np.pi
-            return dxv
+    def compute_metrics(x, y):
+        """
+        Compute metric coefficients for the elliptic grid equations.
+        Uses central differences in interior, one-sided at boundaries.
+        """
+        ni, nj = x.shape
 
-        fac = 0.1 * nz / 192
-        steps = 10
-        if fac > 0.1:
-            steps = int(steps * fac / 0.1)
-            fac = 0.1
-        x0 = x.copy()
-        for i in range(steps):
-            x += fac * (dx(x, 1) + dx(x, -1))
+        x_xi = np.zeros_like(x)
+        x_eta = np.zeros_like(x)
+        y_xi = np.zeros_like(y)
+        y_eta = np.zeros_like(y)
 
-        extra = 0
-        if maxfac_inner:
-            assert maxfac_inner >= 1, "maxfac_inner needs to be at least 1"
+        # Central differences interior
+        x_xi[1:-1, :] = (x[2:, :] - x[:-2, :]) / 2
+        x_eta[:, 1:-1] = (x[:, 2:] - x[:, :-2]) / 2
+        y_xi[1:-1, :] = (y[2:, :] - y[:-2, :]) / 2
+        y_eta[:, 1:-1] = (y[:, 2:] - y[:, :-2]) / 2
 
-            def getfac(x):
-                d = dx(x, -1)
-                return np.max(d) / np.min(d)
+        # One-sided at boundaries
+        x_xi[0, :] = x[1, :] - x[0, :]
+        x_xi[-1, :] = x[-1, :] - x[-2, :]
+        x_eta[:, 0] = x[:, 1] - x[:, 0]
+        x_eta[:, -1] = x[:, -1] - x[:, -2]
+        y_xi[0, :] = y[1, :] - y[0, :]
+        y_xi[-1, :] = y[-1, :] - y[-2, :]
+        y_eta[:, 0] = y[:, 1] - y[:, 0]
+        y_eta[:, -1] = y[:, -1] - y[:, -2]
 
-            while not np.all(dx(x, -1) > 0):
-                x += fac * (dx(x, 1) + dx(x, -1))
-                extra += 1
+        alpha = x_eta**2 + y_eta**2
+        beta = x_xi * x_eta + y_xi * y_eta
+        gamma = x_xi**2 + y_xi**2
+        J = x_xi * y_eta - x_eta * y_xi
 
-            if maxfac_inner == 1:
-                x1 = x.copy()
-                for i in range(1, len(x0)):
-                    if x1[i - 1] > x1[i]:
-                        x1[i] += 2 * np.pi
-                x2 = (
-                    np.mean(x1)
-                    + np.linspace(-np.pi, np.pi, len(x0), endpoint=False)
-                    + np.pi / len(x0)
+        return x_xi, x_eta, y_xi, y_eta, alpha, beta, gamma, J
+
+    def compute_control_functions_thomas_middlecoff(x, y):
+        """
+        Thomas-Middlecoff control functions.
+        Computed from boundary conditions to attract grid lines to boundaries.
+
+        P controls clustering in xi direction (along radial lines)
+        Q controls clustering in eta direction (along boundary lines)
+        """
+        ni, nj = x.shape
+        x_xi, x_eta, y_xi, y_eta, alpha, beta, gamma, J = compute_metrics(x, y)
+
+        # Second derivatives at boundaries
+        x_xixi = np.zeros_like(x)
+        y_xixi = np.zeros_like(y)
+        x_etaeta = np.zeros_like(x)
+        y_etaeta = np.zeros_like(y)
+
+        x_xixi[1:-1, :] = x[2:, :] - 2 * x[1:-1, :] + x[:-2, :]
+        y_xixi[1:-1, :] = y[2:, :] - 2 * y[1:-1, :] + y[:-2, :]
+        x_etaeta[:, 1:-1] = x[:, 2:] - 2 * x[:, 1:-1] + x[:, :-2]
+        y_etaeta[:, 1:-1] = y[:, 2:] - 2 * y[:, 1:-1] + y[:, :-2]
+
+        # Compute P at eta boundaries (j=0 inner, j=-1 outer)
+        # P = -(x_xixi * x_xi + y_xixi * y_xi) / (x_xi**2 + y_xi**2)
+        denom = x_xi**2 + y_xi**2
+        denom = np.where(np.abs(denom) < 1e-14, 1e-14, denom)
+
+        P_boundary = -(x_xixi * x_xi + y_xixi * y_xi) / denom
+
+        # Compute Q at xi boundaries (i=0, i=-1)
+        denom2 = x_eta**2 + y_eta**2
+        denom2 = np.where(np.abs(denom2) < 1e-14, 1e-14, denom2)
+
+        Q_boundary = -(x_etaeta * x_eta + y_etaeta * y_eta) / denom2
+
+        # Interpolate P and Q across the domain
+        # Linear decay from boundaries into interior
+        P = np.zeros((ni, nj))
+        Q = np.zeros((ni, nj))
+
+        # P: interpolate from inner (j=0) to outer (j=-1) boundary
+        for j in range(nj - 1, 0, -1):
+            t = j / (nj - 1)
+            P[:, j] = (1 - t) * P_boundary[:, 0] + t * P_boundary[:, -1]
+
+        # Q: interpolate from i=0 to i=-1 boundary
+        for i in range(ni):
+            t = i / (ni - 1)
+            Q[i, :] = (1 - t) * Q_boundary[0, :] + t * Q_boundary[-1, :]
+
+        return P, Q
+
+    def compute_control_functions_steger_sorenson(x, y):
+        """
+        Steger-Sorenson orthogonality control functions.
+
+        At eta boundaries (j=0 inner, j=-1 outer):
+          - Orthogonality condition: beta = 0
+          - P is chosen to enforce x_xi . x_eta = 0 at boundary
+          - This means grid lines leave the boundary orthogonally
+
+        At xi boundaries (i=0, i=-1):
+          - Q is chosen similarly
+
+        In the interior: P and Q are interpolated from boundaries
+        with exponential decay so the orthogonality influence is
+        strongest at boundaries and decays inward.
+        """
+        ni, nj = x.shape
+
+        x_xi, x_eta, y_xi, y_eta, alpha, beta, gamma, J = compute_metrics(x, y)
+
+        # ── Second derivatives ────────────────────────────────────────
+        x_xixi = np.zeros_like(x)
+        y_xixi = np.zeros_like(y)
+        x_etaeta = np.zeros_like(x)
+        y_etaeta = np.zeros_like(y)
+
+        x_xixi[1:-1, :] = x[2:, :] - 2 * x[1:-1, :] + x[:-2, :]
+        y_xixi[1:-1, :] = y[2:, :] - 2 * y[1:-1, :] + y[:-2, :]
+        x_etaeta[:, 1:-1] = x[:, 2:] - 2 * x[:, 1:-1] + x[:, :-2]
+        y_etaeta[:, 1:-1] = y[:, 2:] - 2 * y[:, 1:-1] + y[:, :-2]
+
+        # Boundaries for second derivatives (one-sided)
+        x_xixi[0, :] = x[2, :] - 2 * x[1, :] + x[0, :]
+        x_xixi[-1, :] = x[-1, :] - 2 * x[-2, :] + x[-3, :]
+        y_xixi[0, :] = y[2, :] - 2 * y[1, :] + y[0, :]
+        y_xixi[-1, :] = y[-1, :] - 2 * y[-2, :] + y[-3, :]
+        x_etaeta[:, 0] = x[:, 2] - 2 * x[:, 1] + x[:, 0]
+        x_etaeta[:, -1] = x[:, -1] - 2 * x[:, -2] + x[:, -3]
+        y_etaeta[:, 0] = y[:, 2] - 2 * y[:, 1] + y[:, 0]
+        y_etaeta[:, -1] = y[:, -1] - 2 * y[:, -2] + y[:, -3]
+
+        # ── Thomas-Middlecoff attraction terms ────────────────────────
+        # These attract grid lines to boundaries
+        denom_xi = np.where(np.abs(gamma) < 1e-14, 1e-14, gamma)
+        denom_eta = np.where(np.abs(alpha) < 1e-14, 1e-14, alpha)
+
+        P_TM = -(x_xixi * x_xi + y_xixi * y_xi) / denom_xi
+        Q_TM = -(x_etaeta * x_eta + y_etaeta * y_eta) / denom_eta
+
+        # ── Steger-Sorenson orthogonality terms ───────────────────────
+        # Orthogonality condition at eta=const boundaries (inner/outer):
+        #   x_xi . x_eta + y_xi . y_eta = 0  (beta = 0)
+        #
+        # This gives:
+        #   P = -(alpha * x_xixi + ... ) / (J^2 * gamma / alpha)
+        #   at the boundary
+        #
+        # More precisely, at j=0 and j=-1:
+        #   P_orth = -beta / gamma * (some geometric factor)
+
+        J_safe = np.where(np.abs(J) < 1e-14, 1e-14, J)
+
+        # Orthogonality correction:
+        # Force beta=0 at boundaries by computing the P,Q needed
+        # P_orth forces x_eta to be perpendicular to x_xi at eta boundaries
+        P_orth = np.zeros_like(x)
+        Q_orth = np.zeros_like(x)
+
+        # At j=0 (inner boundary): enforce orthogonality
+        # P = -1/gamma * (x_xi*x_xieta + y_xi*y_xieta) at j=0
+        # Approximate x_xieta at j=0 using one-sided difference
+        x_xieta_j0 = (
+            (x[1:, 1] - x[:-1, 1])  # xi-deriv at j=1
+            - (x[1:, 0] - x[:-1, 0])
+        )  # xi-deriv at j=0
+        y_xieta_j0 = (y[1:, 1] - y[:-1, 1]) - (y[1:, 0] - y[:-1, 0])
+
+        # Pad to full size (periodic)
+        x_xieta_j0 = np.concatenate([x_xieta_j0, [x_xieta_j0[0]]])
+        y_xieta_j0 = np.concatenate([y_xieta_j0, [y_xieta_j0[0]]])
+
+        P_orth[:, 0] = (
+            -(x_xi[:, 0] * x_xieta_j0 + y_xi[:, 0] * y_xieta_j0) / denom_xi[:, 0]
+        )
+
+        # At j=-1 (outer boundary): enforce orthogonality
+        x_xieta_jN = (x[1:, -1] - x[:-1, -1]) - (x[1:, -2] - x[:-1, -2])
+        y_xieta_jN = (y[1:, -1] - y[:-1, -1]) - (y[1:, -2] - y[:-1, -2])
+
+        x_xieta_jN = np.concatenate([x_xieta_jN, [x_xieta_jN[0]]])
+        y_xieta_jN = np.concatenate([y_xieta_jN, [y_xieta_jN[0]]])
+
+        P_orth[:, -1] = (
+            -(x_xi[:, -1] * x_xieta_jN + y_xi[:, -1] * y_xieta_jN) / denom_xi[:, -1]
+        )
+
+        # ── Combine TM attraction + SS orthogonality ──────────────────
+        # At boundaries: use full orthogonality correction
+        # In interior: interpolate with exponential decay from boundaries
+        P_bound = np.zeros_like(x)
+        Q_bound = np.zeros_like(x)
+
+        # Blend TM and SS at boundaries
+        # alpha_blend=1: pure orthogonality, 0: pure TM attraction
+        alpha_blend = 0.7  # tunable: higher = more orthogonal
+
+        P_bound[:, 0] = alpha_blend * P_orth[:, 0] + (1 - alpha_blend) * P_TM[:, 0]
+        P_bound[:, -1] = alpha_blend * P_orth[:, -1] + (1 - alpha_blend) * P_TM[:, -1]
+
+        Q_bound[0, :] = Q_TM[0, :]
+        Q_bound[-1, :] = Q_TM[-1, :]
+
+        # ── Interpolate P and Q into interior ─────────────────────────
+        # Exponential decay from boundaries so orthogonality is enforced
+        # strongly at boundary and smoothly relaxes inward
+        P = np.zeros((ni, nj))
+        Q = np.zeros((ni, nj))
+
+        # Decay length scale (tune this: smaller = faster decay inward)
+        decay = 3.0
+
+        eta = np.linspace(0, 1, nj)
+
+        # Exponential weights from each boundary
+        w_inner = np.exp(-decay * eta)  # strong at j=0
+        w_outer = np.exp(-decay * (1 - eta))  # strong at j=-1
+
+        # Normalize so weights sum to 1 where both are significant
+        w_sum = w_inner + w_outer
+        w_sum = np.where(w_sum < 1e-14, 1e-14, w_sum)
+
+        for i in range(ni):
+            P[i, :] = (w_inner * P_bound[i, 0] + w_outer * P_bound[i, -1]) / w_sum
+
+        xi = np.linspace(0, 1, ni)
+        w_left = np.exp(-decay * xi)
+        w_right = np.exp(-decay * (1 - xi))
+        w_sum2 = w_left + w_right
+        w_sum2 = np.where(w_sum2 < 1e-14, 1e-14, w_sum2)
+
+        for j in range(nj):
+            Q[:, j] = (w_left * Q_bound[0, j] + w_right * Q_bound[-1, j]) / w_sum2
+
+        return P, Q
+
+    def solve_elliptic_grid_TTM(
+        x_init,
+        y_init,
+        n_iter=500,
+        omega=1.5,
+        recompute_control_every=50,
+        orthogonality=True,
+    ):
+        """
+        Solve elliptic grid generation equations with
+        Steger-Sorenson orthogonality + Thomas-Middlecoff attraction.
+
+        Grid layout:
+          xi  (i) : along boundary (0..ni-1), PERIODIC
+          eta (j) : radial direction (0=inner, nj-1=outer), FIXED
+        """
+        x = x_init.copy()
+        y = y_init.copy()
+        ni, nj = x.shape
+
+        print(f"Grid size: {ni} x {nj}")
+        print(f"Orthogonality correction: {orthogonality}")
+
+        for iteration in range(n_iter):
+            if iteration % recompute_control_every == 0:
+                if orthogonality:
+                    P, Q = compute_control_functions_steger_sorenson(x, y)
+                else:
+                    P, Q = compute_control_functions_thomas_middlecoff(x, y)
+
+            x_old = x.copy()
+            y_old = y.copy()
+
+            for j in range(1, nj - 1):
+                for i in range(ni):
+                    im = (i - 1) % ni
+                    ip = (i + 1) % ni
+
+                    x_xi = (x[ip, j] - x[im, j]) / 2
+                    x_eta = (x[i, j + 1] - x[i, j - 1]) / 2
+                    y_xi = (y[ip, j] - y[im, j]) / 2
+                    y_eta = (y[i, j + 1] - y[i, j - 1]) / 2
+
+                    alpha = x_eta**2 + y_eta**2
+                    beta = x_xi * x_eta + y_xi * y_eta
+                    gamma = x_xi**2 + y_xi**2
+                    J = x_xi * y_eta - x_eta * y_xi
+
+                    x_xieta = (
+                        x[ip, j + 1] - x[im, j + 1] - x[ip, j - 1] + x[im, j - 1]
+                    ) / 4
+                    y_xieta = (
+                        y[ip, j + 1] - y[im, j + 1] - y[ip, j - 1] + y[im, j - 1]
+                    ) / 4
+
+                    rhs_x = 2 * beta * x_xieta - J**2 * (
+                        P[i, j] * x_xi + Q[i, j] * x_eta
+                    )
+                    rhs_y = 2 * beta * y_xieta - J**2 * (
+                        P[i, j] * y_xi + Q[i, j] * y_eta
+                    )
+
+                    denom = 2 * (alpha + gamma)
+                    if abs(denom) < 1e-14:
+                        continue
+
+                    x_new = (
+                        alpha * (x[im, j] + x[ip, j])
+                        + gamma * (x[i, j - 1] + x[i, j + 1])
+                        + rhs_x
+                    ) / denom
+                    y_new = (
+                        alpha * (y[im, j] + y[ip, j])
+                        + gamma * (y[i, j - 1] + y[i, j + 1])
+                        + rhs_y
+                    ) / denom
+
+                    x[i, j] = omega * x_new + (1 - omega) * x_old[i, j]
+                    y[i, j] = omega * y_new + (1 - omega) * y_old[i, j]
+
+            dx = np.max(np.abs(x - x_old))
+            dy = np.max(np.abs(y - y_old))
+            residual = max(dx, dy)
+
+            if iteration % 50 == 0:
+                _, _, _, _, _, _, _, J_field = compute_metrics(x, y)
+                min_J = np.min(J_field[1:-1, 1:-1])
+                print(
+                    f"  iter {iteration:4d}: residual={residual:.2e}, "
+                    f"min(J)={min_J:.6f}"
                 )
-                gf = getfac(x0)
-                ratio = (maxfac_inner - 1) / (gf - 1)
-                x = x2 * (1 - ratio) + np.array(x1) * (ratio)
-                x %= 2 * np.pi
-            else:
-                while getfac(x) > maxfac_inner:
-                    extra += 1
-                    x += fac * (dx(x, 1) + dx(x, -1))
-        else:
-            while not np.all(dx(x, -1) > 0):
-                x += fac * (dx(x, 1) + dx(x, -1))
-                extra += 1
-            if extra:
-                print(f"Required {extra} extra steps in smoothing!")
+                if min_J < 0:
+                    print("  WARNING: negative Jacobian - mesh folding!")
 
-        if not np.all(dx(x, -1) > 0):
-            plt.plot(x, label="result")
-            plt.plot(x0, label="init")
-            plt.plot(dx(x0, -1))
-            plt.plot(dx(x, -1))
-            plt.legend()
-            plt.title("Not monotonic!")
-            plt.show()
-            assert False
-        return x
+            if residual < 1e-10:
+                print(f"Converged at iteration {iteration}")
+                break
+
+        return x, y
+
+    def solve_equation_new(R, Z, dz_relax, dx, dz, plotonfailure=True):
+        x_smooth, y_smooth = solve_elliptic_grid_TTM(
+            R.T,
+            Z.T,
+            n_iter=200,
+            omega=1.5,
+            recompute_control_every=50,
+            orthogonality=False,  # ← enables Steger-Sorenson
+        )
+        plt.plot(x_smooth, y_smooth)
+        plt.plot(x_smooth.T, y_smooth.T)
+        plt.show(block=True)
+        return x_smooth.T, y_smooth.T
 
     # Start solver loop
     def solve_equation(R, Z, dz_relax, dx, dz, plotonfailure=True):
-        maxit = max(max(R.shape) * 10, 300)
+        allgood = _allGood(R, Z)
+        maxit = max(max(R.shape) * 10, 300) * 10
         for _ in range(maxit):
             # Calculate coefficients, which exclude boundary points
             # Note that the domain is periodic in y so roll arrays
@@ -1647,12 +2088,49 @@ def grid_elliptic(
                 + c_dz2 * (Z_zm + Z_zp)
             ) * inv_diag
             maxchange_sq = np.amax((R - Rold) ** 2 + (Z - Zold) ** 2)
-            R, Z = _ensure_monotonic(R, Z, overshoot=1.2)
+            if False:  # and not allgood.checkOuter(R, Z):
+                if not allgood.checkOuter(Rold, Zold):
+                    plt.figure()
+                    plt.plot(Rold, Zold)
+                    plt.plot(Rold.T, Zold.T)
+                    plt.title("old")
+                    plt.gca().set_aspect(1)
+                    plt.show(block=True)
+                    assert False
+
+                lo = 0
+                hi = 1
+                for _ in range(10):
+                    mid = (lo + hi) / 2
+                    maybeR = R * mid + Rold * (1 - mid)
+                    maybeZ = Z * mid + Zold * (1 - mid)
+                    if allgood.checkOuter(maybeR, maybeZ):
+                        lo = mid
+                    else:
+                        hi = mid
+                mid = lo
+                mid /= 2
+                if mid < 0.001:
+                    for Ri, Zi, lbl in ((Rold, Zold, "old"), (R, Z, "proposed")):
+                        plt.figure()
+                        plt.plot(Ri, Zi)
+                        plt.plot(Ri.T, Zi.T)
+                        plt.title(lbl)
+                        plt.gca().set_aspect(1)
+                    plt.show(block=True)
+                R = R * mid + Rold * (1 - mid)
+                Z = Z * mid + Zold * (1 - mid)
+                print(f"Only stepping {mid:.6f}")
+
+            # R, Z = _ensure_monotonic(R, Z, overshoot=1.1)
 
             if maxchange_sq < tol:
                 return R, Z
 
         else:
+            print(
+                f"Failed to converge - grid shape {R.shape}: Error was {maxchange_sq} > {tol} ; {maxit} iterations"
+            )
             if plotonfailure:
                 print("Convergence failure, trying to plot ...")
                 if plotting_available:
@@ -1752,7 +2230,7 @@ def grid_elliptic(
 
         if inner_ort:
             thetavals_inner = [inner.closestPoint(*x) for x in zip(R[-1], Z[-1])]
-            thetavals_inner = laplace(thetavals_inner)
+            thetavals_inner = _laplace(thetavals_inner, maxfac_inner)
             if inner_maxmode:
                 thetavals_inner = fft_smooth(thetavals_inner, inner_maxmode)
         else:
@@ -1760,18 +2238,22 @@ def grid_elliptic(
 
         R[0, :] = inner.Rvalue(thetavals_inner)
         Z[0, :] = inner.Zvalue(thetavals_inner)
-        R, Z = _ensure_monotonic(R, Z, overshoot=1.1)
+        # R, Z = _ensure_monotonic(R, Z, overshoot=1.1)
 
     elif guess is not None:
         R, Z = guess
     else:
         # Interpolate coordinates of inner and outer boundary
+        from . import smooth
+
+        pa = smooth.get_pseudoangle(outer.Rvalue(thetavals), outer.Zvalue(thetavals), 3)
+
         Router = outer.Rvalue(thetavals)
         Zouter = outer.Zvalue(thetavals)
 
         if inner_ort:
             thetavals_inner = [inner.closestPoint(*x) for x in zip(Router, Zouter)]
-            thetavals_inner = laplace(thetavals_inner)
+            thetavals_inner = _laplace(thetavals_inner, maxfac_inner)
             if inner_maxmode:
                 thetavals_inner = fft_smooth(thetavals_inner, inner_maxmode)
         else:
@@ -1779,95 +2261,101 @@ def grid_elliptic(
 
         Rinner = inner.Rvalue(thetavals_inner)
         Zinner = inner.Zvalue(thetavals_inner)
+        R, Z = _get_guess(
+            np.array((Router, Zouter)), np.array((Rinner, Zinner)), nx, nz
+        )
 
-        # Interpolate in x between inner and outer
-        # to get starting guess for a grid
-        # R = xvals[:, None] * Router[None, :] + (1 - xvals[:, None]) * Rinner[None, :]
-        # Z = xvals[:, None] * Zouter[None, :] + (1 - xvals[:, None]) * Zinner[None, :]
-        def interpolate(xvals, inner, outer, fft=True, smoothfac=1):
+        # # Interpolate in x between inner and outer
+        # # to get starting guess for a grid
+        # # R = xvals[:, None] * Router[None, :] + (1 - xvals[:, None]) * Rinner[None, :]
+        # # Z = xvals[:, None] * Zouter[None, :] + (1 - xvals[:, None]) * Zinner[None, :]
+        # def interpolate(xvals, inner, outer, fft=True, smoothfac=1):
 
-            if not fft:
+        #     if not fft:
 
-                def smooth(values, smoothfac):
-                    fac = np.fft.fft(values)
-                    n = len(values)
-                    nh = n // 2
-                    nq = 5
-                    fac[nq:nh] *= smoothfac
-                    fac[nh + 1 : -nq] *= smoothfac
-                    return np.real(np.fft.ifft(fac))
+        #         def smooth(values, smoothfac):
+        #             fac = np.fft.fft(values)
+        #             n = len(values)
+        #             nh = n // 2
+        #             nq = 5
+        #             fac[nq:nh] *= smoothfac
+        #             fac[nh + 1 : -nq] *= smoothfac
+        #             return np.real(np.fft.ifft(fac))
 
-                Ro = smooth(outer, smoothfac)
-                Ri = smooth(inner, smoothfac)
-                print(xvals, Ro.mean(), Ri.mean(), outer.mean(), inner.mean())
-                return xvals[:, None] * Ro[None, :] + (1 - xvals[:, None]) * Ri[None, :]
-            inf = np.fft.fft(inner)
-            outf = np.fft.fft(outer)
-            n = len(inner)
-            nh = n // 2
-            nq = 5
-            inf[nq:nh] *= smoothfac
-            inf[nh + 1 : -nq] *= smoothfac
-            outf[nq:nh] *= smoothfac
-            outf[nh + 1 : -nq] *= smoothfac
+        #         Ro = smooth(outer, smoothfac)
+        #         Ri = smooth(inner, smoothfac)
+        #         print(xvals, Ro.mean(), Ri.mean(), outer.mean(), inner.mean())
+        #         return xvals[:, None] * Ro[None, :] + (1 - xvals[:, None]) * Ri[None, :]
+        #     inf = np.fft.fft(inner)
+        #     outf = np.fft.fft(outer)
+        #     n = len(inner)
+        #     nh = n // 2
+        #     nq = 5
+        #     inf[nq:nh] *= smoothfac
+        #     inf[nh + 1 : -nq] *= smoothfac
+        #     outf[nq:nh] *= smoothfac
+        #     outf[nh + 1 : -nq] *= smoothfac
 
-            f = xvals[:, None] * outf[None, :] + (1 - xvals[:, None]) * inf[None, :]
-            plt.figure()
-            plt.plot(inf, label="inf")
-            plt.plot(outf, label="outf")
-            plt.plot(inf, label="inf")
-            plt.plot(outf, label="outf")
-            # plt.plot(f, label=f)
-            plt.show(block=True)
-            return np.real(np.fft.ifft(f))
+        #     f = xvals[:, None] * outf[None, :] + (1 - xvals[:, None]) * inf[None, :]
+        #     plt.figure()
+        #     plt.plot(inf, label="inf")
+        #     plt.plot(outf, label="outf")
+        #     plt.plot(inf, label="inf")
+        #     plt.plot(outf, label="outf")
+        #     # plt.plot(f, label=f)
+        #     plt.show(block=True)
+        #     return np.real(np.fft.ifft(f))
 
-        xvals = linspace(0, 1, nx, endpoint=True)
-        xvals[-1] = 1
-        usefft = False
-        sf = 1
-        working = 0
-        reset = 0.9
-        lastgood = None
-        while True:
-            print(sf)
-            R = interpolate(xvals, Rinner, Router, usefft, sf)
-            Z = interpolate(xvals, Zinner, Zouter, usefft, sf)
-            if lastgood is not None:
-                R[1:-1] = lastgood[0][1:-1]
-                Z[1:-1] = lastgood[1][1:-1]
-                assert False
-            R, Z = _ensure_monotonic_force(R, Z)
-            plt.figure()
-            plt.plot(R, Z)
-            plt.plot(R.T, Z.T)
-            plt.show(block=True)
-            try:
-                R, Z = _ensure_monotonic(R, Z)
-                R, Z = solve_equation(
-                    R,
-                    Z,
-                    dz_relax,
-                    xvals[1] - xvals[0],
-                    thetavals[1] - thetavals[0],
-                    True,
-                )
-            except RuntimeError:
-                # raise
-                failed = sf
-                sf = (sf + working) / 2
-            else:
-                if sf == 1:
-                    break
-                working_ = sf
-                sf = sf * 2 - working
-                working = working_
-                lastgood = R, Z
-                if sf > reset:
-                    sf = 1
-                    reset = (reset + 1) / 2
-            print(sf, failed, working, reset)
+        # xvals = linspace(0, 1, nx, endpoint=True)
+        # xvals[-1] = 1
+        # usefft = False
+        # sf = 1
+        # working = 0
+        # reset = 0.9
+        # lastgood = None
+        # while True:
+        #     print(sf)
+        #     R, Z = _get_guess(
+        #         def _get_guess(target_outer, target_inner, nx, nz):
 
-    R, Z = _ensure_monotonic(R, Z, overshoot=1.1)
+        #     R = interpolate(xvals, Rinner, Router, usefft, sf)
+        #     Z = interpolate(xvals, Zinner, Zouter, usefft, sf)
+        #     if lastgood is not None:
+        #         R[1:-1] = lastgood[0][1:-1]
+        #         Z[1:-1] = lastgood[1][1:-1]
+        #         # assert False
+        #     R, Z = _ensure_monotonic_force(R, Z)
+        #     plt.figure()
+        #     plt.plot(R, Z)
+        #     plt.plot(R.T, Z.T)
+        #     plt.show(block=True)
+        #     try:
+        # R, Z = _ensure_monotonic(R, Z)
+        R, Z = solve_equation(
+            R,
+            Z,
+            dz_relax,
+            xvals[1] - xvals[0],
+            thetavals[1] - thetavals[0],
+            True,
+        )
+        # except RuntimeError:
+        #     # raise
+        #     failed = sf
+        #     sf = (sf + working) / 2
+        # else:
+        #     if sf == 1:
+        #         break
+        #     working_ = sf
+        #     sf = sf * 2 - working
+        #     working = working_
+        #     lastgood = R, Z
+        #     if sf > reset:
+        #         sf = 1
+        #         reset = (reset + 1) / 2
+        # print(sf, failed, working, reset)
+
+    # R, Z = _ensure_monotonic(R, Z, overshoot=1.1)
     dz = thetavals[1] - thetavals[0]
 
     if show and plotting_available:

@@ -35,14 +35,16 @@ def get_pseudoangle(r, z, bounds=10):
         magn_a = np.sqrt(a.dot(a))
         magn_b = np.sqrt(b.dot(b))
         pseudo_angle[item] = product / (magn_a * magn_b)
-    return pseudo_angle
+    return np.roll(pseudo_angle, -bounds)
 
 
 def plot_pseudoangle(r, z, bounds=10, ax=None):
+    import matplotlib.pyplot as plt
+
     pa = get_pseudoangle(r, z, bounds)
     if ax is None:
         ax = plt.gca()
-    sc = plt.scatter(r, z, pa)
+    sc = plt.scatter(r, z, c=pa)
     plt.colorbar()
     return sc
 
