@@ -269,7 +269,7 @@ def make_maps(
             y_all = y_all[refine_parallel_integral:-refine_parallel_integral]
 
             Bs = [
-                magnetic_field.Byfunc(coord[..., 0], coord[..., 1], y)
+                magnetic_field.Bmag(coord[..., 0], coord[..., 1], y)
                 for coord, y in zip(coords, y_all)
             ]
 
