@@ -54,11 +54,6 @@ def parallel_slice_field_name(field, offset):
     return f"{prefix}_{field}{suffix}"
 
 
-import gc
-import psutil
-import os
-
-
 def make_maps(
     grid,
     magnetic_field,
@@ -166,84 +161,55 @@ def make_maps(
             prog = tqdm(total=total_work, desc="Tracing")
         else:
             update_progress(0, **kwargs)
-
-    process = psutil.Process(os.getpid())
-
-    prev = process.memory_info().rss / 1e6
-
     for slice_index, parallel_slices in enumerate(parallel_slices_list):
-        chunks_x = np.array_split(np.arange(0, nx), n_chunks)
-
         for j in range(ny):
-            print("Difference: ", process.memory_info().rss / 1e6 - prev, "MB")
-            prev = np.copy(process.memory_info().rss / 1e6)
-            for chunk in chunks_x:
-                # print("\nStart ny:", process.memory_info().rss / 1e6, "MB\n")
-                # print("Difference: ", process.memory_info().rss / 1e6 - prev, "MB" )
-                prev = np.copy(process.memory_info().rss / 1e6)
-                # Get this poloidal grid
-                pol, ycoord = grid.getPoloidalGrid(j)
+            # Get this poloidal grid
+            pol, ycoord = grid.getPoloidalGrid(j)
 
-                # Get the next poloidal grid
-                pol_slices = []
-                y_slices = [ycoord]
-                for parallel_slice in parallel_slices:
-                    pol_slice, y_slice = grid.getPoloidalGrid(j + parallel_slice.offset)
-                    pol_slices.append(pol_slice)
-                    y_slices.append(y_slice)
+            # Get the next poloidal grid
+            pol_slices = []
+            y_slices = [ycoord]
+            for parallel_slice in parallel_slices:
+                pol_slice, y_slice = grid.getPoloidalGrid(j + parallel_slice.offset)
+                pol_slices.append(pol_slice)
+                y_slices.append(y_slice)
 
-                # We only want the end point, as [0,...] is the initial position
-                coords = None
+            # We only want the end point, as [0,...] is the initial position
+            coords = field_tracer.follow_field_lines(pol.R, pol.Z, y_slices, rtol=rtol)[
+                1:, ...
+            ]
 
-                # before = len(gc.get_objects())
-                # print("Before tracing:", process.memory_info().rss / 1e6, "MB\n")
-                coords = field_tracer.follow_field_lines(
-                    pol.R[chunk], pol.Z[chunk], y_slices, rtol=rtol
-                )[1:, ...]
-                # print("After tracing:", process.memory_info().rss / 1e6, "MB\n")
+            for parallel_slice, coord, pol_slice in zip(
+                parallel_slices, coords, pol_slices
+            ):
+                # Store the coordinates in real space
+                parallel_slice.R[:, j, :] = coord[:, :, 0]
+                parallel_slice.Z[:, j, :] = coord[:, :, 1]
 
-                # after = len(gc.get_objects())
-                # print(after - before)
+                # Get the indices into the slice poloidal grid
+                if pol_slice is None:
+                    # No slice grid, so hit a boundary
+                    xind = -1
+                    zind = -1
+                else:
+                    # Find the indices for these new locations on the slice poloidal grid
+                    xcoord = coord[:, :, 0]
+                    zcoord = coord[:, :, 1]
+                    xind, zind = pol_slice.findIndex(xcoord, zcoord)
 
-                for parallel_slice, coord, pol_slice in zip(
-                    parallel_slices, coords, pol_slices
-                ):
-                    # Store the coordinates in real space
+                    # Check boundary defined by the field
+                    outside = magnetic_field.boundary.outside(xcoord, y_slice, zcoord)
+                    xind[outside] = -1
+                    zind[outside] = -1
 
-                    parallel_slice.R[chunk, j, :] = coord[:, :, 0].copy()
-                    parallel_slice.Z[chunk, j, :] = coord[:, :, 1].copy()
-
-                    # Get the indices into the slice poloidal grid
-                    if pol_slice is None:
-                        # No slice grid, so hit a boundary
-                        xind = -1
-                        zind = -1
-                    else:
-                        # Find the indices for these new locations on the slice poloidal grid
-                        xcoord = coord[:, :, 0].copy()
-                        zcoord = coord[:, :, 1].copy()
-
-                        xind, zind = pol_slice.findIndex(xcoord, zcoord)
-
-                        # # Check boundary defined by the field
-                        # outside = magnetic_field.boundary.outside(xcoord, y_slice, zcoord)
-                        # xind[outside] = -1
-                        # zind[outside] = -1
-
-                    parallel_slice.xt_prime[chunk, j, :] = xind
-                    parallel_slice.zt_prime[chunk, j, :] = zind
-
-                # print("Before delete:", process.memory_info().rss / 1e6, "MB\n")
-                del coords, xcoord, zcoord, xind, zind, coord, pol_slices
-                gc.collect()
-                # print("After delete:", process.memory_info().rss / 1e6, "MB\n")
+                parallel_slice.xt_prime[:, j, :] = xind
+                parallel_slice.zt_prime[:, j, :] = zind
 
             if (not quiet) and (ny > 1):
                 if tqdm:
                     prog.update()
                 else:
                     update_progress((slice_index * ny + j + 1) / total_work, **kwargs)
-
     for k in list(maps.keys()):
         if "_cell_y" in k and "t_prime" in k:
             del maps[k]
