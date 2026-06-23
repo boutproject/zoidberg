@@ -60,6 +60,8 @@ def gen_grid(nx, ny, nz, R0, r0, r1, mode=0):
         ds["phi"] = "y", phi
         ds["theta"] = dims, one * theta[:, None, :]
         ds["one"] = dims, one
+        for pre in "for", "back":
+            ds[f"{pre}ward_xt_prime"] = dims, one * np.arange(nx)[:, None, None]
         ds.to_netcdf(fn)
 
 
