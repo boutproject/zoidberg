@@ -46,7 +46,11 @@ def gen_grid(nx, ny, nz, R0, r0, r1, mode=0):
         "tmp.nc",
         metric2d=False,
     )
-    warnings.filterwarnings("ignore", message="Duplicate dimension names present: dimensions {.*} appear more than once in dims=(.*). We do not yet support duplicate dimension names, but we do allow initial construction of the object. We recommend you rename the dims immediately to become distinct, as most xa", category=UserWarning)
+    warnings.filterwarnings(
+        "ignore",
+        message="Duplicate dimension names present: dimensions {.*} appear more than once in dims=(.*). We do not yet support duplicate dimension names, but we do allow initial construction of the object. We recommend you rename the dims immediately to become distinct, as most xa",
+        category=UserWarning,
+    )
     with xr.open_dataset("tmp.nc") as ds:
         for k in "g11,g33,g_11,g_33,nx,ny,nz".split(","):
             assert np.all(ds[k] > 0)
