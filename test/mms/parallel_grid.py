@@ -1,3 +1,5 @@
+import warnings
+
 import zoidberg as zb
 import numpy as np
 import xarray as xr
@@ -47,12 +49,19 @@ def gen_grid(nx, ny, nz, R0, r0, r1, mode=0):
         "tmp.nc",
         metric2d=False,
     )
+    warnings.filterwarnings(
+        "ignore",
+        message="Duplicate dimension names present: dimensions {.*} appear more than once in dims=(.*). We do not yet support duplicate dimension names, but we do allow initial construction of the object. We recommend you rename the dims immediately to become distinct, as most xa",
+        category=UserWarning,
+    )
     with xr.open_dataset("tmp.nc") as ds:
         dims = ds.dz.dims
         ds["r_minor"] = dims, one * r[:, None, :]
         ds["phi"] = "y", phi
         ds["theta"] = dims, one * theta[:, None, :]
         ds["one"] = dims, one
+        for pre in "for", "back":
+            ds[f"{pre}ward_xt_prime"] = dims, one * np.arange(nx)[:, None, None]
         ds.to_netcdf(fn)
 
 
