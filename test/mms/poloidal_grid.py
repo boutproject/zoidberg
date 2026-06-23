@@ -55,7 +55,7 @@ def gen_grid(*args):
     pol_grid = zb.poloidal_grid.StructuredPoloidalGrid(R, Z)
 
     field = zb.field.CurvedSlab(Bz=0, Bzprime=0, Rmaj=R0)
-    grid = zb.grid.Grid(pol_grid, phi, 5, yperiodic=True)
+    grid = zb.grid.Grid(pol_grid, phi, np.pi/2.5, yperiodic=True)
 
     fn = gen_name(*args)
 
