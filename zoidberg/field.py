@@ -1236,7 +1236,6 @@ class GEQDSK(MagneticField):
         print(f"Height: {self.zmin} -> {self.zmax} m")
 
         # Poloidal flux
-        #self.psi = np.transpose(data["psi"])
         self.psi = data["psi"]
         nr, nz = self.psi.shape
 
