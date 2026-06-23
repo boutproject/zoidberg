@@ -87,7 +87,7 @@ def _togen(*args):
 
 grids = {}
 for mode in range(5):
-    grids[modes[mode][0]] = [_togen(4, 2, nz, 1, 0.1, 0.5, mode) + (nz,) for nz in lst]
+    grids[modes[mode][0]] = [_togen(6, 2, nz, 1, 0.1, 0.5, mode) + (nz,) for nz in lst]
 
 if __name__ == "__main__":
     for todos in grids.values():
