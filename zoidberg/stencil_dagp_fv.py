@@ -26,7 +26,7 @@ def toCent(RZ):
 
 
 def l2(x):
-    return np.sqrt(np.sum(x**2, axis=0))
+    return np.sqrt(np.mean(x**2))
 
 
 org_print = print
@@ -76,8 +76,6 @@ def getSame(lst):
 
 
 def doit(pols, plot=False, isSlab=False):
-    RZs = []
-
     Lz = (
         getSame([pol.Lz for pol in pols])
         if getSame([isinstance(pol, RectangularPoloidalGrid) for pol in pols])
@@ -116,29 +114,20 @@ def doit(pols, plot=False, isSlab=False):
 
         dy = RZ[1, ..., 1:] - RZ[1, ..., :-1]
         xx = (RZ[0, ..., :-1] + RZ[0, ..., 1:]) / 2
+        dy = RZ[1] - np.roll(RZ[1], 1, -1)
+        xx = (RZ[0] + np.roll(RZ[0], 1, -1)) / 2
 
         if isSlab:
             Ar[1:-1, gi] = -np.sum(xx * dy, axis=-1)
         else:
             Ar[1:-1, gi] = -np.sum(0.5 * xx * xx * dy, axis=-1)
 
-        RZs += [RZ]
-    RZs = np.array(RZs)
-    # 3.160 s:  (4, 2, 6, 32, 200)
-    RZs = RZs.transpose(1, 2, 0, 3, 4)
 
     volume = Ar
 
-    RZ = np.array(
-        [
-            g.getCoordinate(
-                *np.meshgrid(np.arange(g.nx), np.arange(g.nz), indexing="ij")
-            )
-            for g in pols
-        ]
-    ).transpose(1, 2, 0, 3)
-
+    # dims: RZ, x, y, z
     RZ = np.array([(g.R, g.Z) for g in pols]).transpose(1, 2, 0, 3)
+
 
     # AreaXplus
     # Z
@@ -158,7 +147,7 @@ def doit(pols, plot=False, isSlab=False):
     # |------------------------> x
     #
     # We are calculating the area of the surface denoted by X
-    # Note that we need to split it in two parts.
+    # We only need b c o d f e to construct the stencil
 
     log("calculating pos ...")
     tmp = list(
@@ -171,9 +160,11 @@ def doit(pols, plot=False, isSlab=False):
     )
     tmp[1] += tmp[2]
 
+    # dims: RZ, x, y, z, ds
+    # ds: length segment
     pos = np.array([g.getCoordinate(*tmp[:2]) for g in pols]).transpose(1, 2, 0, 3, 4)
     log("done")
-    # direction of edge, length ~ 1/nx
+    # direction of edge, length ~ 1/(nx-1)
     dR = pos[..., :-1] - pos[..., 1:]
     dX = np.sqrt(np.sum(dR**2, axis=0))
     if isSlab:
@@ -217,8 +208,9 @@ def doit(pols, plot=False, isSlab=False):
     # |   g        f          e
     # |
     # |------------------------> x
+    #
+    # We are calculating the area of the surface denoted by X
 
-    log("concatenate")
     tmp = list(
         np.meshgrid(
             np.arange(g.nx - 2) + 0.5,
@@ -228,7 +220,7 @@ def doit(pols, plot=False, isSlab=False):
         )
     )
     tmp[0] += tmp[2]
-    pos = np.array([g.getCoordinate(*tmp[:2]) for g in pols]).transpose(1, 2, 0, 3, 4)
+    pos = np.array([g.getCoordinate(tmp[0], tmp[1]) for g in pols]).transpose(1, 2, 0, 3, 4)
 
     dR = pos[..., :-1] - pos[..., 1:]
     dX = np.sqrt(np.sum(dR**2, axis=0))
@@ -269,12 +261,12 @@ def doit(pols, plot=False, isSlab=False):
                 raise
     log("done")
 
-    test(RZ, volume, coefsX, coefsZ, plot=plot)
-
+    test(RZ, volume, coefsX, coefsZ, isSlab, plot=plot)
+            
     return write(RZ, volume, coefsX, coefsZ)
 
 
-def test(RZ, volume, coefsX, coefsZ, plot=False):
+def test(RZ, volume, coefsX, coefsZ, isSlab=False, plot=False):
     inp = np.sin(RZ[1])
     ana = -np.sin(RZ[1])
     if 0:
@@ -282,42 +274,24 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
         ana = RZ[1] ** 0
     if 1:
         inp = np.sin(RZ[0])
-        ana = -np.sin(RZ[0]) + np.cos(RZ[0]) / RZ[0]
+        if isSlab:
+            ana = -np.sin(RZ[0])
+        else:
+            ana = -np.sin(RZ[0]) + np.cos(RZ[0]) / RZ[0]
     if 0:
         inp = RZ[0] ** 3
         ana = 6 * np.sin(RZ[0])
 
-    def xp(ijk):
-        return (ijk[0] + 1, *ijk[1:])
-
-    def xm(ijk):
-        return (ijk[0] - 1, *ijk[1:])
-
-    def zp(ijk):
-        return _zp(*ijk)
-
-    def _zp(i, j, k):
-        return (i, j, (k + 1) % zmax)
-
-    def zm(i, j, k):
-        return (i, j, (k - 1) % zmax)
-
     log("testing")
     result = np.zeros(inp.shape)
-    results = [np.zeros(inp.shape) for _ in range(4)]
-    # dx =
+
     dz2 = np.roll(inp, -1, axis=-1) - np.roll(inp, 1, axis=-1)
-    i, j, k = inp.shape
-    zmax = k
     dx = inp[1:] - inp[:-1]
     dz = 0.5 * (dz2[1:] + dz2[:-1])
     this = -(coefsX[..., 0] * dx + coefsX[..., 1] * dz)
     result[:-1] -= this
     result[1:] += this
-    for r, t in zip(results, (-coefsX[..., 0] * dx, -coefsX[..., 1] * dz)):
-        r[:-1] -= t
-        r[1:] += t
-    print("expect 0:", np.max(np.abs((result - results[0] - results[1]))))
+
     if 1:
         dx2 = inp[2:] - inp[:-2]
         dx2 = 0.5 * (np.roll(dx2, -1, axis=-1) + dx2)
@@ -327,15 +301,10 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
         this = -(t1 + t2)
         result[1:-1] -= this
         result[1:-1] += np.roll(this, 1, -1)
-        for r, t in zip(results[2:], (-t1, -t2)):
-            r[1:-1] -= t
-            r[1:-1] += np.roll(t, 1, -1)
+
 
     result[0] = 0
     result[-1] = 0
-    for r in results:
-        r[0] = 0
-        r[-1] = 0
 
     if plot:
         import matplotlib.pyplot as plt
@@ -354,7 +323,7 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
             ax.set_title(t)
             plt.colorbar(p, ax=ax)
         plt.show()
-    print("error:", np.mean(l2(result[1:-1] / volume[1:-1] - ana[1:-1])))
+    print(f"shape: {inp.shape}  error:", l2(result[1:-1] / volume[1:-1] - ana[1:-1]))
 
 
 def fixup(RZ, d):
@@ -383,7 +352,6 @@ def write(RZ, volume, coefsX, coefsZ):
         key = "dagp_fv_volume"
         ret[key] = volume
     log("done")
-    print(ret.keys())
     return ret
 
 
