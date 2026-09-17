@@ -11,7 +11,7 @@ from . import fieldtracer
 from .diff import field_line_length
 from .field import Slab
 from .grid import Grid
-from .poloidal_grid import StructuredPoloidalGrid
+from .poloidal_grid import StructuredPoloidalGrid, RectangularPoloidalGrid
 
 try:
     from tqdm.auto import tqdm
@@ -664,6 +664,18 @@ class MapWriter:
                 f"Ly of grid (Ly={Ly}) does not seem to match the average dy (ny * dy = {ny} * {meandy} = {ny * meandy}"
             )
         yperiodic = self.grid.yperiodic if self.grid else True
+        def make_par_grid(RZ):
+            if not self.grid:
+                return StructuredPoloidalGrid(*RZ)
+            pg = self.grid.getPoloidalGrid(0)[0]
+            pg_class = type(pg)
+            print(pg, pg_class, isinstance(pg, RectangularPoloidalGrid))
+            if isinstance(pg, RectangularPoloidalGrid):
+                assert pg.nx < 7
+                assert pg.nz < 5
+                return pg_class(pg.nx, pg.nz, pg.Lx, pg.Lz)
+            return pg_class(*RZ)
+
         for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
             pypar = np.roll(ypar, -offset)
             if yperiodic:
@@ -676,7 +688,7 @@ class MapWriter:
                     )
 
             RZ = np.array([maps[parallel_slice_field_name(k, offset)] for k in "RZ"])
-            par_pgrids = [StructuredPoloidalGrid(*RZ[:, :, i]) for i in range(ny)]
+            par_pgrids = [make_par_grid(RZ[:, :, i]) for i in range(ny)]
             par_grid = Grid(
                 par_pgrids,
                 pypar,
