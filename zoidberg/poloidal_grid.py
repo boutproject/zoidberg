@@ -146,9 +146,7 @@ class RectangularPoloidalGrid(PoloidalGrid):
         self.R, self.Z = self.getCoordinate(xind, zind)
 
     def __repr__(self):
-        return (
-            f"RectangularPoloidalGrid({self.nx},{self.nz},{self.Lx},{self.Lz},Rcentre={self.Rcentre},Zcentre={self.Zcentre})"
-        )
+        return f"RectangularPoloidalGrid({self.nx},{self.nz},{self.Lx},{self.Lz},Rcentre={self.Rcentre},Zcentre={self.Zcentre})"
 
     def getCoordinate(self, xind, zind, dx=0, dz=0):
         """Get coordinates (R,Z) at given (xind,zind) index

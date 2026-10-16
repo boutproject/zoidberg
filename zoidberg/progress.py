@@ -1,4 +1,3 @@
-
 # Adapted from http://stackoverflow.com/a/15860757/2043465
 
 import time
