@@ -89,7 +89,7 @@ def test_slab_volume():
 
     if plotting:
         testb = polyfunc(np.linspace(0.0, 2.0 * np.pi, 100), field.polynomials)
-        fig, ax = plt.subplots()
+        _, ax = plt.subplots()
         ax.plot(np.linspace(0.0, 2.0 * np.pi, 100), testb)
         ax.set_ylabel("B [T]")
         ax.set_xlabel(r"$\phi$ [rad]")
@@ -97,7 +97,7 @@ def test_slab_volume():
 
         thisy = 0
 
-        fig, ax = plt.subplots()
+        _, ax = plt.subplots()
         a = ax.pcolormesh(
             gf["R"][:, thisy, :], gf["Z"][:, thisy, :], cellvolumes[:, thisy, :]
         )

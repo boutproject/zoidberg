@@ -62,13 +62,11 @@ class Grid:
         self.Ly = Ly
         self.yperiodic = yperiodic
 
-        if yperiodic:
-            if (
-                Ly <= self.ycoords[-1] - self.ycoords[0] + 1e-10
-            ):  # Note: Catch case where they are equal
-                raise ValueError(
-                    f"Ly={Ly} must be > max(ycoords) - min(ycoords) = {ycoords[-1]} - {ycoords[0]}"
-                )
+        # Note: Catch case where they are equal
+        if yperiodic and Ly <= self.ycoords[-1] - self.ycoords[0] + 1e-10:
+            raise ValueError(
+                f"Ly={Ly} must be > max(ycoords) - min(ycoords) = {ycoords[-1]} - {ycoords[0]}"
+            )
 
         self._metric_cache = None
 

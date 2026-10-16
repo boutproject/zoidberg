@@ -256,7 +256,6 @@ def doit(pols, plot=False, isSlab=False):
         coefsZ = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0)[..., None])[..., 0]
     except np.linalg.LinAlgError:
         dRrtrans = dRr.transpose(1, 2, 3, 0)
-        [..., None]
         coefsZ = np.empty(dRrtrans.shape)
         for ijk in itertools.product(*[range(x) for x in dxzR.shape[:-2]]):
             try:
