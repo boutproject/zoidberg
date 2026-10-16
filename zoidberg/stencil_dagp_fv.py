@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# coding: utf-8
 
 import itertools
 import sys
@@ -15,7 +14,7 @@ try:
 except ImportError:
     tqdm = None
 
-time_start = time.time()  # noqa
+time_start = time.time()
 verbose = 1
 
 
@@ -317,7 +316,7 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
     for r, t in zip(results, (-coefsX[..., 0] * dx, -coefsX[..., 1] * dz)):
         r[:-1] -= t
         r[1:] += t
-    print("expect 0:", np.max(np.abs((result - results[0] - results[1]))))
+    print("expect 0:", np.max(np.abs(result - results[0] - results[1])))
     if 1:
         dx2 = inp[2:] - inp[:-2]
         dx2 = 0.5 * (np.roll(dx2, -1, axis=-1) + dx2)

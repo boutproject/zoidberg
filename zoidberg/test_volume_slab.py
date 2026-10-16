@@ -1,9 +1,8 @@
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
-import matplotlib.pyplot as plt
-
 
 from zoidberg import field as zbfield
 from zoidberg import grid as zbgrid

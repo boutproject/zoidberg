@@ -972,9 +972,7 @@ def upscale(field, maps, upscale_factor=4, quiet=True):
             field = field.reshape(xt_prime.T.shape).T
         except ValueError:
             raise ValueError(
-                "Field, {}, must be same shape as grid, {}".format(
-                    field.shape, xt_prime.shape
-                )
+                f"Field, {field.shape}, must be same shape as grid, {xt_prime.shape}"
             )
 
     # Get the shape of the grid

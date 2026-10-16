@@ -18,7 +18,7 @@ from sympy import (
 from . import boundary
 
 
-class MagneticField(object):
+class MagneticField:
     """Represents a magnetic field in either Cartesian or cylindrical
     geometry
 
@@ -119,7 +119,7 @@ class MagneticField(object):
             The major radius
 
         """
-        return None
+        return
 
     def pressure(self, x, z, phi):
         """Pressure [Pascals]
@@ -210,7 +210,7 @@ class MagneticField(object):
         if np.amin(np.abs(By)) < 1e-8:
             # Very small By
             raise ValueError(
-                "Small By ({}) at (x={}, y={}, z={})".format(By, x, ycoord, z)
+                f"Small By ({By}) at (x={x}, y={ycoord}, z={z})"
             )
 
         R_By = Rmaj / By
@@ -1202,8 +1202,7 @@ class SmoothedMagneticField(MagneticField):
             P = z_top
         else:
             P = 1.0
-        if P < 0.0:
-            P = 0.0
+        P = max(P, 0.0)
         return P
 
 
@@ -1233,8 +1232,8 @@ class GEQDSK(MagneticField):
         self.zmin = data["zmid"] - 0.5 * data["zdim"]
         self.zmax = data["zmid"] + 0.5 * data["zdim"]
 
-        print("Major radius: {0} -> {1} m".format(self.rmin, self.rmax))
-        print("Height: {0} -> {1} m".format(self.zmin, self.zmax))
+        print(f"Major radius: {self.rmin} -> {self.rmax} m")
+        print(f"Height: {self.zmin} -> {self.zmax} m")
 
         # Poloidal flux
         self.psi = np.transpose(data["psi"])
@@ -1435,31 +1434,10 @@ class W7X_vacuum(MagneticField):
 
         # create (standardized) file name for saving/loading magnetic field.
         fname_old = (
-            "B.w7x.{}.{}.{}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.dat".format(
-                nx,
-                ny,
-                nz,
-                r[0, 0, 0],
-                r[-1, 0, 0],
-                phi[0, 0, 0],
-                phi[0, -1, 0],
-                z[0, 0, 0],
-                z[0, 0, -1],
-            )
+            f"B.w7x.{nx}.{ny}.{nz}.{r[0, 0, 0]:.2f}-{r[-1, 0, 0]:.2f}.{phi[0, 0, 0]:.2f}-{phi[0, -1, 0]:.2f}.{z[0, 0, 0]:.2f}-{z[0, 0, -1]:.2f}.dat"
         )
 
-        fname = "B.w7x.{}.{}.{}.{}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.{:.2f}-{:.2f}.nc".format(
-            configuration,
-            nx,
-            ny,
-            nz,
-            r[0, 0, 0],
-            r[-1, 0, 0],
-            phi[0, 0, 0],
-            phi[0, -1, 0],
-            z[0, 0, 0],
-            z[0, 0, -1],
-        )
+        fname = f"B.w7x.{configuration}.{nx}.{ny}.{nz}.{r[0, 0, 0]:.2f}-{r[-1, 0, 0]:.2f}.{phi[0, 0, 0]:.2f}-{phi[0, -1, 0]:.2f}.{z[0, 0, 0]:.2f}-{z[0, 0, -1]:.2f}.nc"
 
         if os.path.isfile(fname):
             print("Saved field found, loading from: ", fname)
@@ -1529,7 +1507,7 @@ class W7X_vacuum(MagneticField):
 
             res = tracer.service.trace(pos, config, task, None, None)
 
-            for i in range(0, len(res.surfs)):
+            for i in range(len(res.surfs)):
                 plt.scatter(
                     res.surfs[i].points.x1, res.surfs[i].points.x3, color="black", s=0.1
                 )
@@ -1569,17 +1547,17 @@ class W7X_vacuum(MagneticField):
             + "."
             + str(nz)
             + "."
-            + "{:.2f}".format(r[0, 0, 0])
+            + f"{r[0, 0, 0]:.2f}"
             + "-"
-            + "{:.2f}".format(r[-1, 0, 0])
+            + f"{r[-1, 0, 0]:.2f}"
             + "."
-            + "{:.2f}".format(phi[0, 0, 0])
+            + f"{phi[0, 0, 0]:.2f}"
             + "-"
-            + "{:.2f}".format(phi[0, -1, 0])
+            + f"{phi[0, -1, 0]:.2f}"
             + "."
-            + "{:.2f}".format(z[0, 0, 0])
+            + f"{z[0, 0, 0]:.2f}"
             + "-"
-            + "{:.2f}".format(z[0, 0, -1])
+            + f"{z[0, 0, -1]:.2f}"
             + ".dat"
         )
 

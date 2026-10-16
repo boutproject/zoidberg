@@ -37,7 +37,7 @@ except ImportError:
 from . import rzline
 
 
-class PoloidalGrid(object):
+class PoloidalGrid:
     """Represents a poloidal grid
 
     Note: Here the 2D plane (R,Z) is labelled by (x,z) indices
@@ -147,9 +147,7 @@ class RectangularPoloidalGrid(PoloidalGrid):
 
     def __repr__(self):
         return (
-            "RectangularPoloidalGrid({0},{1},{2},{3},Rcentre={4},Zcentre={5})".format(
-                self.nx, self.nz, self.Lx, self.Lz, self.Rcentre, self.Zcentre
-            )
+            f"RectangularPoloidalGrid({self.nx},{self.nz},{self.Lx},{self.Lz},Rcentre={self.Rcentre},Zcentre={self.Zcentre})"
         )
 
     def getCoordinate(self, xind, zind, dx=0, dz=0):

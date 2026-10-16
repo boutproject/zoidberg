@@ -3,7 +3,7 @@
 import numpy as np
 
 
-class NoBoundary(object):
+class NoBoundary:
     """No boundary, so no points outside"""
 
     def outside(self, x, y, z):
@@ -22,7 +22,7 @@ class NoBoundary(object):
         return np.full(x.shape, False, dtype=bool)
 
 
-class RectangularBoundaryXZ(object):
+class RectangularBoundaryXZ:
     def __init__(self, xmin, xmax, zmin, zmax):
         """Create a simple rectangular boundary box
 
@@ -60,7 +60,7 @@ class RectangularBoundaryXZ(object):
         )
 
 
-class PolygonBoundaryXZ(object):
+class PolygonBoundaryXZ:
     def __init__(self, xarr, zarr):
         """Create a polygon boundary defined by
 

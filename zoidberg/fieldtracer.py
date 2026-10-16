@@ -14,7 +14,7 @@ except ImportError:
 from .field import _set_config
 
 
-class FieldTracer(object):
+class FieldTracer:
     """A class for following magnetic field lines
 
     Parameters
@@ -130,7 +130,7 @@ class FieldTracer(object):
         return result.reshape(y_values.shape + array_shape + (2,))
 
 
-class FieldTracerReversible(object):
+class FieldTracerReversible:
     """Traces magnetic field lines in a reversible way by using
     trapezoidal integration:
 
@@ -363,9 +363,7 @@ def trace_poincare(
 
         if np.amin(y_slices) < 0.0 or np.amax(y_slices) > yperiod:
             raise ValueError(
-                "y_slices must all be between 0.0 and yperiod ({yperiod})".format(
-                    yperiod=yperiod
-                )
+                f"y_slices must all be between 0.0 and yperiod ({yperiod})"
             )
         # Make sure y_slices is monotonically increasing
         y_slices.sort()
@@ -384,7 +382,7 @@ def trace_poincare(
         y_values = np.append(y_values, n * yperiod + y_values[:nplot])
 
     nover = int(nover)  # Over-sample
-    y_values_over = np.zeros((nplot * revs * nover - (nover - 1)))
+    y_values_over = np.zeros(nplot * revs * nover - (nover - 1))
     y_values_over[::nover] = y_values
     for i in range(1, nover):
         y_values_over[i::nover] = (float(i) / float(nover)) * y_values[1:] + (
@@ -802,7 +800,6 @@ class EMC3FieldTracer(FieldTracer):
             plt.plot(grid[:, :, 0].T, grid[:, :, 1].T)
             plt.plot(*rz, "ro")
             plt.show()
-            pass
         assert ABCD.shape == (
             2,
             2,

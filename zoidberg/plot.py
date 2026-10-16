@@ -94,7 +94,7 @@ def plot_poincare(
     ax.tick_params(axis="both", labelsize=15)
 
     for phi, colour in zip(y_slices, colours):
-        ax.plot([], [], color=colour, label=r"$Y = {0:.2f}$".format(phi))
+        ax.plot([], [], color=colour, label=rf"$Y = {phi:.2f}$")
 
     ax.legend()
 
@@ -254,7 +254,7 @@ def plot_streamlines(grid, magnetic_field, y_slice=0, width=None, **kwargs):
     return fig, ax
 
 
-class AnimateVectorField(object):
+class AnimateVectorField:
     """Very basic/experimental class for animating vector fields
 
     Transpose U, V to have dimension to animate at index 0,
@@ -335,7 +335,7 @@ def plot_forward_map(grid, maps, yslice=0):
         np.ravel(pol_next.R),
         np.ravel(pol_next.Z),
         "bx",
-        label="Grid points on slice {0}".format(yslice + 1),
+        label=f"Grid points on slice {yslice + 1}",
     )
 
     # Plot the forward map from yslice to yslice+1 as red 'o'
@@ -345,7 +345,7 @@ def plot_forward_map(grid, maps, yslice=0):
         np.ravel(forward_R),
         np.ravel(forward_Z),
         "ro",
-        label="Forward map from slice {0}".format(yslice),
+        label=f"Forward map from slice {yslice}",
     )
 
     # Mark the points which hit the inner boundary
@@ -406,7 +406,7 @@ def plot_backward_map(grid, maps, yslice=0):
         np.ravel(pol_last.R),
         np.ravel(pol_last.Z),
         "bx",
-        label="Grid points on slice {0}".format(yslice - 1),
+        label=f"Grid points on slice {yslice - 1}",
     )
 
     # Plot the backward map from yslice to yslice-1 as red 'o'
@@ -416,7 +416,7 @@ def plot_backward_map(grid, maps, yslice=0):
         np.ravel(backward_R),
         np.ravel(backward_Z),
         "ro",
-        label="Backward map from slice {0}".format(yslice),
+        label=f"Backward map from slice {yslice}",
     )
 
     # Mark the points which hit the inner boundary

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 
 # Adapted from http://stackoverflow.com/a/15860757/2043465
 
@@ -50,8 +49,7 @@ def update_progress(progress, barLength=10, ascii=False, **kwargs):
     # Secret undocumented feature
     if "zoidberg" in kwargs:
         if kwargs["zoidberg"]:
-            if barLength < 40:
-                barLength = 40
+            barLength = max(barLength, 40)
             if ascii:
                 face = " (;,,,;) "
                 ink = "#"
@@ -98,7 +96,7 @@ def format_time(secs):
     return ret
 
 
-class Progress(object):
+class Progress:
     def __init__(self):
         pass
 

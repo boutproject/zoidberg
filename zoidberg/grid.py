@@ -4,7 +4,7 @@ import numpy as np
 from .poloidal_grid import RectangularPoloidalGrid
 
 
-class Grid(object):
+class Grid:
     """Represents a 3D grid, consisting of a collection of poloidal grids
 
     Attributes
@@ -76,13 +76,7 @@ class Grid(object):
         self.shape = (nx, len(ycoords), nz)
 
     def __repr__(self):
-        return "Grid({0}, {1}:{2}:{3}, yperiodic={4})".format(
-            self.poloidal_grids,
-            np.amin(self.ycoords),
-            np.amax(self.ycoords),
-            self.ycoords.size,
-            self.yperiodic,
-        )
+        return f"Grid({self.poloidal_grids}, {np.amin(self.ycoords)}:{np.amax(self.ycoords)}:{self.ycoords.size}, yperiodic={self.yperiodic})"
 
     def numberOfPoloidalGrids(self):
         """Returns the number of poloidal grids i.e. number of points in Y

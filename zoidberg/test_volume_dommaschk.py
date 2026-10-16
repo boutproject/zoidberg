@@ -6,9 +6,8 @@ import xarray as xr
 from shapely.geometry import Polygon
 
 from . import field as zbfield
-from . import fieldtracer
+from . import fieldtracer, poloidal_grid, rzline, zoidberg
 from . import grid as zbgrid
-from . import poloidal_grid, rzline, zoidberg
 
 script_dir = os.getcwd()
 
