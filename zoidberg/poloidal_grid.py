@@ -37,7 +37,7 @@ except ImportError:
 from . import rzline
 
 
-class PoloidalGrid(object):
+class PoloidalGrid:
     """Represents a poloidal grid
 
     Note: Here the 2D plane (R,Z) is labelled by (x,z) indices
@@ -146,11 +146,7 @@ class RectangularPoloidalGrid(PoloidalGrid):
         self.R, self.Z = self.getCoordinate(xind, zind)
 
     def __repr__(self):
-        return (
-            "RectangularPoloidalGrid({0},{1},{2},{3},Rcentre={4},Zcentre={5})".format(
-                self.nx, self.nz, self.Lx, self.Lz, self.Rcentre, self.Zcentre
-            )
-        )
+        return f"RectangularPoloidalGrid({self.nx},{self.nz},{self.Lx},{self.Lz},Rcentre={self.Rcentre},Zcentre={self.Zcentre})"
 
     def getCoordinate(self, xind, zind, dx=0, dz=0):
         """Get coordinates (R,Z) at given (xind,zind) index
@@ -380,7 +376,7 @@ switch inner and outer boundary.
         R = R.reshape((n,))
         Z = Z.reshape((n,))
 
-        dists, ind = self.tree.query(position)
+        _dists, ind = self.tree.query(position)
 
         # Calculate (x,y) index
         nx, nz = self.R.shape

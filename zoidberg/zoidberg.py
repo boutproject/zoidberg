@@ -191,7 +191,7 @@ def make_maps(
                 field_names.append(field)
 
             # Get the field arrays we just made and wrap them up in our helper tuple
-            fields = map(lambda x: maps[x], field_names)
+            fields = (maps[x] for x in field_names)
             parallel_slices_list[-1].append(ParallelSlice(offset, *fields))
 
     # Total size of the progress bar
@@ -430,7 +430,6 @@ def update_metric_names(metric):
 
 
 def get_metric(grid, magnetic_field):
-    nx, ny, nz = grid.shape
     # Get metric tensor
     metric = grid.metric()
 
@@ -514,10 +513,9 @@ class MapWriter:
         f = bdata.DataFile(self.fn, write=True, create=self.create)
         self.f = f.__enter__()
         self.is_open = True
-        if not self.create:
-            if "B" in self.f.list():
-                B = self.f["B"]
-                self.nxyz = B.shape
+        if not self.create and "B" in self.f.list():
+            B = self.f["B"]
+            self.nxyz = B.shape
         return self
 
     def open(self):
@@ -539,7 +537,7 @@ class MapWriter:
             pol, _ = self.grid.getPoloidalGrid(j)
             R[:, j, :] = pol.R
             Z[:, j, :] = pol.Z
-        self.write_dict(dict(R=R, Z=Z))
+        self.write_dict({"R": R, "Z": Z})
 
     def add_dagp(self):
         """Add the coefficient for the finite-volume div-a-grad-perp implementation suitable for FCI."""
@@ -972,9 +970,7 @@ def upscale(field, maps, upscale_factor=4, quiet=True):
             field = field.reshape(xt_prime.T.shape).T
         except ValueError:
             raise ValueError(
-                "Field, {}, must be same shape as grid, {}".format(
-                    field.shape, xt_prime.shape
-                )
+                f"Field, {field.shape}, must be same shape as grid, {xt_prime.shape}"
             )
 
     # Get the shape of the grid

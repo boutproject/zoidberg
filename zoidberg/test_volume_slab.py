@@ -1,9 +1,8 @@
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
-import matplotlib.pyplot as plt
-
 
 from zoidberg import field as zbfield
 from zoidberg import grid as zbgrid
@@ -20,7 +19,7 @@ def polyfunc(y, p):
 
 
 class fld(zbfield.MagneticField):
-    def __init__(self, polynomials=[1.0]):
+    def __init__(self, polynomials=None):
         """
         Parameters
         ----------
@@ -29,10 +28,13 @@ class fld(zbfield.MagneticField):
             B(phi) = polynomials[0] + polynomials[1]*sin(phi) + polynomials[2]*sin(2.0 * phi) ...
 
         """
+        if polynomials is None:
+            polynomials = [1.0]
         self.polynomials = polynomials
         self.Bz = 0.0
         self.Bzprime = 0.0
         self.xcentre = 5.0
+        self.attributes = {}
 
     def Byfunc(self, x, z, phi):
         return polyfunc(phi, self.polynomials)
@@ -88,7 +90,7 @@ def test_slab_volume():
 
     if plotting:
         testb = polyfunc(np.linspace(0.0, 2.0 * np.pi, 100), field.polynomials)
-        fig, ax = plt.subplots()
+        _, ax = plt.subplots()
         ax.plot(np.linspace(0.0, 2.0 * np.pi, 100), testb)
         ax.set_ylabel("B [T]")
         ax.set_xlabel(r"$\phi$ [rad]")
@@ -96,7 +98,7 @@ def test_slab_volume():
 
         thisy = 0
 
-        fig, ax = plt.subplots()
+        _, ax = plt.subplots()
         a = ax.pcolormesh(
             gf["R"][:, thisy, :], gf["Z"][:, thisy, :], cellvolumes[:, thisy, :]
         )
@@ -146,11 +148,11 @@ def test_slab_volume():
         errors.append(error[str(ref)])
 
     coeffs = np.polyfit(np.log(reffactors), np.log(errors), 1)
-    a, b = coeffs
+    a, _b = coeffs
     print("Convergence:", -a)
 
     if plotting:
-        fig, ax = plt.subplots()
+        _fig, ax = plt.subplots()
         for ref in reffactors:
             ax.scatter(ref, error[str(ref)])
         ax.set_xscale("log")

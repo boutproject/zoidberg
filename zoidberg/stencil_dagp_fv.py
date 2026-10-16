@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# coding: utf-8
 
 import itertools
 import sys
@@ -15,7 +14,7 @@ try:
 except ImportError:
     tqdm = None
 
-time_start = time.time()  # noqa
+time_start = time.time()
 verbose = 1
 
 
@@ -257,7 +256,6 @@ def doit(pols, plot=False, isSlab=False):
         coefsZ = np.linalg.solve(dxzR, dRr.transpose(1, 2, 3, 0)[..., None])[..., 0]
     except np.linalg.LinAlgError:
         dRrtrans = dRr.transpose(1, 2, 3, 0)
-        [..., None]
         coefsZ = np.empty(dRrtrans.shape)
         for ijk in itertools.product(*[range(x) for x in dxzR.shape[:-2]]):
             try:
@@ -307,7 +305,7 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
     results = [np.zeros(inp.shape) for _ in range(4)]
     # dx =
     dz2 = np.roll(inp, -1, axis=-1) - np.roll(inp, 1, axis=-1)
-    i, j, k = inp.shape
+    _i, _j, k = inp.shape
     zmax = k
     dx = inp[1:] - inp[:-1]
     dz = 0.5 * (dz2[1:] + dz2[:-1])
@@ -317,7 +315,7 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
     for r, t in zip(results, (-coefsX[..., 0] * dx, -coefsX[..., 1] * dz)):
         r[:-1] -= t
         r[1:] += t
-    print("expect 0:", np.max(np.abs((result - results[0] - results[1]))))
+    print("expect 0:", np.max(np.abs(result - results[0] - results[1])))
     if 1:
         dx2 = inp[2:] - inp[:-2]
         dx2 = 0.5 * (np.roll(dx2, -1, axis=-1) + dx2)
@@ -340,7 +338,7 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
     if plot:
         import matplotlib.pyplot as plt
 
-        f, axs = plt.subplots(1, 3, sharex=True, sharey=True)
+        _, axs = plt.subplots(1, 3, sharex=True, sharey=True)
         res = result / volume
         for d, ax, t in zip(
             (res, ana, res - ana),

@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # Adapted from http://stackoverflow.com/a/15860757/2043465
 
 import time
@@ -42,43 +40,41 @@ def update_progress(progress, barLength=10, ascii=False, **kwargs):
     if progress >= 1:
         progress = 1
         status = "Done...\r\n"
-    block = int(round(barLength * progress))
+    block = round(barLength * progress)
     text = "\rPercent: [{prog:-<{len}}] {perc:6.2f}% {stat}".format(
         len=barLength, prog=cursor * block, perc=progress * 100, stat=status
     )
 
     # Secret undocumented feature
-    if "zoidberg" in kwargs:
-        if kwargs["zoidberg"]:
-            if barLength < 40:
-                barLength = 40
-            if ascii:
-                face = " (;,,,;) "
-                ink = "#"
-            else:
-                face = " (°,,,°) "
-                ink = "█"
+    if kwargs.get("zoidberg"):
+        barLength = max(barLength, 40)
+        if ascii:
+            face = " (;,,,;) "
+            ink = "#"
+        else:
+            face = " (°,,,°) "
+            ink = "█"
 
-            open_claw = "(\\/)"
-            closed_claw = "(|)"
+        open_claw = "(\\/)"
+        closed_claw = "(|)"
 
-            if int(progress * barLength) % 2:
-                left_claw = open_claw
-                right_claw = closed_claw
-            else:
-                left_claw = closed_claw
-                right_claw = open_claw
+        if int(progress * barLength) % 2:
+            left_claw = open_claw
+            right_claw = closed_claw
+        else:
+            left_claw = closed_claw
+            right_claw = open_claw
 
-            zb = left_claw + face + right_claw
-            zb_middle = int(len(zb) / 2)
-            start = int(round((barLength - zb_middle) * progress))
-            text = "\rProgress: [{start}{zb}{rest}] {perc:6.2f}% {stat}".format(
-                start=ink * start,
-                zb=zb,
-                perc=progress * 100,
-                rest="-" * (barLength - start - zb_middle),
-                stat=status,
-            )
+        zb = left_claw + face + right_claw
+        zb_middle = int(len(zb) / 2)
+        start = round((barLength - zb_middle) * progress)
+        text = "\rProgress: [{start}{zb}{rest}] {perc:6.2f}% {stat}".format(
+            start=ink * start,
+            zb=zb,
+            perc=progress * 100,
+            rest="-" * (barLength - start - zb_middle),
+            stat=status,
+        )
 
     stdout.write(text)
     stdout.flush()
@@ -98,7 +94,7 @@ def format_time(secs):
     return ret
 
 
-class Progress(object):
+class Progress:
     def __init__(self):
         pass
 

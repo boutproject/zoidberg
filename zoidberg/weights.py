@@ -674,9 +674,9 @@ def modify_maps(maps, partial_boundaries=True):
 
 __all__ = [
     "assign_cell_space_numbers",
+    "build_leg_destination_operator",
     "build_leg_space_metadata",
     "build_leg_weight_vector",
-    "build_leg_destination_operator",
     "calculate_parallel_map_operators",
     "modify_maps",
 ]
