@@ -44,9 +44,9 @@ def parallel_slice_field_name(field, offset):
     """
     absoffset = abs(offset)
     if absoffset < 1:
-        assert abs(absoffset - 0.5) < 1e-6, (
-            f"Expected an offset of +- 0.5 but got {offset}"
-        )
+        assert (
+            abs(absoffset - 0.5) < 1e-6
+        ), f"Expected an offset of +- 0.5 but got {offset}"
         prefix = "low" if offset < 0 else "high"
         return f"{field}_cell_y{prefix}"
     prefix = "forward" if offset > 0 else "backward"
@@ -191,7 +191,7 @@ def make_maps(
                 field_names.append(field)
 
             # Get the field arrays we just made and wrap them up in our helper tuple
-            fields = map(lambda x: maps[x], field_names)
+            fields = (maps[x] for x in field_names)
             parallel_slices_list[-1].append(ParallelSlice(offset, *fields))
 
     # Total size of the progress bar
@@ -430,7 +430,6 @@ def update_metric_names(metric):
 
 
 def get_metric(grid, magnetic_field):
-    nx, ny, nz = grid.shape
     # Get metric tensor
     metric = grid.metric()
 
@@ -514,10 +513,9 @@ class MapWriter:
         f = bdata.DataFile(self.fn, write=True, create=self.create)
         self.f = f.__enter__()
         self.is_open = True
-        if not self.create:
-            if "B" in self.f.list():
-                B = self.f["B"]
-                self.nxyz = B.shape
+        if not self.create and "B" in self.f.list():
+            B = self.f["B"]
+            self.nxyz = B.shape
         return self
 
     def open(self):
@@ -539,7 +537,7 @@ class MapWriter:
             pol, _ = self.grid.getPoloidalGrid(j)
             R[:, j, :] = pol.R
             Z[:, j, :] = pol.Z
-        self.write_dict(dict(R=R, Z=Z))
+        self.write_dict({"R": R, "Z": Z})
 
     def add_dagp(self):
         """Add the coefficient for the finite-volume div-a-grad-perp implementation suitable for FCI."""
@@ -547,9 +545,9 @@ class MapWriter:
 
         assert self.grid, "The grid is needed to compute the DAGP. Set the grid first."
         assert self.is_open, "The grid file needs to be open. Call open first."
-        assert self.field, (
-            "The field is needed to compute the DAGP. Set the grid first."
-        )
+        assert (
+            self.field
+        ), "The field is needed to compute the DAGP. Set the grid first."
         handles = {}
 
         poloidal_grids = self.grid.poloidal_grids
@@ -649,9 +647,9 @@ class MapWriter:
 
         for k, v in metric.items():
             if isinstance(v, np.ndarray):
-                assert np.all(np.isfinite(v)), (
-                    f"{k} is not finite in {v.size - np.sum(np.isfinite(v))} of {v.size} cells"
-                )
+                assert np.all(
+                    np.isfinite(v)
+                ), f"{k} is not finite in {v.size - np.sum(np.isfinite(v))} of {v.size} cells"
             self.f.write(k, v)
 
     def _write_par_metric(self, maps, nslice, ypar):
@@ -660,9 +658,9 @@ class MapWriter:
         meandy = np.mean(np.diff(ypar))
         Ly = self.grid.Ly if self.grid else meandy * ny
         if self.grid and len(ypar) > 1:
-            assert np.isclose(Ly, meandy * ny), (
-                f"Ly of grid (Ly={Ly}) does not seem to match the average dy (ny * dy = {ny} * {meandy} = {ny * meandy}"
-            )
+            assert np.isclose(
+                Ly, meandy * ny
+            ), f"Ly of grid (Ly={Ly}) does not seem to match the average dy (ny * dy = {ny} * {meandy} = {ny * meandy}"
         yperiodic = self.grid.yperiodic if self.grid else True
         for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
             pypar = np.roll(ypar, -offset)
@@ -671,9 +669,9 @@ class MapWriter:
                     if meandy * (pypar[i] - pypar[i - 1]) < 0:
                         pypar[i] += np.sign(meandy) * Ly
                 if len(pypar) > 1:
-                    assert np.isclose(np.mean(np.diff(pypar)), meandy), (
-                        f"Mean of dy changes from {meandy} to {np.mean(np.diff(pypar))}. Values: {ypar} -> {pypar}"
-                    )
+                    assert np.isclose(
+                        np.mean(np.diff(pypar)), meandy
+                    ), f"Mean of dy changes from {meandy} to {np.mean(np.diff(pypar))}. Values: {ypar} -> {pypar}"
 
             RZ = np.array([maps[parallel_slice_field_name(k, offset)] for k in "RZ"])
             par_pgrids = [StructuredPoloidalGrid(*RZ[:, :, i]) for i in range(ny)]

@@ -85,7 +85,7 @@ class RZline:
 
         # Create a spline representation
         # Note that the last point needs to be passed but is not used
-        kw = dict(per=True, k=self.spline_order)
+        kw = {"per": True, "k": self.spline_order}
         if smooth:
             if smooth is True:
                 smooth = 100
@@ -434,9 +434,6 @@ def line_from_points_poly(rarray, zarray, show=False, spline_order=None):
 
     for i in range(3, npoints):
         line = RZline(rvals[:i], zvals[:i], spline_order=spline_order)
-
-        angle = np.linspace(0, 2 * pi, 100)
-        r, z = line.position(angle)
 
         # Next point to add
         # Find the closest point on the line

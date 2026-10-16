@@ -47,7 +47,7 @@ def test_assert_npolygons(n=10, m=100):
     outliers, testr, testz, newr, newz = run_npolygons(n=1000, m=10000)
     assert not outliers and testz.all() == newz.all()
     ### find outliers after smoothing
-    outliers, testr, testz, newr, newz = run_npolygons(n=5, m=1000)
+    outliers, _testr, testz, _newr, newz = run_npolygons(n=5, m=1000)
     assert outliers and testz.all() != newz.all()
 
 

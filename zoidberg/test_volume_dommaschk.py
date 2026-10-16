@@ -70,7 +70,7 @@ def dommaschk_grid_volume(
         if plotting:
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots(figsize=(8, 8), dpi=400)
+            _fig, ax = plt.subplots(figsize=(8, 8), dpi=400)
             pol_grid.plot(axis=ax, show=False)
             ax.set_aspect("equal")
             ax.grid(True, zorder=0)
@@ -197,7 +197,7 @@ def calculate_dommaschk_volume(
         if plotting:
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots()
+            _fig, ax = plt.subplots()
             for poly in (inner_poly, outer_poly):
                 x, y = poly.exterior.xy
                 ax.plot(x, y, color="yellow")
@@ -263,14 +263,14 @@ def test_run():
     error = np.abs(gridvolumes - exact_volume)
     print("Error:", error)
     coeffs = np.polyfit(np.log(scales), np.log(error), 1)
-    a, b = coeffs
+    a, _b = coeffs
     print("Convergence:", -a)
 
     if plotting:
         import matplotlib.pyplot as plt
 
         x = np.linspace(1.0, 50, 100)
-        fig, ax = plt.subplots()
+        _fig, ax = plt.subplots()
         ax.plot(scales, gridvolumes - exact_volume)
         ax.scatter(scales, np.abs(gridvolumes - exact_volume))
         ax.plot(x, 0.1 * np.power(x, -1), label=r"nx^-2")

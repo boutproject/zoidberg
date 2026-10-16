@@ -324,10 +324,9 @@ def plot_forward_map(grid, maps, yslice=0):
         warnings.warning("matplotlib not available, unable to plot")
         return
 
-    nx, ny, nz = grid.shape
+    nx, _, _ = grid.shape
 
-    pol, ycoord = grid.getPoloidalGrid(yslice)
-    pol_next, ycoord_next = grid.getPoloidalGrid(yslice + 1)
+    pol_next, _ = grid.getPoloidalGrid(yslice + 1)
 
     # Plot the points on yslice+1 as 'bx'
     # Note: ravel used here only so multiple labels are not created
@@ -395,10 +394,9 @@ def plot_backward_map(grid, maps, yslice=0):
         warnings.warning("matplotlib not available, unable to plot")
         return
 
-    nx, ny, nz = grid.shape
+    nx, _, _ = grid.shape
 
-    pol, ycoord = grid.getPoloidalGrid(yslice)
-    pol_last, ycoord_last = grid.getPoloidalGrid(yslice - 1)
+    pol_last, _ = grid.getPoloidalGrid(yslice - 1)
 
     # Plot the points on yslice-1 as 'bx'
     # Note: ravel used here only so multiple labels are not created

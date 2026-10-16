@@ -306,7 +306,7 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
     results = [np.zeros(inp.shape) for _ in range(4)]
     # dx =
     dz2 = np.roll(inp, -1, axis=-1) - np.roll(inp, 1, axis=-1)
-    i, j, k = inp.shape
+    _i, _j, k = inp.shape
     zmax = k
     dx = inp[1:] - inp[:-1]
     dz = 0.5 * (dz2[1:] + dz2[:-1])
@@ -339,7 +339,7 @@ def test(RZ, volume, coefsX, coefsZ, plot=False):
     if plot:
         import matplotlib.pyplot as plt
 
-        f, axs = plt.subplots(1, 3, sharex=True, sharey=True)
+        _, axs = plt.subplots(1, 3, sharex=True, sharey=True)
         res = result / volume
         for d, ax, t in zip(
             (res, ana, res - ana),

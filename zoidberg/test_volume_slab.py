@@ -19,7 +19,7 @@ def polyfunc(y, p):
 
 
 class fld(zbfield.MagneticField):
-    def __init__(self, polynomials=[1.0]):
+    def __init__(self, polynomials=None):
         """
         Parameters
         ----------
@@ -28,6 +28,8 @@ class fld(zbfield.MagneticField):
             B(phi) = polynomials[0] + polynomials[1]*sin(phi) + polynomials[2]*sin(2.0 * phi) ...
 
         """
+        if polynomials is None:
+            polynomials = [1.0]
         self.polynomials = polynomials
         self.Bz = 0.0
         self.Bzprime = 0.0
@@ -145,11 +147,11 @@ def test_slab_volume():
         errors.append(error[str(ref)])
 
     coeffs = np.polyfit(np.log(reffactors), np.log(errors), 1)
-    a, b = coeffs
+    a, _b = coeffs
     print("Convergence:", -a)
 
     if plotting:
-        fig, ax = plt.subplots()
+        _fig, ax = plt.subplots()
         for ref in reffactors:
             ax.scatter(ref, error[str(ref)])
         ax.set_xscale("log")

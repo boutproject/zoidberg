@@ -378,7 +378,7 @@ switch inner and outer boundary.
         R = R.reshape((n,))
         Z = Z.reshape((n,))
 
-        dists, ind = self.tree.query(position)
+        _dists, ind = self.tree.query(position)
 
         # Calculate (x,y) index
         nx, nz = self.R.shape

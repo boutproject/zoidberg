@@ -209,9 +209,7 @@ class MagneticField:
 
         if np.amin(np.abs(By)) < 1e-8:
             # Very small By
-            raise ValueError(
-                f"Small By ({By}) at (x={x}, y={ycoord}, z={z})"
-            )
+            raise ValueError(f"Small By ({By}) at (x={x}, y={ycoord}, z={z})")
 
         R_By = Rmaj / By
         # Rate of change of x location [m] with y angle [radians]
@@ -370,7 +368,7 @@ class StraightStellarator(MagneticField):
         yperiod=np.pi,
         I_coil=0.05,
         smooth=False,
-        smooth_args={},
+        smooth_args=None,
     ):
         xcentre = float(xcentre)
         zcentre = float(zcentre)
@@ -475,7 +473,7 @@ class RotatingEllipse(MagneticField):
         I_coil=0.05,
         Btor=1.0,
         smooth=False,
-        smooth_args={},
+        smooth_args=None,
     ):
         xcentre = float(xcentre)
         zcentre = float(zcentre)
@@ -848,7 +846,9 @@ class DommaschkPotentials(MagneticField):
             a * cos(n * self.phi - np.pi / 2) + b * sin(n * self.phi - np.pi / 2)
         ) * self.D(n, m) + (
             c * cos(n * self.phi - np.pi / 2) + d * sin(n * self.phi - np.pi / 2)
-        ) * self.N(n, m - 1)
+        ) * self.N(
+            n, m - 1
+        )
 
         return V
 
@@ -1149,17 +1149,7 @@ class SmoothedMagneticField(MagneticField):
         self.zboundary = zboundary
 
     def Bxfunc(self, x, z, phi):
-        # Get closest y (phi) grid index
-        ind = np.argmin(np.abs(phi - self.grid.ycoords))
-        if phi < self.grid.ycoords[ind]:
-            ind -= 1
-        # phi now between ind and ind+1
-        grid_d, y_d = self.grid.getPoloidalGrid(ind)
-        grid_u, y_u = self.grid.getPoloidalGrid(ind + 1)
-
-        # Get x,z indices from poloidal grids
-        x_d, z_d = grid_d.findIndex(x, z)
-        x_u, z_u = grid_d.findIndex(x, z)
+        raise RuntimeError("Not implemented")
 
     def Byfunc(self, x, z, phi):
         """
@@ -1433,9 +1423,7 @@ class W7X_vacuum(MagneticField):
         nz = z.shape[2]
 
         # create (standardized) file name for saving/loading magnetic field.
-        fname_old = (
-            f"B.w7x.{nx}.{ny}.{nz}.{r[0, 0, 0]:.2f}-{r[-1, 0, 0]:.2f}.{phi[0, 0, 0]:.2f}-{phi[0, -1, 0]:.2f}.{z[0, 0, 0]:.2f}-{z[0, 0, -1]:.2f}.dat"
-        )
+        fname_old = f"B.w7x.{nx}.{ny}.{nz}.{r[0, 0, 0]:.2f}-{r[-1, 0, 0]:.2f}.{phi[0, 0, 0]:.2f}-{phi[0, -1, 0]:.2f}.{z[0, 0, 0]:.2f}-{z[0, 0, -1]:.2f}.dat"
 
         fname = f"B.w7x.{configuration}.{nx}.{ny}.{nz}.{r[0, 0, 0]:.2f}-{r[-1, 0, 0]:.2f}.{phi[0, 0, 0]:.2f}-{phi[0, -1, 0]:.2f}.{z[0, 0, 0]:.2f}-{z[0, 0, -1]:.2f}.nc"
 
@@ -1704,10 +1692,9 @@ class W7X_vacuum(MagneticField):
 
 
 def _set_config(config, configuration):
-    if isinstance(configuration, int):
-        if configuration >= 0:
-            config.configIds = configuration
-            return config
+    if isinstance(configuration, int) and configuration >= 0:
+        config.configIds = configuration
+        return config
     known = {
         -1: [1, 1, 1, 1, 1, 1, 1],
         "FMM002": [13423, 13423, 13423, 13423, 13423, -3544, -3544],
@@ -1796,15 +1783,21 @@ class W7X_VMEC(MagneticField):
         nx=512,
         ny=32,
         nz=512,
-        x_range=[4.05, 6.55],
-        z_range=[-1.35, 1, 35],
-        phi_range=[0, 2 * np.pi],
+        x_range=None,
+        z_range=None,
+        phi_range=None,
         vmec_id="w7x_ref_171",
     ):
         import numpy as np
         from scipy.interpolate import RegularGridInterpolator
 
         ## create 1D arrays of cylindrical coordinates
+        if phi_range is None:
+            phi_range = [0, 2 * np.pi]
+        if z_range is None:
+            z_range = [-1.35, 1, 35]
+        if x_range is None:
+            x_range = [4.05, 6.55]
         r = np.linspace(x_range[0], x_range[-1], nx)
         phi = np.linspace(phi_range[0], phi_range[-1], ny)
         z = np.linspace(z_range[0], z_range[-1], nz)

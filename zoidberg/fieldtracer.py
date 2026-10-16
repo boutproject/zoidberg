@@ -744,11 +744,11 @@ class EMC3FieldTracer(FieldTracer):
         self.field = field
         self.ds = field.ds
         self.ds_min = xr.Dataset(
-            dict(
-                R_bounds=self.ds["R_bounds"],
-                z_bounds=self.ds["z_bounds"],
-                phi_bounds=self.ds["phi_bounds"],
-            )
+            {
+                "R_bounds": self.ds["R_bounds"],
+                "z_bounds": self.ds["z_bounds"],
+                "phi_bounds": self.ds["phi_bounds"],
+            }
         )
         for k in self.ds:
             if k.endswith("_dims"):

@@ -30,7 +30,7 @@ def generate_points_tosmooth(bounds, outliers, length):
     for dup in outliers:
         todel.update([x for x in range(dup - bounds, dup + bounds + 1) if x < length])
     ###
-    todel = sorted(list(todel))
+    todel = sorted(todel)
     splitedlist = []
     first = 0
     last = todel[0]
@@ -317,11 +317,10 @@ def smooth(r, z, cutoff=0.75, bounds=10, bounds_find=None, plot=False):
         outliers = []
         for b in range(1, bounds_find + 1):
             outliers += find_outliers(r, z, cutoff, b)
-        if plot:
-            if outliers:
-                plt.plot(
-                    *np.array([(r[i], z[i]) for i in outliers]).T, "x", label="outlier"
-                )
+        if plot and outliers:
+            plt.plot(
+                *np.array([(r[i], z[i]) for i in outliers]).T, "x", label="outlier"
+            )
         splitedlist = generate_points_tosmooth(bounds, outliers, len(r))
         if plot:
             pass
@@ -364,7 +363,7 @@ if __name__ == "__main__":
             j += 1
             print(f"figure {j}")
 
-    if any([len(x) for x in alldeb]):
+    if any(len(x) for x in alldeb):
         f, axs = plt.subplots(3, 1)
         for deb in alldeb:
             x = np.array(deb)
