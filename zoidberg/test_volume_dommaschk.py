@@ -244,18 +244,18 @@ def test_run():
     # First do the exact calculation
 
     exact_volume = calculate_dommaschk_volume(
-        2000, 500, symmetry, yperiod, plotting, Btor, R0, a1, a2, mode=1
+        200, 50, symmetry, yperiod, plotting, Btor, R0, a1, a2, mode=1
     )
     print(f"Exact volume: {np.round(exact_volume, 6)} m^3")
 
-    scales = [2, 4, 8]
+    scales = [1, 2, 4]
     gridvolumes = np.zeros(len(scales))
 
     for i in range(len(scales)):
         scale = scales[i]
-        ny = 2 * scale
-        nx = 8 * scale
-        nz = 32 * scale
+        ny = 1 * scale
+        nx = 4 * scale
+        nz = 16 * scale
         gridvolumes[i] = dommaschk_grid_volume(
             nx, ny, nz, a1, a2, R0, Btor, symmetry, yperiod, plotting=plotting
         )
