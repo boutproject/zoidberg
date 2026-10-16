@@ -53,7 +53,6 @@ class MagneticField:
     """
 
     boundary = boundary.NoBoundary()  # An optional Boundary object
-    attributes = {}
 
     def Bxfunc(self, x, z, phi):
         """Magnetic field in x direction at given coordinates
@@ -255,6 +254,7 @@ class Slab(MagneticField):
         self.Bz = Bz
         self.xcentre = xcentre
         self.Bzprime = Bzprime
+        self.attributes = {}
 
     def Bxfunc(self, x, z, phi):
         return np.zeros(x.shape)
@@ -303,6 +303,7 @@ class CurvedSlab(MagneticField):
         self.xcentre = xcentre
         self.Bzprime = Bzprime
         self.Rmaj = Rmaj
+        self.attributes = {}
 
     def Bxfunc(self, x, z, phi):
         return np.zeros(x.shape)
@@ -376,6 +377,8 @@ class StraightStellarator(MagneticField):
         yperiod = float(yperiod)
 
         iota = 2.0 * np.pi / yperiod
+
+        self.attributes = {}
 
         self.x = Symbol("x")
         self.z = Symbol("z")
@@ -483,6 +486,8 @@ class RotatingEllipse(MagneticField):
 
         iota = 2.0 * np.pi / yperiod
 
+        self.attributes = {}
+
         self.x = Symbol("x")
         self.z = Symbol("z")
         self.y = Symbol("y")
@@ -566,6 +571,8 @@ class DommaschkPotentials(MagneticField):
         self.l = Symbol("l")
         self.n = Symbol("n")
         self.k = Symbol("k")
+
+        self.attributes = {}
 
         self.A = A
 
@@ -887,6 +894,8 @@ class Screwpinch(MagneticField):
         self.r = Symbol("r")
         self.r = ((self.x - xcentre) ** 2 + (self.z - zcentre) ** 2) ** (0.5)
 
+        self.attributes = {}
+
         self.phi = Symbol("phi")
 
         alpha = shear
@@ -1049,6 +1058,8 @@ class VMEC(MagneticField):
         # Only needed here
         from scipy.interpolate import RegularGridInterpolator, griddata
 
+        self.attributes = {}
+
         self.read_vmec_file(vmec_file, ntheta, nzeta)
 
         self.nr = nr
@@ -1145,6 +1156,7 @@ class SmoothedMagneticField(MagneticField):
         self.grid = grid
         self.xboundary = xboundary
         self.zboundary = zboundary
+        self.attributes = {}
 
     def Bxfunc(self, x, z, phi):
         raise RuntimeError("Not implemented")
@@ -1212,6 +1224,8 @@ class GEQDSK(MagneticField):
         with open(gfile) as f:
             data = geqdsk.read(f)
 
+        self.attributes = {}
+
         # Get the range of major radius
         self.rmin = data["rleft"]
         self.rmax = data["rdim"] + self.rmin
@@ -1245,6 +1259,7 @@ class GEQDSK(MagneticField):
 
         self.psi_func = interpolate.RectBivariateSpline(self.r, self.z, self.psi)
 
+        self.attributes = {}
         # Add to the attributes so that it can be written to file
         self.attributes["psi"] = lambda x, z, phi: self.psi_func(x, z, grid=False)
 
@@ -1348,6 +1363,8 @@ class W7X_vacuum(MagneticField):
         r = np.linspace(x_range[0], x_range[-1], nx)
         phi = np.linspace(0, phimax, ny)
         z = np.linspace(z_range[0], z_range[-1], nz)
+
+        self.attributes = {}
 
         ## make those 1D arrays 3D
         rarray, yarray, zarray = np.meshgrid(r, phi, z, indexing="ij")
@@ -1789,6 +1806,8 @@ class W7X_VMEC(MagneticField):
         import numpy as np
         from scipy.interpolate import RegularGridInterpolator
 
+        self.attributes = {}
+
         ## create 1D arrays of cylindrical coordinates
         if phi_range is None:
             phi_range = [0, 2 * np.pi]
@@ -1879,6 +1898,7 @@ class EMC3(MagneticField):
         self.ds["Bmean"] = ds["bf_bounds"].mean(
             dim=("delta_r", "delta_phi", "delta_theta")
         )
+        self.attributes = {}
 
     def Bxfunc(self, x, z, phi):
         raise NotImplementedError("Use maybe EMC3 tracer?")
