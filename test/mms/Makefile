@@ -1,4 +1,4 @@
-all: parallel laplace delp
+all: parallel
 
 radial: do_radial
 

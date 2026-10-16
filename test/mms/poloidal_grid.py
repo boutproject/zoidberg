@@ -1,3 +1,5 @@
+import warnings
+
 import zoidberg as zb
 import numpy as np
 import xarray as xr
@@ -53,7 +55,7 @@ def gen_grid(*args):
     pol_grid = zb.poloidal_grid.StructuredPoloidalGrid(R, Z)
 
     field = zb.field.CurvedSlab(Bz=0, Bzprime=0, Rmaj=R0)
-    grid = zb.grid.Grid(pol_grid, phi, 5, yperiodic=True)
+    grid = zb.grid.Grid(pol_grid, phi, np.pi / 2.5, yperiodic=True)
 
     fn = gen_name(*args)
 
@@ -64,6 +66,11 @@ def gen_grid(*args):
         maps,
         "tmp.nc",
         metric2d=False,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message="Duplicate dimension names present: dimensions {.*} appear more than once in dims=(.*). We do not yet support duplicate dimension names, but we do allow initial construction of the object. We recommend you rename the dims immediately to become distinct, as most xa",
+        category=UserWarning,
     )
     with xr.open_dataset("tmp.nc") as ds:
         dims = ds.dz.dims
@@ -84,7 +91,7 @@ def _togen(*args):
 
 grids = {}
 for mode in range(5):
-    grids[modes[mode][0]] = [_togen(4, 2, nz, 1, 0.1, 0.5, mode) + (nz,) for nz in lst]
+    grids[modes[mode][0]] = [_togen(6, 2, nz, 1, 0.1, 0.5, mode) + (nz,) for nz in lst]
 
 if __name__ == "__main__":
     for todos in grids.values():
