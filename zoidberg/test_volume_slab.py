@@ -34,6 +34,7 @@ class fld(zbfield.MagneticField):
         self.Bz = 0.0
         self.Bzprime = 0.0
         self.xcentre = 5.0
+        self.attributes = {}
 
     def Byfunc(self, x, z, phi):
         return polyfunc(phi, self.polynomials)
