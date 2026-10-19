@@ -616,14 +616,15 @@ class MapWriter:
 
         # Get attributes from magnetic field (e.g. psi)
         attributes = {}
-        for name in self.field.attributes:
-            attribute = np.zeros(self.grid.shape)
-            for yindex in range(self.grid.numberOfPoloidalGrids()):
-                pol_grid, ypos = self.grid.getPoloidalGrid(yindex)
-                attribute[:, yindex, :] = self.field.attributes[name](
-                    pol_grid.R, pol_grid.Z, ypos
-                )
-            attributes[name] = attribute
+        if hasattr(self.field, "attributes"):
+            for name in self.field.attributes:
+                attribute = np.zeros(self.grid.shape)
+                for yindex in range(self.grid.numberOfPoloidalGrids()):
+                    pol_grid, ypos = self.grid.getPoloidalGrid(yindex)
+                    attribute[:, yindex, :] = self.field.attributes[name](
+                        pol_grid.R, pol_grid.Z, ypos
+                    )
+                attributes[name] = attribute
         self.write_dict(attributes)
 
     def write_dict(self, metric, always3d=True):
