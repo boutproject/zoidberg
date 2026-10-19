@@ -4,7 +4,7 @@ from .grid import Grid
 
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
-import gmsh
+
 
 def rzphi_to_xyz(r,z,phi):
     return r*np.cos(phi), r*np.sin(phi), z
@@ -57,7 +57,7 @@ def align_contours(A):
 
 def create_wall_mesh(B, phi, close_toroidal=True):
     """
-    Create a triangular surface mesh in Gmsh from aligned R-Z contours.
+    Create a triangular surface mesh from aligned R-Z contours.
 
     Parameters
     ----------
@@ -69,7 +69,7 @@ def create_wall_mesh(B, phi, close_toroidal=True):
         Toroidal angles in radians.
 
     filename : str
-        Output Gmsh mesh filename.
+        Output triangles and vertices.
 
     close_toroidal : bool
         Connect the last cross-section to the first.
