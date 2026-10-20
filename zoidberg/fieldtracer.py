@@ -414,12 +414,42 @@ def trace_poincare(
 
 
 class CachingFieldTracer:
+    """Wrap a field tracer, caching results on disk
+
+    Parameters
+    ----------
+    tracer
+        The field tracer to wrap
+    cachename : str, optional
+        Filename template for the cache files, formatted with the hash
+    debug : bool, optional
+        Print debugging information
+    key : str, optional
+        Identifies the magnetic field / configuration being traced. The
+        cache key includes the tracer and field types and the tracing
+        arguments, but cannot detect other changes to the field, so use a
+        different key (or cachename) for different fields of the same type.
+    """
+
     def __init__(
-        self, tracer, cachename="_zoidberg_cache_tracing_%10.10s", debug=False
+        self,
+        tracer,
+        cachename="_zoidberg_cache_tracing_%10.10s",
+        debug=False,
+        key="",
     ):
         self.tracer = tracer
         self.cachename = cachename
         self.debug = debug
+        self.key = key
+
+    def _identity(self):
+        field = getattr(self.tracer, "field", None)
+        if field is None:
+            field = getattr(
+                getattr(self.tracer, "field_direction", None), "__self__", None
+            )
+        return f"{type(self.tracer).__qualname__}:{type(field).__qualname__}:{self.key}"
 
     def _myhash(self, *args):
         """
@@ -437,28 +467,31 @@ class CachingFieldTracer:
             m.update(s)
         return m.hexdigest()
 
-    def _guess_shape(self, x_values, y_values):
-        return len(y_values), *x_values.shape, 2
+    def _guess_shape(self, x_values, z_values, y_values):
+        xz_shape = np.broadcast(np.atleast_1d(x_values), np.atleast_1d(z_values)).shape
+        return len(np.atleast_1d(y_values)), *xz_shape, 2
 
     def follow_field_lines(self, x_values, z_values, y_values, **kwargs):
-        fn = self.cachename % self._myhash(x_values, z_values, y_values)
+        fn = self.cachename % self._myhash(
+            self._identity(),
+            sorted((k, str(v)) for k, v in kwargs.items()),
+            x_values,
+            z_values,
+            y_values,
+        )
+        shape = self._guess_shape(x_values, z_values, y_values)
         try:
             dat = np.loadtxt(fn)
-            dat.shape = self._guess_shape(x_values, y_values)
+            dat.shape = shape
             return dat
         except FileNotFoundError:
             if self.debug:
                 print("no cache", fn)
         ret = self.tracer.follow_field_lines(x_values, z_values, y_values, **kwargs)
-        shape = ret.shape
+        assert ret.shape == shape, f"Estimated {shape} but got {ret.shape}"
         if self.debug:
-            print(f"saving {ret.shape}, {x_values.shape}")
-        ret.shape = -1, shape[-1]
-        np.savetxt(fn, ret)
-        assert shape == self._guess_shape(x_values, y_values), (
-            f"Estimated {self._guess_shape(x_values, y_values)} but got {shape}"
-        )
-        ret.shape = shape
+            print(f"saving {ret.shape}")
+        np.savetxt(fn, ret.reshape(-1, ret.shape[-1]))
         return ret
 
 
