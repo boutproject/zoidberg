@@ -1857,7 +1857,9 @@ class W7X_VMEC(MagneticField):
         pos.x1 = np.ndarray.flatten(np.ones(self.shape) * r * np.cos(phi))
         # y in Cartesian (real-space)
         pos.x2 = np.ndarray.flatten(np.ones(self.shape) * r * np.sin(phi))
-        pos.x3 = np.ndarray.flatten(np.ones(self.shape) * z)  # z in Cartesian (real-space)
+        pos.x3 = np.ndarray.flatten(
+            np.ones(self.shape) * z
+        )  # z in Cartesian (real-space)
         b = vmec.service.magneticField(str(vmec_id), pos)
 
         ## Reshape to 3d array
