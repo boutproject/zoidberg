@@ -339,7 +339,14 @@ def make_maps(
 
             for direction in [-1, +1]:
                 # Get this poloidal grid
-                _, ycoordnext = grid.getPoloidalGrid(j + direction)
+                pol_next, ycoordnext = grid.getPoloidalGrid(j + direction)
+                if pol_next is None:
+                    # Past the end of a non-periodic domain, ycoordnext is on boundary
+                    pol_prev, ycoordprev = grid.getPoloidalGrid(j - direction)
+                    if pol_prev is not None:
+                        ycoordnext = 2 * ycoord - ycoordprev
+                    else:
+                        ycoordnext = ycoord + direction * grid.Ly
 
                 # Get the next poloidal grid
                 pol_slice = []
