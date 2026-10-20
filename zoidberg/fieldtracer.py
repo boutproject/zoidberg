@@ -902,9 +902,11 @@ class EMC3FieldTracer(FieldTracer):
                 l2 = (rz[0] - mesh.r) ** 2 + (rz[1] - mesh.z) ** 2
                 ij = np.argmin(l2)
                 if l2.flat[ij] < mind:
+                    # Convert node index to the index of a cell containing it
+                    # (cells are indexed with nz - 1 columns)
                     nr, nz = mesh.r.shape
-                    if ij >= (nr - 1) * nz:
-                        ij -= nz
+                    i, j = divmod(ij, nz)
+                    ij = min(i, nr - 2) * (nz - 1) + min(j, nz - 2)
                     return self._rz_to_ab(rz, mesh.grid, ij), ij, mesh.zid
 
         import matplotlib.colors as mcolors
