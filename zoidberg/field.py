@@ -1513,6 +1513,7 @@ class W7X_vacuum(MagneticField):
 
         return Br, Bphi, Bz
 
+    @staticmethod
     def plasma_field(r, phi, z, wout_file="wout.nc"):
         """This uses EXTENDER via the IPP webservices to get the magnetic
         field from the plasma given 3d arrrays for R, phi, and Z. Only
