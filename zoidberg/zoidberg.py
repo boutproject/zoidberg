@@ -221,8 +221,8 @@ def make_maps(
                 1:, ...
             ]
 
-            for parallel_slice, coord, pol_slice in zip(
-                parallel_slices, coords, pol_slices
+            for parallel_slice, coord, pol_slice, y_slice in zip(
+                parallel_slices, coords, pol_slices, y_slices[1:]
             ):
                 # Store the coordinates in real space
                 parallel_slice.R[:, j, :] = coord[:, :, 0]
@@ -247,59 +247,65 @@ def make_maps(
                 parallel_slice.xt_prime[:, j, :] = xind
                 parallel_slice.zt_prime[:, j, :] = zind
 
-            if nsamples == 1:
-                # Only one sample per cell
-                parallel_slice.xt_primes[:, j, :, 0] = xind
-                parallel_slice.zt_primes[:, j, :, 0] = zind
-            elif pol_slice is None:
-                # No slice grid, so hit a boundary
-                # Not calculating intersection R,Z so no need to follow
-                parallel_slice.xt_primes[:, j, :, :] = -1
-                parallel_slice.zt_primes[:, j, :, :] = -1
-            else:
-                # Multiple samples.
-                # Interpolate R and Z to get starting locations
-                from scipy import interpolate
+                if nsamples == 1:
+                    # Only one sample per cell
+                    parallel_slice.xt_primes[:, j, :, 0] = xind
+                    parallel_slice.zt_primes[:, j, :, 0] = zind
+                elif pol_slice is None:
+                    # No slice grid, so hit a boundary
+                    # Not calculating intersection R,Z so no need to follow
+                    parallel_slice.xt_primes[:, j, :, :] = -1
+                    parallel_slice.zt_primes[:, j, :, :] = -1
+                else:
+                    # Multiple samples.
+                    # Interpolate R and Z to get starting locations
+                    from scipy import interpolate
 
-                R = pol.R
-                Z = pol.Z
-                nx, nz = pol.R.shape
-                # Wrap around in Z by adding the arrays
-                Rinterp = interpolate.RegularGridInterpolator(
-                    (np.arange(nx), np.arange(nz + 2) - 1),
-                    np.concatenate((R[:, -1:], R, R[:, 0:1]), axis=-1),
-                    bounds_error=False,
-                    fill_value=None,  # Extrapolates
-                )
-                Zinterp = interpolate.RegularGridInterpolator(
-                    (np.arange(nx), np.arange(nz + 2) - 1),
-                    np.concatenate((Z[:, -1:], Z, Z[:, 0:1]), axis=-1),
-                    bounds_error=False,
-                    fill_value=None,  # Extrapolates
-                )
+                    R = pol.R
+                    Z = pol.Z
+                    nx, nz = pol.R.shape
+                    # Wrap around in Z by adding the arrays
+                    Rinterp = interpolate.RegularGridInterpolator(
+                        (np.arange(nx), np.arange(nz + 2) - 1),
+                        np.concatenate((R[:, -1:], R, R[:, 0:1]), axis=-1),
+                        bounds_error=False,
+                        fill_value=None,  # Extrapolates
+                    )
+                    Zinterp = interpolate.RegularGridInterpolator(
+                        (np.arange(nx), np.arange(nz + 2) - 1),
+                        np.concatenate((Z[:, -1:], Z, Z[:, 0:1]), axis=-1),
+                        bounds_error=False,
+                        fill_value=None,  # Extrapolates
+                    )
 
-                # Indices of the cell centers
-                xinds, zinds = np.meshgrid(np.arange(nx), np.arange(nz), indexing="ij")
+                    # Indices of the cell centers
+                    xinds, zinds = np.meshgrid(
+                        np.arange(nx), np.arange(nz), indexing="ij"
+                    )
 
-                for s, xo, zo, w in zip(range(nsamples), xoffsets, zoffsets, weights):
-                    coord = field_tracer.follow_field_lines(
-                        Rinterp((xinds + xo, zinds)),
-                        Zinterp((xinds + zo, zinds)),
-                        [ycoord, y_slice],
-                        rtol=rtol,
-                    )[1, ...]
-                    xcoord = coord[:, :, 0]
-                    zcoord = coord[:, :, 1]
-                    xind, zind = pol_slice.findIndex(xcoord, zcoord)
+                    for s, xo, zo, w in zip(
+                        range(nsamples), xoffsets, zoffsets, weights
+                    ):
+                        coord = field_tracer.follow_field_lines(
+                            Rinterp((xinds + xo, zinds + zo)),
+                            Zinterp((xinds + xo, zinds + zo)),
+                            [ycoord, y_slice],
+                            rtol=rtol,
+                        )[1, ...]
+                        xcoord = coord[:, :, 0]
+                        zcoord = coord[:, :, 1]
+                        xind, zind = pol_slice.findIndex(xcoord, zcoord)
 
-                    # Check boundary defined by the field
-                    # Note: A fraction of points may hit the boundary
-                    outside = magnetic_field.boundary.outside(xcoord, y_slice, zcoord)
-                    xind[outside] = -1
-                    zind[outside] = -1
+                        # Check boundary defined by the field
+                        # Note: A fraction of points may hit the boundary
+                        outside = magnetic_field.boundary.outside(
+                            xcoord, y_slice, zcoord
+                        )
+                        xind[outside] = -1
+                        zind[outside] = -1
 
-                    parallel_slice.xt_primes[:, j, :, s] = xind
-                    parallel_slice.zt_primes[:, j, :, s] = zind
+                        parallel_slice.xt_primes[:, j, :, s] = xind
+                        parallel_slice.zt_primes[:, j, :, s] = zind
 
             if (not quiet) and (ny > 1):
                 if tqdm:
@@ -319,6 +325,10 @@ def make_maps(
         else:
             update_progress(0, **kwargs)
 
+    # Cartesian fields (Rfunc returns None) have y as a length, not an angle
+    pol, ycoord = grid.getPoloidalGrid(0)
+    cylindrical = magnetic_field.Rfunc(pol.R, pol.Z, ycoord) is not None
+
     jacobian = np.empty(shape)
     sg_22 = [np.empty(shape) for _ in range(3)]
     B_cell = [np.empty(shape) for _ in range(3)]
@@ -333,7 +343,15 @@ def make_maps(
 
             for direction in [-1, +1]:
                 # Get this poloidal grid
-                _, ycoordnext = grid.getPoloidalGrid(j + direction)
+                pol_next, ycoordnext = grid.getPoloidalGrid(j + direction)
+                if pol_next is None:
+                    # Past the end of a non-periodic domain, ycoordnext is on the
+                    # boundary. Integrate over a whole cell, as for the other planes
+                    pol_prev, ycoordprev = grid.getPoloidalGrid(j - direction)
+                    if pol_prev is not None:
+                        ycoordnext = 2 * ycoord - ycoordprev
+                    else:
+                        ycoordnext = ycoord + 2 * (ycoordnext - ycoord)
 
                 # Get the next poloidal grid
                 pol_slice = []
@@ -360,7 +378,9 @@ def make_maps(
                     refine_parallel_integral * k,
                     -refine_parallel_integral * (2 - k) if k < 2 else None,
                 )
-                sg_22[k][chunk, j, :] = field_line_length(coords[slc], y_all[slc])
+                sg_22[k][chunk, j, :] = field_line_length(
+                    coords[slc], y_all[slc], cylindrical=cylindrical
+                )
             coords = coords[refine_parallel_integral:-refine_parallel_integral]
             y_all = y_all[refine_parallel_integral:-refine_parallel_integral]
 
@@ -389,7 +409,7 @@ def make_maps(
 
             B0 = Bs[len(Bs) // 2]
             vols = [
-                Jperp0 * B0 / Bpar * fac * R
+                Jperp0 * B0 / Bpar * fac * (R if cylindrical else 1.0)
                 for Bpar, fac, R in zip(Bs, facs, coords[..., 0])
             ]
             assert len(vols) == len(facs)
@@ -664,7 +684,14 @@ class MapWriter:
             )
         yperiodic = self.grid.yperiodic if self.grid else True
         for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
-            pypar = np.roll(ypar, -offset)
+            if self.grid and not yperiodic:
+                # Values past the ends are on the boundary, as in make_maps,
+                # rather than wrapped around
+                pypar = np.array(
+                    [self.grid.getPoloidalGrid(i + offset)[1] for i in range(ny)]
+                )
+            else:
+                pypar = np.roll(ypar, -offset)
             if yperiodic:
                 for i in range(1, ny):
                     if meandy * (pypar[i] - pypar[i - 1]) < 0:

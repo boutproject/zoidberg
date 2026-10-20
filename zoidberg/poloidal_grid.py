@@ -389,9 +389,15 @@ switch inner and outer boundary.
 
         # Create a mask for the positions
         mask = np.ones(xind.shape)
-        mask[np.logical_or((xind < 0.5), (xind > (nx - 1.5)))] = (
-            0.0  # Set to zero if near the boundary
-        )
+        if nx > 2:
+            # Start points nearest the boundary rows from the first interior row
+            # so they are still refined; the Newton iteration below decides
+            # whether they are really in the boundary.
+            xind = np.clip(xind, 1.0, nx - 2.0)
+        else:
+            mask[np.logical_or((xind < 0.5), (xind > (nx - 1.5)))] = (
+                0.0  # Set to zero if near the boundary
+            )
 
         if show and plotting_available:
             plt.plot(self.R, self.Z, ".")
@@ -816,16 +822,15 @@ def grid_elliptic(
         dx[dx < -np.pi] += np.pi * 2
         dx[dx > np.pi] -= np.pi * 2
         f = np.fft.fft(dx)
-        n = len(f)
-        nh = n // 2
         nq = maxmode
-        f[nq:nh] = 0
-        f[nh + 1 : -nq] = 0
+        # Remove modes above maxmode, including the Nyquist mode
+        f[nq:-nq] = 0
         dxn = np.real(np.fft.ifft(f))
         xnew = np.empty_like(x)
         xnew[0] = x[0]
+        # dx[i] = x[i] - x[i-1]
         for i in range(len(x) - 1):
-            xnew[i + 1] = xnew[i] + dxn[i]
+            xnew[i + 1] = xnew[i] + dxn[i + 1]
         return xnew % (np.pi * 2)
 
     if (nx > restrict_size) or (nz > restrict_size):

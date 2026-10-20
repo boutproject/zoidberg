@@ -20,7 +20,6 @@ def _fft(args, freq):
 
 
 def _err(args, data, freq):
-    freq = np.linspace(-np.pi, np.pi, len(data), endpoint=False)
     return _fft(args, freq) - data
 
 
@@ -52,7 +51,7 @@ class SpectralLine:
         return _fft(self.resZ.x, theta)
 
     def equallySpaced(self, num=None):
-        freq = np.linspace(0, np.pi * 2, num or len(self.orgLine.R))
+        freq = np.linspace(0, np.pi * 2, num or len(self.orgLine.R), endpoint=False)
         return RZline(self.Rvalue(freq), self.Zvalue(freq))
 
     def plot(self, axis=None, show=True):

@@ -175,8 +175,11 @@ class RZline:
             return self.R, self.Z
         n = len(self.R)
         dtheta = 2.0 * np.pi / n
-        ind = np.trunc(theta / dtheta).astype(int) % n
-        rem = np.remainder(theta, dtheta)
+        pos = np.asarray(theta) / dtheta
+        ind = np.floor(pos)
+        # Fractional position between points ind and ind+1
+        rem = pos - ind
+        ind = ind.astype(int) % n
         indp = (ind + 1) % n
         return (rem * self.R[indp] + (1.0 - rem) * self.R[ind]), (
             rem * self.Z[indp] + (1.0 - rem) * self.Z[ind]
