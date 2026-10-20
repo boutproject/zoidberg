@@ -325,6 +325,10 @@ def make_maps(
         else:
             update_progress(0, **kwargs)
 
+    # Cartesian fields (Rfunc returns None) have y as a length, not an angle
+    pol, ycoord = grid.getPoloidalGrid(0)
+    cylindrical = magnetic_field.Rfunc(pol.R, pol.Z, ycoord) is not None
+
     jacobian = np.empty(shape)
     sg_22 = [np.empty(shape) for _ in range(3)]
     B_cell = [np.empty(shape) for _ in range(3)]
@@ -373,7 +377,9 @@ def make_maps(
                     refine_parallel_integral * k,
                     -refine_parallel_integral * (2 - k) if k < 2 else None,
                 )
-                sg_22[k][chunk, j, :] = field_line_length(coords[slc], y_all[slc])
+                sg_22[k][chunk, j, :] = field_line_length(
+                    coords[slc], y_all[slc], cylindrical=cylindrical
+                )
             coords = coords[refine_parallel_integral:-refine_parallel_integral]
             y_all = y_all[refine_parallel_integral:-refine_parallel_integral]
 
@@ -402,7 +408,7 @@ def make_maps(
 
             B0 = Bs[len(Bs) // 2]
             vols = [
-                Jperp0 * B0 / Bpar * fac * R
+                Jperp0 * B0 / Bpar * fac * (R if cylindrical else 1.0)
                 for Bpar, fac, R in zip(Bs, facs, coords[..., 0])
             ]
             assert len(vols) == len(facs)

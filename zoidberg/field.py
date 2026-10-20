@@ -1910,6 +1910,9 @@ class EMC3(MagneticField):
     def Bxyzfunc(self, x, z, phi):
         raise NotImplementedError("Use maybe EMC3 tracer?")
 
+    def Rfunc(self, x, z, phi):
+        return x
+
     def Bmag(self, x, z, phi):
         vals = self.ds.emc3.evaluate_at_rpz(x, phi, z, "Bmean", delta_phi=1e-6)[
             "Bmean"
