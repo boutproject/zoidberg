@@ -677,7 +677,12 @@ class MapWriter:
             )
         yperiodic = self.grid.yperiodic if self.grid else True
         for offset in chain(range(1, nslice + 1), range(-1, -(nslice + 1), -1)):
-            pypar = np.roll(ypar, -offset)
+            if self.grid and not yperiodic:
+                pypar = np.array(
+                    [self.grid.getPoloidalGrid(i + offset)[1] for i in range(ny)]
+                )
+            else:
+                pypar = np.roll(ypar, -offset)
             if yperiodic:
                 for i in range(1, ny):
                     if meandy * (pypar[i] - pypar[i - 1]) < 0:
