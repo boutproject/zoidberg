@@ -152,14 +152,19 @@ class FieldTracerReversible:
         field direction
     nsteps : int, optional
         Number of sub-steps between outputs
+    max_newton_iterations : int, optional
+        Maximum number of Newton iterations per sub-step
 
     """
 
-    def __init__(self, field, rtol=1e-8, eps=1e-5, nsteps=20):
+    def __init__(
+        self, field, rtol=1e-8, eps=1e-5, nsteps=20, max_newton_iterations=100
+    ):
         self.field_direction = field.field_direction
         self.rtol = float(rtol)
         self.eps = float(eps)
         self.nsteps = int(nsteps)
+        self.max_newton_iterations = int(max_newton_iterations)
 
     def follow_field_lines(
         self, x_values, z_values, y_values, rtol=None, eps=None, nsteps=None
@@ -272,7 +277,7 @@ class FieldTracerReversible:
                 z_pos += dzdy * dy
                 y_pos += dy
 
-                while True:
+                for _ in range(self.max_newton_iterations):
                     dxdy, dzdy = self.field_direction((x_pos, z_pos), y_pos)
 
                     # Calculate derivatives (Jacobian matrix) by finite difference
@@ -309,6 +314,10 @@ class FieldTracerReversible:
                     # Check for convergence within tolerance
                     if np.amax(dx**2 + dz**2) < rtol:
                         break
+                else:
+                    raise RuntimeError(
+                        f"Newton iteration failed to converge at y = {y_pos}"
+                    )
                 # Finished Newton iteration, taken step to (x_pos,y_pos,z_pos)
             # Finished sub-steps, reached y_pos = y_next
             result[yindex, ..., 0] = x_pos
