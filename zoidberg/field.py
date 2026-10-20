@@ -1624,15 +1624,13 @@ class W7X_vacuum(MagneticField):
         magnetic_axis_r = np.sqrt(
             np.asarray(magnetic_axis_x) ** 2 + np.asarray(magnetic_axis_y**2)
         )
-        magnetic_axis_phi = np.arctan(magnetic_axis_y / magnetic_axis_x)
+        magnetic_axis_phi = np.arctan2(magnetic_axis_y, magnetic_axis_x)
 
-        index = np.where(
-            (magnetic_axis_phi >= 0.97 * phi_axis)
-            & (magnetic_axis_phi <= 1.03 * phi_axis)
-        )
-        index = index[0]
+        # Closest vertex in toroidal angle, accounting for wrapping
+        dphi = np.angle(np.exp(1j * (magnetic_axis_phi - phi_axis)))
+        index = np.argmin(np.abs(dphi))
 
-        return np.asarray([magnetic_axis_r[index], magnetic_axis_z[index]])[:, 0]
+        return np.asarray([magnetic_axis_r[index], magnetic_axis_z[index]])
 
     def Bxfunc(self, x, z, phi):
         phi = np.mod(phi, 2.0 * np.pi)
