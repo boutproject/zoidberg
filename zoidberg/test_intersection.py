@@ -261,23 +261,36 @@ def test_mms_wall_convergence(mms_grid):
     order = convergence_order(0.5**levels, rms)
     assert order == pytest.approx(2, abs=0.3), rms
 
-    # Angle between field line and wall at the finest resolution.
-    # The wall is the surface (R - Rc(phi))^2 + (Z - Zc(phi))^2 = rw^2
+    # Angle between field line and wall at the finest resolution
+    angle = angle_errors(mms_grid, result, refs)
+    assert np.max(angle) < 0.02
+
+
+def exact_angle(R0, Z0, y0, phi):
+    """Angle between the exact field line from (R0, Z0, y0) and the exact
+    wall, the surface (R - Rc(phi))^2 + (Z - Zc(phi))^2 = rw^2, at phi"""
+    R, Z = exact_position(R0, Z0, y0, phi)
+    u, w = R - Ra, Z - Za
+    rho = np.hypot(u, w)
+    # (dR/dphi, R, dZ/dphi) in (R, phi, Z) components
+    tangent = np.array([a * u / rho - iota * w, R, a * w / rho + iota * u])
+    Rc, Zc = wall_centre(phi)
+    dRc, dZc = -delta * N * np.sin(N * phi), delta * N * np.cos(N * phi)
+    grad = np.array([R - Rc, (-(R - Rc) * dRc - (Z - Zc) * dZc) / R, Z - Zc])
+    return np.arcsin(
+        abs(tangent @ grad) / np.linalg.norm(tangent) / np.linalg.norm(grad)
+    )
+
+
+def angle_errors(g, result, refs):
+    """Errors of the angle between field line and wall of all references"""
+    errors = []
     for (prefix, index), (phi, _) in refs.items():
         ix, j, iz = index
-        pol, y0 = mms_grid.getPoloidalGrid(j)
-        R, Z = exact_position(pol.R[ix, iz], pol.Z[ix, iz], y0, phi)
-        u, w = R - Ra, Z - Za
-        rho = np.hypot(u, w)
-        # (dR/dphi, R, dZ/dphi) in (R, phi, Z) components
-        tangent = np.array([a * u / rho - iota * w, R, a * w / rho + iota * u])
-        Rc, Zc = wall_centre(phi)
-        dRc, dZc = -delta * N * np.sin(N * phi), delta * N * np.cos(N * phi)
-        grad = np.array([R - Rc, (-(R - Rc) * dRc - (Z - Zc) * dZc) / R, Z - Zc])
-        angle = np.arcsin(
-            abs(tangent @ grad) / np.linalg.norm(tangent) / np.linalg.norm(grad)
-        )
-        assert result[f"{prefix}_hit_angle"][index] == pytest.approx(angle, abs=0.02)
+        pol, y0 = g.getPoloidalGrid(j)
+        angle = exact_angle(pol.R[ix, iz], pol.Z[ix, iz], y0, phi)
+        errors.append(abs(result[f"{prefix}_hit_angle"][index] - angle))
+    return np.array(errors)
 
 
 def test_irregular_wall_sections(mms_grid):
@@ -302,7 +315,7 @@ def test_irregular_wall_sections(mms_grid):
     irregular = wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
     regular = make_wall(nsections, 128)
 
-    rms = []
+    rms, rms_angle = [], []
     for wall in (regular, irregular):
         result = intersection.find_wall_intersections(
             mms_grid, SpiralField(), wall, dphi_max=yperiod / 128
@@ -310,6 +323,7 @@ def test_irregular_wall_sections(mms_grid):
         status, err = errors(result, refs)
         assert np.all(status == intersection.HIT)
         rms.append(np.sqrt(np.mean(err**2)))
+        rms_angle.append(np.sqrt(np.mean(angle_errors(mms_grid, result, refs) ** 2)))
 
         # The crossings lie on the faceted wall
         for prefix in ("forward", "backward"):
@@ -322,7 +336,10 @@ def test_irregular_wall_sections(mms_grid):
                 wall_R, wall_Z = wall.section(phi)
                 ring = shapely.LinearRing(np.column_stack((wall_R, wall_Z)))
                 assert shapely.distance(ring, shapely.Point(R, Z)) < 1e-9
-    assert rms[1] < 2 * rms[0], rms
+    # The sections have about the same resolution, so the irregular wall
+    # is about as accurate as the regular one
+    assert rms[1] < 1.3 * rms[0], rms
+    assert rms_angle[1] < 1.3 * rms_angle[0], rms_angle
 
 
 def coarse_section_wall():
@@ -396,12 +413,19 @@ def test_open_wall(capsys):
     assert "slice 4 of 4" in capsys.readouterr().out
 
     for j in range(4):
-        _, y0 = g.getPoloidalGrid(j)
+        pol, y0 = g.getPoloidalGrid(j)
         location = result["start_location"][:, j, :]
         if not phis[0] <= y0 <= phis[-1]:
             assert np.all(location == intersection.OUTSIDE)
-        else:
-            assert np.any(location == intersection.INSIDE)
+            continue
+        # Inside the exact wall, away from it by more than the polygons
+        # deviate from it
+        Rc, Zc = wall_centre(y0)
+        distance = np.hypot(pol.R - Rc, pol.Z - Zc) - rw
+        certain = np.abs(distance) > 0.005
+        assert np.any(certain & (distance < 0)) and np.any(certain & (distance > 0))
+        expected = np.where(distance < 0, intersection.INSIDE, intersection.OUTSIDE)
+        assert np.array_equal(location[certain], expected[certain])
     for prefix in ("forward", "backward"):
         hit = result[f"{prefix}_status"] == intersection.HIT
         assert np.any(hit)
