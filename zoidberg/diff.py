@@ -16,17 +16,20 @@ def c2(f, axis, periodic=False):
     sl1[axis] = slice(None, -2)
     out[t(sl2)] -= f[t(sl1)]
 
+    out /= 2
+
+    # Second order one-sided differences at the boundaries
+    def fi(i):
+        sl = [slice(None) for _ in f.shape]
+        sl[axis] = i
+        return f[t(sl)]
+
     sl2[axis] = 0
-    sl1[axis] = 2
-    out[t(sl2)] = f[t(sl1)]
-    out[t(sl2)] -= f[t(sl2)]
+    out[t(sl2)] = (-3 * fi(0) + 4 * fi(1) - fi(2)) / 2
 
     sl2[axis] = -1
-    sl1[axis] = -3
-    out[t(sl2)] = f[t(sl2)]
-    out[t(sl2)] -= f[t(sl1)]
+    out[t(sl2)] = (3 * fi(-1) - 4 * fi(-2) + fi(-3)) / 2
 
-    out /= 2
     return out
 
 
