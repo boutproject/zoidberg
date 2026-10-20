@@ -1000,7 +1000,7 @@ class FusionSCTracer(FieldTracer):
         Z = z_values
         direction = "ccw" if y_values[0] < y_values[1] else "cw"
         pnts = fsc.flt.poincareInPhiPlanes(
-            [X, Y, Z], self.field, y_values[1:], 1, direction=direction, **self.kwargs
+            [X, Y, Z], self.field, y_values[1:], 1, direction=direction, **kwargs
         )
         assert pnts.shape[-1] == 1
         pnts = pnts[..., 0]
