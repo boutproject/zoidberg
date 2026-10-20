@@ -1336,7 +1336,7 @@ class W7X_vacuum(MagneticField):
         ny=32,
         nz=128,
         x_range=(4.05, 6.55),
-        z_range=(-1.35, 1, 35),
+        z_range=(-1.35, 1.35),
         phimax=2.0 * np.pi,
         configuration=0,
         plot_poincare=False,
@@ -1810,7 +1810,7 @@ class W7X_VMEC(MagneticField):
         if phi_range is None:
             phi_range = [0, 2 * np.pi]
         if z_range is None:
-            z_range = [-1.35, 1, 35]
+            z_range = [-1.35, 1.35]
         if x_range is None:
             x_range = [4.05, 6.55]
         r = np.linspace(x_range[0], x_range[-1], nx)
