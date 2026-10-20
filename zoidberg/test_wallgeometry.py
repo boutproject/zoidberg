@@ -5,6 +5,8 @@ with yperiod, so that the mesh can be compared with the exact surface
 between the cross-sections it was built from.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -15,14 +17,22 @@ shapely = pytest.importorskip("shapely")
 yperiod = 2 * np.pi / 5
 
 
-def ellipse(phi, t):
-    """Ellipse rotating by half a turn per period, t in [0, 1)"""
-    alpha = np.pi * phi / yperiod
-    x, y = 0.6 * np.cos(2 * np.pi * t), 0.3 * np.sin(2 * np.pi * t)
-    return (
-        2 + x * np.cos(alpha) - y * np.sin(alpha),
-        x * np.sin(alpha) + y * np.cos(alpha),
-    )
+def rotating_ellipse(aspect):
+    """Ellipse turning by half a turn per period, t in [0, 1)"""
+
+    def func(phi, t):
+        alpha = np.pi * phi / yperiod
+        x = 0.6 * np.cos(2 * np.pi * t)
+        y = 0.6 / aspect * np.sin(2 * np.pi * t)
+        return (
+            2 + x * np.cos(alpha) - y * np.sin(alpha),
+            x * np.sin(alpha) + y * np.cos(alpha),
+        )
+
+    return func
+
+
+ellipse = rotating_ellipse(2)
 
 
 def bean(phi, t):
@@ -68,6 +78,34 @@ def notch(phi, t):
     return np.interp(t, s, P[:, 0]), np.interp(t, s, P[:, 1])
 
 
+def related_pair(rng):
+    """Random star-shaped contour A and a perturbed copy B, with random
+    numbers of points and spacing"""
+    nh = 6
+    k = np.arange(1, nh + 1)
+
+    def fourier(amplitude):
+        a, b = rng.normal(size=(2, nh)) * amplitude / k
+        return lambda th: np.sum(
+            a * np.cos(k * th[:, None]) + b * np.sin(k * th[:, None]), axis=1
+        )
+
+    shape = fourier(rng.uniform(0.1, 0.6))
+    eps = rng.uniform(0.02, 0.4)
+    dx, dz = fourier(eps), fourier(eps)
+
+    def contour(n, perturbed):
+        th = 2 * np.pi * np.sort(rng.random(n))
+        rho = np.maximum(1 + shape(th), 0.2)
+        R, Z = 3 + rho * np.cos(th), rho * np.sin(th)
+        if perturbed:
+            R, Z = R + dx(th), Z + dz(th)
+        return R, Z
+
+    m, n = rng.integers(5, 60, 2)
+    return contour(m, False), contour(n, True)
+
+
 def sample(func, phis, npoints, seed=0, random_start=False, warp=False):
     """Contours of func at phis. npoints(j) points in section j"""
     rng = np.random.default_rng(seed)
@@ -90,6 +128,14 @@ def notch_lines(phis):
         P = notch_polygon(phi, narc=20 + (7 * j) % 40)
         lines.append(rzline.RZline(P[:, 0], P[:, 1], anticlockwise=False))
     return lines
+
+
+class Line:
+    """Contour passed to Wall as it is"""
+
+    def __init__(self, P):
+        P = np.asarray(P, dtype=float)
+        self.R, self.Z = P[:, 0].copy(), P[:, 1].copy()
 
 
 def phis_for(nsections):
@@ -161,6 +207,24 @@ def closed(P, start=0):
     return P[(start + np.arange(len(P) + 1)) % len(P)]
 
 
+def dense_sections_valid(wall, nfractions=200):
+    """Sections at many fractions of every strip are simple and
+    anticlockwise"""
+    for k in range(len(wall.mesh_phi) - 1):
+        phi0, phi1 = wall.mesh_phi[k], wall.mesh_phi[k + 1]
+        for f in (np.arange(nfractions) + 0.5) / nfractions:
+            R, Z = wall.section(phi0 + f * (phi1 - phi0))
+            if not shapely.LinearRing(np.column_stack((R, Z))).is_simple:
+                return False
+            if wallgeometry._signed_area(R, Z) <= 0:
+                return False
+    return True
+
+
+# ---------------------------------------------------------------------
+# Input contours
+
+
 def test_clean_contour_orients_anticlockwise():
     t = np.linspace(0, 2 * np.pi, 10, endpoint=False)
     for sign in (1, -1):
@@ -177,6 +241,15 @@ def test_clean_contour_removes_repeated_points():
     assert len(np.unique(P, axis=0)) == 4
 
 
+def test_clean_contour_merge_tolerance():
+    """Points 1e-6 m apart are kept, 1e-11 m apart merged (scale 2 m)"""
+    R = np.array([1.0, 2.0, 2.0, 2.0, 1.0])
+    Z = np.array([0.0, 0.0, 0.0, 1.0, 1.0])
+    for step, n in ((1e-6, 5), (1e-11, 4)):
+        P = wallgeometry.clean_contour(R, Z + [0, 0, step, 0, 0])
+        assert len(P) == n
+
+
 @pytest.mark.parametrize(
     "R, Z, message",
     [
@@ -185,7 +258,8 @@ def test_clean_contour_removes_repeated_points():
         ([1.0, 2.0, 3.0], [0.0, 0.0, 0.0], "no area"),
         ([1.0, 3.0, 3.0, 1.0], [0.0, 2.0, 0.0, 1.0], "intersects itself"),
         ([1.0, 2.0, np.nan], [0.0, 0.0, 1.0], "non-finite"),
-        ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], "no area"),
+        ([-0.3, 1.0, 1.0], [0.0, -1.0, 1.0], "R > 0"),
+        ([0.0, 1.0, 1.0], [0.0, -1.0, 1.0], "R > 0"),
     ],
 )
 def test_clean_contour_rejects_invalid(R, Z, message):
@@ -211,12 +285,23 @@ def test_wall_reports_invalid_section():
         (phis_for(4)[::-1], {"yperiod": yperiod}, "increasing"),
         (np.linspace(0, yperiod, 4), {"yperiod": yperiod}, "within one period"),
         (np.linspace(0, 2 * np.pi, 4), {"close_toroidal": True}, "within one period"),
+        # The last section is joined to the first one period later
+        ([0.0, 0.1, 0.2, 0.5], {"close_toroidal": True}, "less than pi apart"),
+        ([0.0, 3.5, 4.0, 5.0], {}, "less than pi apart"),
     ],
 )
 def test_create_mesh_rejects_invalid_angles(phi, kwargs, message):
     wall = wallgeometry.Wall(sample(ellipse, phis_for(4), lambda j: 16))
     with pytest.raises(ValueError, match=message):
         wall.create_mesh(phi, **kwargs)
+
+
+def test_axisymmetric_wall_needs_several_sections():
+    """A single contour can't describe a full torus of flat triangles"""
+    lines = sample(ellipse, [0.0], lambda j: 16)
+    for kwargs in ({"close_toroidal": True}, {"yperiod": 2 * np.pi}):
+        with pytest.raises(ValueError, match="less than pi apart"):
+            wallgeometry.Wall(lines, phi=[0.0], **kwargs)
 
 
 def test_open_wall_needs_two_sections():
@@ -226,6 +311,26 @@ def test_open_wall_needs_two_sections():
     # A single section is fine for a periodic wall
     wall.create_mesh([0.0], yperiod=0.1)
     assert len(wall.triangles) == 32
+
+
+def test_coarse_sections_warn():
+    """Four sections of a circle around the torus: the triangles cut
+    0.7 m into the wall"""
+    phis = np.linspace(0, 2 * np.pi, 4, endpoint=False)
+
+    def circle(phi, t):
+        return 2 + 0.5 * np.cos(2 * np.pi * t), 0.5 * np.sin(2 * np.pi * t)
+
+    lines = sample(circle, phis, lambda j: 64)
+    with pytest.warns(UserWarning, match="Add more cross-sections"):
+        wallgeometry.Wall(lines, phi=phis, close_toroidal=True)
+    # Not for a wall with enough sections
+    phis = np.linspace(0, 2 * np.pi, 64, endpoint=False)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        wallgeometry.Wall(
+            sample(circle, phis, lambda j: 64), phi=phis, close_toroidal=True
+        )
 
 
 # ---------------------------------------------------------------------
@@ -294,17 +399,6 @@ def test_batches_respect_budget(monkeypatch):
         assert np.array_equal(a, b)
 
 
-def test_start_point_finds_shift():
-    """The best start point of B, for B a rolled, shifted and scaled copy of A"""
-    t = np.linspace(0, 1, 50, endpoint=False)
-    A = wallgeometry.clean_contour(*bean(0.0, t))
-    qa, sa = wallgeometry._normalise(A)
-    for roll in (0, 7, 31):
-        B = 3.0 * np.roll(A, -roll, axis=0) + [5.0, -2.0]
-        qb, sb = wallgeometry._normalise(B)
-        assert wallgeometry._start_point(qa, sa, qb, sb) == (-roll) % 50
-
-
 def test_rungs_cover_both_contours():
     lines = sample(bean, phis_for(2), lambda j: (40, 73)[j], random_start=True)
     contours = wallgeometry.Wall(lines).contours
@@ -318,8 +412,15 @@ def test_rungs_cover_both_contours():
     assert di.sum() == 40 and dj.sum() == 73
 
 
-# ---------------------------------------------------------------------
-# Mesh
+def test_start_point_finds_shift():
+    """The best start point of B, for B a rolled, shifted and scaled copy of A"""
+    t = np.linspace(0, 1, 50, endpoint=False)
+    A = wallgeometry.clean_contour(*bean(0.0, t))
+    qa, sa = wallgeometry._normalise(A)
+    for roll in (0, 7, 31):
+        B = 3.0 * np.roll(A, -roll, axis=0) + [5.0, -2.0]
+        qb, sb = wallgeometry._normalise(B)
+        assert wallgeometry._start_point(qa, sa, qb, sb) == (-roll) % 50
 
 
 CASES = {
@@ -525,6 +626,9 @@ def test_create_wall_mesh_closed_torus():
     assert np.all(count == 2)
     assert len(rungs) == 12
     assert len(vertices) == sum(len(c) for c in contours)
+    # Open by default
+    _, triangles, rungs = wallgeometry.create_wall_mesh(contours, phis)
+    assert len(rungs) == 11
 
 
 def test_open_wall():
@@ -534,7 +638,10 @@ def test_open_wall():
     assert np.array_equal(wall.mesh_phi, phis)
     wall.section(0.5)
     wall.section(0.9)
-    for phi in (0.05, 0.95):
+    # Rounding at the ends is accepted
+    wall.section(0.9 + 1e-13)
+    wall.section(0.1 - 1e-13)
+    for phi in (0.05, 0.9 + 1e-6, 0.1 - 1e-6):
         with pytest.raises(ValueError, match="outside the wall"):
             wall.section(phi)
 
@@ -589,12 +696,84 @@ def test_check_detects_twisted_strip(good_wall):
         good_wall.check()
 
 
+def test_check_detects_inside_out_strip():
+    """Joining every point of an ellipse elongated in R to the opposite
+    point of one elongated in Z gives sections that are simple, but turn
+    clockwise in the middle of the strip"""
+    t = np.linspace(0, 1, 64, endpoint=False)
+    A = np.column_stack((2 + 0.5 * np.cos(2 * np.pi * t), 0.05 * np.sin(2 * np.pi * t)))
+    B = np.column_stack((2 + 0.05 * np.cos(2 * np.pi * t), 0.5 * np.sin(2 * np.pi * t)))
+    wall = wallgeometry.Wall([Line(A), Line(B)], phi=[0.0, 0.02], check=False)
+    # Alternate steps along A and B, starting from (0, n / 2)
+    n = len(t)
+    k = np.arange(2 * n)
+    i = ((k + 1) // 2) % n
+    j = (n // 2 + k // 2) % n
+    wall.strip_rungs[0] = np.column_stack((i, n + j))
+    rebuild_triangles(wall)
+    # The sections at these fractions are simple, so only their
+    # orientation shows that the strip is inside out
+    fractions = [0.25, 0.5, 0.75]
+    for f in fractions:
+        R, Z = wall.section(0.02 * f)
+        assert shapely.LinearRing(np.column_stack((R, Z))).is_simple
+        assert wallgeometry._signed_area(R, Z) < 0
+    with pytest.raises(ValueError, match="pinched"):
+        wall.check(fractions=fractions)
+    with pytest.raises(ValueError, match="(pinched|folds)"):
+        wall.check()
+
+
 def test_check_detects_invalid_rungs(good_wall):
     # Points of section 4 skipped, then visited backwards
     rungs = good_wall.strip_rungs[3]
     first = sum(len(c) for c in good_wall.contours[:4])
     n = len(good_wall.contours[4])
     rungs[40:46, 1] = first + (rungs[40:46, 1] - first + 3) % n
+    with pytest.raises(
+        ValueError, match="Invalid rungs between cross-sections 3 and 4"
+    ):
+        good_wall.check()
+
+
+def test_check_detects_rungs_to_other_sections(good_wall):
+    good_wall.strip_rungs[3][5, 1] = 0
+    with pytest.raises(
+        ValueError, match="Invalid rungs between cross-sections 3 and 4"
+    ):
+        good_wall.check()
+
+
+def test_check_detects_rungs_going_round_one_contour_twice(good_wall):
+    """Each point of section 3 once, but each point of section 4 twice"""
+    rungs = good_wall.strip_rungs[3]
+    first = sum(len(c) for c in good_wall.contours[:4])
+    n = len(good_wall.contours[4])
+    i, j = rungs[10]
+    loop = np.column_stack((np.full(n, i), first + (j - first + 1 + np.arange(n)) % n))
+    good_wall.strip_rungs[3] = np.vstack((rungs[:11], loop, rungs[11:]))
+    with pytest.raises(
+        ValueError, match="Invalid rungs between cross-sections 3 and 4"
+    ):
+        good_wall.check()
+
+
+def test_check_detects_rungs_to_a_section_of_the_same_size():
+    """Rungs that step correctly, but along the wrong section"""
+    phis = phis_for(8)
+    wall = wallgeometry.Wall(
+        sample(bean, phis, lambda j: 40), phi=phis, yperiod=yperiod
+    )
+    wall.strip_rungs[3][:, 1] += 40
+    with pytest.raises(
+        ValueError, match="Invalid rungs between cross-sections 3 and 4"
+    ):
+        wall.check()
+
+
+def test_check_detects_rungs_going_round_twice(good_wall):
+    rungs = good_wall.strip_rungs[3]
+    good_wall.strip_rungs[3] = np.vstack((rungs, rungs))
     with pytest.raises(
         ValueError, match="Invalid rungs between cross-sections 3 and 4"
     ):
@@ -628,6 +807,22 @@ def test_check_detects_pinch(good_wall):
         good_wall.check(min_area_ratio=1.5)
 
 
+def test_check_pinch_relative_to_smaller_section():
+    """The area between a large and a small section is compared with the
+    smaller one"""
+    t = np.linspace(0, 1, 64, endpoint=False)
+    circle = np.column_stack((np.cos(2 * np.pi * t), np.sin(2 * np.pi * t)))
+    wall = wallgeometry.Wall(
+        [Line(2 + 0.5 * circle), Line(2 + 0.2 * circle)], phi=[0.0, 0.02]
+    )
+    # The area falls from that of the large to that of the small section,
+    # so it is never below that of the small one, but mostly below that
+    # of the large one
+    wall.check(min_area_ratio=0.99)
+    with pytest.raises(ValueError, match="pinched"):
+        wall.check(min_area_ratio=1.5)
+
+
 def test_check_detects_cone(good_wall):
     """A strip whose rungs join all points of one contour to one point
     of the next, and back, is a valid triangulation, but not a surface"""
@@ -646,8 +841,33 @@ def test_check_detects_cone(good_wall):
 def test_check_detects_degenerate_triangle(good_wall):
     a, b, _ = good_wall.triangles[10]
     good_wall.vertices[b] = good_wall.vertices[a]
-    with pytest.raises(ValueError, match="degenerate"):
+    with pytest.raises(
+        ValueError, match="degenerate triangles between cross-sections 0"
+    ):
         good_wall.check()
+
+
+def test_accepted_walls_do_not_fold():
+    """Of random, quite different neighbouring contours, those accepted
+    by check have simple, anticlockwise sections everywhere"""
+    rng = np.random.default_rng(11)
+    accepted = rejected = 0
+    while accepted + rejected < 60:
+        (Ra, Za), (Rb, Zb) = related_pair(rng)
+        try:
+            lines = [Line(np.column_stack((Ra, Za))), Line(np.column_stack((Rb, Zb)))]
+            wall = wallgeometry.Wall(lines, check=False)
+        except ValueError:
+            continue
+        wall.create_mesh([0.0, 0.05], check=False)
+        try:
+            wall.check()
+        except ValueError:
+            rejected += 1
+            continue
+        accepted += 1
+        assert dense_sections_valid(wall)
+    assert accepted > 50
 
 
 def test_check_can_be_disabled(monkeypatch):

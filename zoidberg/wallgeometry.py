@@ -16,12 +16,25 @@ programming, minimising the summed squared length of the edges between
 the contours (rungs) in coordinates normalised by the centroid and the
 area of each contour (Fuchs, Kedem & Uselton, Commun. ACM 20, 693 (1977)).
 
+As the points are kept, neighbouring cross-sections should have a
+similar poloidal resolution: between a coarse and a fine polygon the
+facets follow the coarse polygon on one side and the fine one on the
+other, so that they are tilted by about the deviation between the two
+polygons divided by the toroidal distance of the sections. This affects
+the angle between field lines and the wall.
+
 """
+
+import warnings
 
 import numpy as np
 
 # Padded cells of the dynamic programming tables processed at once
 _DP_BATCH_CELLS = 2**28
+
+
+# Fractions of each strip at which Wall.check checks the cross-section
+_CHECK_FRACTIONS = tuple((np.arange(16) + 0.5) / 16)
 
 
 def rzphi_to_xyz(r, z, phi):
@@ -40,7 +53,8 @@ def clean_contour(R, Z):
     """Check a closed contour and orient it anticlockwise in (R, Z)
 
     Repeated consecutive points, including a last point equal to the
-    first, are removed.
+    first, are removed. Points closer than 1e-9 times the largest
+    coordinate count as repeated.
 
     Parameters
     ----------
@@ -55,17 +69,18 @@ def clean_contour(R, Z):
     ------
     ValueError
         If the contour has fewer than three distinct points, is not
-        finite, has no area or intersects itself
+        finite, is not at R > 0, has no area or intersects itself
     """
     import shapely
 
     P = np.column_stack((np.ravel(R), np.ravel(Z))).astype(float)
     if not np.all(np.isfinite(P)):
         raise ValueError("Wall contour contains non-finite points")
-    scale = np.max(np.abs(P)) if P.size else 0.0
-    if scale > 0:
-        step = np.linalg.norm(P - np.roll(P, 1, axis=0), axis=1)
-        P = P[step > 1e-12 * scale]
+    if np.any(P[:, 0] <= 0):
+        raise ValueError("Wall contour must lie at R > 0")
+    scale = np.max(np.abs(P))
+    step = np.linalg.norm(P - np.roll(P, 1, axis=0), axis=1)
+    P = P[step > 1e-9 * scale]
     if len(P) < 3:
         raise ValueError("Wall contour needs at least three distinct points")
     area = _signed_area(P[:, 0], P[:, 1])
@@ -292,7 +307,7 @@ def _strip_triangles(a, b):
     )
 
 
-def create_wall_mesh(contours, phi, close_toroidal=True, yperiod=None):
+def create_wall_mesh(contours, phi, close_toroidal=False, yperiod=None):
     """
     Create a triangular surface mesh from R-Z contours.
 
@@ -306,7 +321,7 @@ def create_wall_mesh(contours, phi, close_toroidal=True, yperiod=None):
         Toroidal angles in radians.
 
     close_toroidal : bool
-        Connect the last cross-section to the first.
+        Connect the last cross-section directly to the first.
         Use True only when the sections cover a full 2*pi torus.
 
     yperiod : float, optional
@@ -314,6 +329,8 @@ def create_wall_mesh(contours, phi, close_toroidal=True, yperiod=None):
         stellarator. If given, the first cross-section is repeated at
         phi[0] + yperiod and connected to the last one, so that the mesh
         covers exactly one period. Overrides close_toroidal.
+
+    The input is not checked; `Wall` checks it and the mesh.
 
     Returns
     -------
@@ -364,6 +381,10 @@ def create_wall_mesh(contours, phi, close_toroidal=True, yperiod=None):
 class Wall:
     """A closed wall surface, given by poloidal cross-sections
 
+    Neighbouring cross-sections should be close enough that the flat
+    triangles between them follow the wall, and should have a similar
+    poloidal resolution, see the description of the module.
+
     Parameters
     ----------
     outer_lines : list of :py:obj:`~zoidberg.rzline.RZline`
@@ -412,9 +433,14 @@ class Wall:
             Toroidal period of the wall. The sections must lie within
             one period, i.e. phi[-1] - phi[0] < yperiod. If neither
             yperiod nor close_toroidal is given the mesh is open at
-            both ends.
+            both ends, and field lines leave the wall there.
         check : bool
             Check the mesh, see `check`
+
+        Neighbouring cross-sections, including the last and the first
+        one period later, must be less than pi apart. A warning is
+        given if the flat triangles between two cross-sections lie
+        more than 5% of the size of the cross-sections inside the wall.
         """
         phi = np.asarray(phi, dtype=float)
         if phi.ndim != 1 or len(phi) != len(self.contours):
@@ -427,6 +453,14 @@ class Wall:
             yperiod = 2 * np.pi
         if yperiod is not None and phi[-1] - phi[0] >= yperiod:
             raise ValueError("The cross-sections must lie within one period")
+        mesh_phi = phi if yperiod is None else np.append(phi, phi[0] + yperiod)
+        spacing = np.diff(mesh_phi)
+        if np.any(spacing >= np.pi):
+            raise ValueError(
+                "Neighbouring cross-sections must be less than pi apart in phi"
+                f" (largest spacing {np.max(spacing)}); add more cross-sections"
+            )
+        self._warn_coarse(spacing)
 
         vertices, triangles, strip_rungs = create_wall_mesh(
             self.contours, phi, close_toroidal=False, yperiod=yperiod
@@ -438,7 +472,7 @@ class Wall:
         self.yperiod = yperiod
         # Toroidal angle of every section in the mesh, including the
         # repeated first section if periodic
-        self.mesh_phi = phi if yperiod is None else np.append(phi, phi[0] + yperiod)
+        self.mesh_phi = mesh_phi
         self._intersect_cache = None
 
         tri = vertices[triangles]
@@ -452,7 +486,31 @@ class Wall:
         if check:
             self.check()
 
-    def check(self, fractions=(0.25, 0.5, 0.75), min_area_ratio=0.5):
+    def _warn_coarse(self, spacing):
+        """Warn if the triangles between sections k and k + 1 lie far
+        inside the wall: a straight line between points at R and toroidal
+        angles phi and phi + dphi comes R (1 - cos(dphi / 2)) closer to
+        the axis"""
+        n = len(self.contours)
+        sag = np.empty(len(spacing))
+        size = np.empty(len(spacing))
+        for k, dphi in enumerate(spacing):
+            A, B = self.contours[k], self.contours[(k + 1) % n]
+            sag[k] = max(A[:, 0].max(), B[:, 0].max()) * (1 - np.cos(dphi / 2))
+            size[k] = np.sqrt(
+                min(_signed_area(A[:, 0], A[:, 1]), _signed_area(B[:, 0], B[:, 1]))
+            )
+        k = np.argmax(sag / size)
+        if sag[k] > 0.05 * size[k]:
+            warnings.warn(
+                f"Cross-sections {k} and {k + 1} are {spacing[k]:.3g} rad apart:"
+                f" the flat triangles between them lie up to {sag[k]:.3g}"
+                f" ({sag[k] / size[k]:.0%} of the size of the cross-sections)"
+                " inside the wall. Add more cross-sections.",
+                stacklevel=3,
+            )
+
+    def check(self, fractions=_CHECK_FRACTIONS, min_area_ratio=0.5):
         """Check that the mesh is a valid wall surface
 
         - the rungs of every strip join each point of both contours in
@@ -463,9 +521,14 @@ class Wall:
           is degenerate
         - the cross-sections at the given fractions of every strip are
           simple polygons, i.e. the wall does not fold over or twist,
-          and their area is at least min_area_ratio times the smaller
-          area of the two neighbouring cross-sections, i.e. the wall is
-          not pinched
+          and they are anticlockwise with an area of at least
+          min_area_ratio times the smaller area of the two neighbouring
+          cross-sections, i.e. the wall is neither pinched nor turned
+          inside out
+
+        Folds narrower than the spacing of the fractions may be missed.
+        This does not check whether the cross-sections are close enough
+        for the triangles to follow the real wall.
 
         Raises
         ------
@@ -503,8 +566,15 @@ class Wall:
             np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1
         )
         scale = np.max(np.abs(self.vertices))
-        if np.any(area <= 1e-14 * scale**2):
-            raise ValueError("The wall mesh contains degenerate triangles")
+        degenerate = np.flatnonzero(area <= 1e-14 * scale**2)
+        if degenerate.size:
+            k = np.searchsorted(
+                np.cumsum([len(r) for r in self.strip_rungs]), degenerate[0], "right"
+            )
+            raise ValueError(
+                "The wall mesh contains degenerate triangles between"
+                f" cross-sections {k} and {k + 1}"
+            )
 
         # Triangles sharing an edge traverse it in opposite directions,
         # so a third triangle repeats one direction
@@ -517,7 +587,7 @@ class Wall:
                 "The wall mesh has edges shared by more than two triangles"
             )
 
-        section_area = [abs(_signed_area(*self.section(p))) for p in self.mesh_phi]
+        section_area = [_signed_area(*self.section(p)) for p in self.mesh_phi]
         for k in range(len(self.mesh_phi) - 1):
             phi0, phi1 = self.mesh_phi[k], self.mesh_phi[k + 1]
             for f in fractions:
@@ -526,14 +596,16 @@ class Wall:
                 if not shapely.LinearRing(np.column_stack((R, Z))).is_simple:
                     raise ValueError(
                         f"The wall folds over between cross-sections {k} and {k + 1}"
-                        f" (phi = {phi0} to {phi1}); add more cross-sections"
+                        f" (phi = {phi0} to {phi1}). Add more cross-sections,"
+                        " or use check=False if this is intended"
                     )
-                if abs(_signed_area(R, Z)) < min_area_ratio * min(
+                if _signed_area(R, Z) < min_area_ratio * min(
                     section_area[k], section_area[k + 1]
                 ):
                     raise ValueError(
                         f"The wall is pinched between cross-sections {k} and {k + 1}"
-                        f" (phi = {phi0} to {phi1}); add more cross-sections"
+                        f" (phi = {phi0} to {phi1}). Add more cross-sections,"
+                        " or use check=False if this is intended"
                     )
 
     def to_base_period(self, phi):
@@ -558,11 +630,16 @@ class Wall:
         with the intersection tests, also between the cross-sections
         the wall was built from.
 
+        Parameters
+        ----------
+        phi : float
+
         Returns
         -------
         R, Z : ndarray
-            Closed polygon, anticlockwise in (R, Z). May contain
-            repeated points.
+            Polygon, anticlockwise in (R, Z), closed implicitly: the
+            first point is not repeated at the end. May contain repeated
+            points.
         """
         phi_b, _ = self.to_base_period(phi)
         mesh_phi = self.mesh_phi
@@ -574,7 +651,9 @@ class Wall:
             np.searchsorted(mesh_phi, phi_b, side="right") - 1, 0, len(mesh_phi) - 2
         )
         # Every triangle of the strip has one rung on each side, so the
-        # cuts of the rungs in order form the section
+        # cuts of the rungs in order form the section. The plane through
+        # the axis is cut only at phi_b, not phi_b + pi, as the sections
+        # are less than pi apart
         rungs = self.strip_rungs[j]
         A = self.vertices[rungs[:, 0]]
         B = self.vertices[rungs[:, 1]]
