@@ -1361,6 +1361,7 @@ class W7X_vacuum(MagneticField):
         r = np.linspace(x_range[0], x_range[-1], nx)
         phi = np.linspace(0, phimax, ny)
         z = np.linspace(z_range[0], z_range[-1], nz)
+        self.shape = nx, ny, nz
 
         self.attributes = {}
 
@@ -1848,20 +1849,16 @@ class W7X_VMEC(MagneticField):
         pos = vmec.types.Points3D()
 
         # x in Cartesian (real-space)
-        pos.x1 = np.ndarray.flatten(
-            np.ones((self.nx, self.ny, self.nz)) * r * np.cos(phi)
-        )
+        pos.x1 = np.ndarray.flatten(np.ones(self.shape) * r * np.cos(phi))
         # y in Cartesian (real-space)
-        pos.x2 = np.ndarray.flatten(
-            np.ones((self.nx, self.ny, self.nz)) * r * np.sin(phi)
-        )
-        pos.x3 = np.ndarray.flatten(z)  # z in Cartesian (real-space)
+        pos.x2 = np.ndarray.flatten(np.ones(self.shape) * r * np.sin(phi))
+        pos.x3 = np.ndarray.flatten(np.ones(self.shape) * z)  # z in Cartesian (real-space)
         b = vmec.service.magneticField(str(vmec_id), pos)
 
         ## Reshape to 3d array
-        Bx = np.ndarray.reshape(np.asarray(b.field.x1), (self.nx, self.ny, self.nz))
-        By = np.ndarray.reshape(np.asarray(b.field.x2), (self.nx, self.ny, self.nz))
-        Bz = np.ndarray.reshape(np.asarray(b.field.x3), (self.nx, self.ny, self.nz))
+        Bx = np.ndarray.reshape(np.asarray(b.field.x1), self.shape)
+        By = np.ndarray.reshape(np.asarray(b.field.x2), self.shape)
+        Bz = np.ndarray.reshape(np.asarray(b.field.x3), self.shape)
 
         ## Convert to cylindrical coordinates
         Br = Bx * np.cos(phi) + By * np.sin(phi)
