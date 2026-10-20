@@ -808,8 +808,7 @@ class EMC3FieldTracer(FieldTracer):
         for i in itertools.product(*[range(x) for x in x_values.shape]):
             rz = np.array((x_values[i], z_values[i]))
             ab, ij, zid = self.rz_to_ab(rz, meshes[0], ij, zid)
-            if x_values.shape == ():
-                i = None
+            # For 0-d input, i is () so this indexes out[0]
             out[(0, *i)] = rz
             ij1, zid1 = ij, zid
             cache = {0: (ab, ij, zid)}
