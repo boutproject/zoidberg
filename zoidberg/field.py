@@ -1235,8 +1235,8 @@ class GEQDSK(MagneticField):
         print(f"Major radius: {self.rmin} -> {self.rmax} m")
         print(f"Height: {self.zmin} -> {self.zmax} m")
 
-        # Poloidal flux
-        self.psi = np.transpose(data["psi"])
+        # Poloidal flux, indexed [R, Z]
+        self.psi = np.asarray(data["psi"])
         nr, nz = self.psi.shape
 
         # Normalising factors: psi on axis and boundary
