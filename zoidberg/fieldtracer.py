@@ -241,9 +241,9 @@ class FieldTracerReversible:
 
         result = np.zeros((len(y_values),) + array_shape + (2,))
 
-        # Starting position
-        x_pos = x_values
-        z_pos = z_values
+        # Starting position. Copy, as these are updated in place
+        x_pos = np.array(x_values, dtype=float)
+        z_pos = np.array(z_values, dtype=float)
         y_pos = y_values[0]
 
         result[0, ..., 0] = x_pos
