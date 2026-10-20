@@ -810,18 +810,19 @@ class EMC3FieldTracer(FieldTracer):
             ab, ij, zid = self.rz_to_ab(rz, meshes[0], ij, zid)
             # For 0-d input, i is () so this indexes out[0]
             out[(0, *i)] = rz
-            ij1, zid1 = ij, zid
             cache = {0: (ab, ij, zid)}
             for j in range(1, len(meshes)):
                 perBC = meshes[j][zid].perBC - meshes[0][zid].perBC
                 if perBC not in cache:
+                    # Map the starting point across the periodic boundary
+                    ab, ij1, zid1 = cache[0]
                     first, last = (0, 1) if perBC > 0 else (1, 0)
                     for _ in range(abs(perBC)):
                         rz1 = self._ab_to_rz(ab, self.firstlast[last][zid1].grid, ij1)
                         ab, ij1, zid1 = self.rz_to_ab(
                             rz1, self.firstlast[first], ij1, zid1
                         )
-                    cache[perBC] = self.rz_to_ab(rz, meshes[0], ij, zid)
+                    cache[perBC] = (ab, ij1, zid1)
                 ab, ij1, zid1 = cache[perBC]
                 out[(j, *i)] = self._ab_to_rz(ab, meshes[j][zid1].grid, ij1)
         return out
