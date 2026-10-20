@@ -127,6 +127,11 @@ def doit(pols, plot=False, isSlab=False):
     # 3.160 s:  (4, 2, 6, 32, 200)
     RZs = RZs.transpose(1, 2, 0, 3, 4)
 
+    # The contour above is only anticlockwise in (R, Z) if (x, z) is
+    # right-handed. Correct the sign of the volume and of the face
+    # normals below for left-handed poloidal grids.
+    orientation = np.sign(np.sum(Ar, axis=(0, 2)))
+    Ar *= orientation[None, :, None]
     volume = Ar
 
     RZ = np.array(
@@ -187,6 +192,7 @@ def doit(pols, plot=False, isSlab=False):
     dRr /= np.sqrt(np.sum(dRr**2, axis=0))
     dRr *= area
     dRr = np.sum(dRr, axis=-1)
+    dRr *= orientation[None, None, :, None]
 
     # vector in derivative direction
     dxR = RZ[:, 1:] - RZ[:, :-1]
@@ -243,6 +249,7 @@ def doit(pols, plot=False, isSlab=False):
     dRr /= np.sqrt(np.sum(dRr**2, axis=0))
     dRr *= area
     dRr = np.sum(dRr, axis=-1)
+    dRr *= orientation[None, None, :, None]
     # vector in derivative direction
     dxR = RZ[:, 2:] - RZ[:, :-2]
     dxR = 0.5 * (np.roll(dxR, -1, axis=-1) + dxR)
