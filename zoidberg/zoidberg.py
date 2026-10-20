@@ -287,8 +287,8 @@ def make_maps(
                         range(nsamples), xoffsets, zoffsets, weights
                     ):
                         coord = field_tracer.follow_field_lines(
-                            Rinterp((xinds + xo, zinds)),
-                            Zinterp((xinds + zo, zinds)),
+                            Rinterp((xinds + xo, zinds + zo)),
+                            Zinterp((xinds + xo, zinds + zo)),
                             [ycoord, y_slice],
                             rtol=rtol,
                         )[1, ...]
