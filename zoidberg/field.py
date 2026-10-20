@@ -1843,22 +1843,19 @@ class W7X_VMEC(MagneticField):
         vmec = Client("http://esb.ipp-hgw.mpg.de:8280/services/vmec_v5?wsdl")
 
         pos = vmec.types.Points3D()
+        shape = np.broadcast(r, phi, z).shape
 
         # x in Cartesian (real-space)
-        pos.x1 = np.ndarray.flatten(
-            np.ones((self.nx, self.ny, self.nz)) * r * np.cos(phi)
-        )
+        pos.x1 = np.ndarray.flatten(np.ones(shape) * r * np.cos(phi))
         # y in Cartesian (real-space)
-        pos.x2 = np.ndarray.flatten(
-            np.ones((self.nx, self.ny, self.nz)) * r * np.sin(phi)
-        )
-        pos.x3 = np.ndarray.flatten(z)  # z in Cartesian (real-space)
+        pos.x2 = np.ndarray.flatten(np.ones(shape) * r * np.sin(phi))
+        pos.x3 = np.ndarray.flatten(np.ones(shape) * z)  # z in Cartesian (real-space)
         b = vmec.service.magneticField(str(vmec_id), pos)
 
         ## Reshape to 3d array
-        Bx = np.ndarray.reshape(np.asarray(b.field.x1), (self.nx, self.ny, self.nz))
-        By = np.ndarray.reshape(np.asarray(b.field.x2), (self.nx, self.ny, self.nz))
-        Bz = np.ndarray.reshape(np.asarray(b.field.x3), (self.nx, self.ny, self.nz))
+        Bx = np.ndarray.reshape(np.asarray(b.field.x1), shape)
+        By = np.ndarray.reshape(np.asarray(b.field.x2), shape)
+        Bz = np.ndarray.reshape(np.asarray(b.field.x3), shape)
 
         ## Convert to cylindrical coordinates
         Br = Bx * np.cos(phi) + By * np.sin(phi)
