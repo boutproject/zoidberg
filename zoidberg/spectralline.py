@@ -20,7 +20,6 @@ def _fft(args, freq):
 
 
 def _err(args, data, freq):
-    freq = np.linspace(-np.pi, np.pi, len(data), endpoint=False)
     return _fft(args, freq) - data
 
 
