@@ -1707,8 +1707,14 @@ def _set_config(config, configuration):
         -1: [1, 1, 1, 1, 1, 1, 1],
         "FMM002": [13423, 13423, 13423, 13423, 13423, -3544, -3544],
     }
-    currents = known[configuration]
-    currents = np.array([108] * 5 + [36] * 2) * np.array(currents)
+    if isinstance(configuration, (int, str)):
+        currents = known[configuration]
+    else:
+        # A list of coil currents
+        currents = configuration
+    currents = np.array(currents, dtype=float)
+    # Multiply the main (non-planar and planar) coil currents by the number of windings
+    currents[:7] *= np.array([108] * 5 + [36] * 2)
     print(currents)
     coils = (
         [160, 165, 170, 175, 180, 185, 190, 195, 200, 205]
