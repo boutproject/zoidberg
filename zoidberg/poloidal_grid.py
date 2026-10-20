@@ -389,9 +389,15 @@ switch inner and outer boundary.
 
         # Create a mask for the positions
         mask = np.ones(xind.shape)
-        mask[np.logical_or((xind < 0.5), (xind > (nx - 1.5)))] = (
-            0.0  # Set to zero if near the boundary
-        )
+        if nx > 2:
+            # Start points nearest the boundary rows from the first interior row
+            # so they are still refined; the Newton iteration below decides
+            # whether they are really in the boundary.
+            xind = np.clip(xind, 1.0, nx - 2.0)
+        else:
+            mask[np.logical_or((xind < 0.5), (xind > (nx - 1.5)))] = (
+                0.0  # Set to zero if near the boundary
+            )
 
         if show and plotting_available:
             plt.plot(self.R, self.Z, ".")
