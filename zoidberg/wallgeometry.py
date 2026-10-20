@@ -11,10 +11,18 @@ built from many more cross-sections than the grid has poloidal slices.
 Each strip between two neighbouring contours is triangulated on its own
 (lofting). The contours may have different numbers of points, different
 start points and different point spacing; the points of the contours are
-the vertices of the mesh. Which points are joined is found by dynamic
-programming, minimising the summed squared length of the edges between
-the contours (rungs) in coordinates normalised by the centroid and the
-area of each contour (Fuchs, Kedem & Uselton, Commun. ACM 20, 693 (1977)).
+the vertices of the mesh. Which points are joined is found in two steps:
+
+1. A transform that maps one contour onto the other is fitted by
+   trimmed iterative closest points: a translation and uniform scaling,
+   and a rotation if the contours differ mainly by one, as an elongated
+   cross-section turning around. It follows the motion of the contour as
+   a whole and ignores local differences, for example a port that
+   appears.
+2. The edges between the contours (rungs) minimise the summed squared
+   distance between the points of one contour and the transformed points
+   of the other, by dynamic programming (Fuchs, Kedem & Uselton, Commun.
+   ACM 20, 693 (1977)).
 
 As the points are kept, neighbouring cross-sections should have a
 similar poloidal resolution: between a coarse and a fine polygon the
@@ -32,6 +40,9 @@ import numpy as np
 # Padded cells of the dynamic programming tables processed at once
 _DP_BATCH_CELLS = 2**28
 
+# Weight of the squared distance in R, Z relative to that after aligning
+# the contours, in the cost of the rungs
+_REAL_WEIGHT = 0.01
 
 # Fractions of each strip at which Wall.check checks the cross-section
 _CHECK_FRACTIONS = tuple((np.arange(16) + 0.5) / 16)
@@ -91,45 +102,163 @@ def clean_contour(R, Z):
     return P if area > 0 else P[::-1].copy()
 
 
-def _normalise(P):
-    """Scale-free coordinates and arc length fraction of a closed,
-    anticlockwise contour"""
-    x, y = P[:, 0], P[:, 1]
-    xn, yn = np.roll(x, -1), np.roll(y, -1)
-    cross = x * yn - xn * y
-    area = 0.5 * np.sum(cross)
-    centroid = np.array([np.sum((x + xn) * cross), np.sum((y + yn) * cross)]) / (
-        6 * area
-    )
-    q = (P - centroid) / np.sqrt(area)
+def _arc_fraction(P):
+    """Arc length fraction of the points of a closed contour"""
     seg = np.linalg.norm(np.roll(P, -1, axis=0) - P, axis=1)
-    s = np.concatenate(([0.0], np.cumsum(seg)[:-1])) / np.sum(seg)
-    return q, s
+    return np.concatenate(([0.0], np.cumsum(seg)[:-1])) / np.sum(seg)
 
 
-def _resample(q, s, M):
-    """q at M uniformly spaced arc length fractions"""
+def _resample(P, s, M):
+    """Closed contour P with arc length fractions s, at M uniformly
+    spaced arc length fractions"""
     u = np.arange(M) / M
     s_closed = np.append(s, 1.0)
-    q_closed = np.vstack((q, q[:1]))
-    return np.column_stack([np.interp(u, s_closed, q_closed[:, k]) for k in (0, 1)])
+    P_closed = np.vstack((P, P[:1]))
+    return np.column_stack([np.interp(u, s_closed, P_closed[:, k]) for k in (0, 1)])
 
 
-def _start_point(qa, sa, qb, sb, M=1024):
-    """Point of B that corresponds to the first point of A
+def _similarity_fit(P, Q, rotate=True):
+    """Transform x -> scale * rotation @ x + shift, without reflection,
+    that maps the points Q closest to the points P (least squares).
+    If not rotate, the rotation is the identity."""
+    cp, cq = P.mean(axis=0), Q.mean(axis=0)
+    p, q = P - cp, Q - cq
+    if rotate:
+        U, S, Vt = np.linalg.svd(q.T @ p)
+        d = np.diag([1.0, np.sign(np.linalg.det(Vt.T @ U.T))])
+        rotation = Vt.T @ d @ U.T
+        scale = np.sum(S * np.diag(d)) / np.sum(q * q)
+    else:
+        rotation = np.eye(2)
+        scale = np.sum(p * q) / np.sum(q * q)
+    return scale, rotation, cp - scale * rotation @ cq
 
-    The shift sigma of the arc length that best overlays the normalised
-    contours is the maximum of their cross-correlation.
+
+class _DenseContour:
+    """Closed contour sampled densely, with normals, for distances of
+    points to it"""
+
+    def __init__(self, P, M):
+        from scipy.spatial import cKDTree
+
+        self.nodes = _resample(P, _arc_fraction(P), M)
+        tangent = np.roll(self.nodes, -1, axis=0) - np.roll(self.nodes, 1, axis=0)
+        self.normals = (
+            tangent[:, ::-1] * [1, -1] / np.linalg.norm(tangent, axis=1, keepdims=True)
+        )
+        self.tree = cKDTree(self.nodes)
+
+    def closest(self, X):
+        """Closest nodes to the points X, their normals, and the distances
+        of X to the tangent lines there"""
+        _, idx = self.tree.query(X)
+        nodes, normals = self.nodes[idx], self.normals[idx]
+        return nodes, normals, np.abs(np.sum((X - nodes) * normals, axis=1))
+
+
+def _align(A, B, M=256, keep=0.5, max_iterations=100, rotation_gain=10):
+    """Transform that maps contour B onto contour A
+
+    A translation and uniform scaling, with a rotation if the contours
+    differ mainly by one: the rotation is used if it reduces the distance
+    between the contours by a factor rotation_gain. Otherwise the points
+    of B would slide along the contour, which places the triangles inside
+    the wall where it is curved.
+
+    Each transform is fitted by iterative closest points, minimising the
+    distances of points of A to the tangents of B (point to line). Only
+    the closest pairs are used in each iteration: a fraction `keep` of the
+    points, of the longer contour only as many as the shorter one has, so
+    that local differences between the contours do not affect it. It is
+    started from the best overlay of the contours by arc length
+    (cross-correlation) and from the identity, and the fit with the
+    smaller distance between the contours is used.
+
+    Returns
+    -------
+    function
+        Mapping (n, 2) points of B onto A
     """
-    a = _resample(qa, sa, M)
-    b = _resample(qb, sb, M)
+    # Sample from a point that does not depend on the numbering
+    A = np.roll(A, -np.lexsort((A[:, 1], A[:, 0]))[-1], axis=0)
+    B = np.roll(B, -np.lexsort((B[:, 1], B[:, 0]))[-1], axis=0)
+    a = _resample(A, _arc_fraction(A), M)
+    b = _resample(B, _arc_fraction(B), M)
+    dense_a, dense_b = _DenseContour(A, 4 * M), _DenseContour(B, 4 * M)
+    size = np.sqrt(abs(_signed_area(A[:, 0], A[:, 1])))
+    length_a = np.sum(np.linalg.norm(np.roll(A, -1, axis=0) - A, axis=1))
+    length_b = np.sum(np.linalg.norm(np.roll(B, -1, axis=0) - B, axis=1))
+
+    def nkeep(scale):
+        """Numbers of samples of A and of B used. Of the longer contour,
+        at most the length of the shorter one can match"""
+        ratio = scale * length_b / length_a
+        return (
+            max(3, int(keep * min(1, ratio) * M)),
+            max(3, int(keep * min(1, 1 / ratio) * M)),
+        )
+
+    ac, bc = a - a.mean(axis=0), b - b.mean(axis=0)
     corr = sum(
-        np.fft.ifft(np.conj(np.fft.fft(a[:, k])) * np.fft.fft(b[:, k])).real
+        np.fft.ifft(np.conj(np.fft.fft(ac[:, k])) * np.fft.fft(bc[:, k])).real
         for k in (0, 1)
     )
-    target = (sa[0] + np.argmax(corr) / M) % 1.0
-    d = np.abs(sb - target)
-    return int(np.argmin(np.minimum(d, 1 - d)))
+    b_overlay = np.roll(b, -np.argmax(corr), axis=0)
+
+    def pairs(scale, rotation, shift):
+        """Closest points y of the transformed B to the points of A,
+        normals there, and distances"""
+        nodes, normals, _ = dense_b.closest((a - shift) @ rotation / scale)
+        y = scale * nodes @ rotation.T + shift
+        n = normals @ rotation.T
+        return y, n, np.sum((a - y) * n, axis=1)
+
+    def icp(rotate, start):
+        """Distance between the contours and transform, from start"""
+        scale, rotation, shift = start
+        for _ in range(max_iterations):
+            y, n, res = pairs(scale, rotation, shift)
+            sel = np.abs(res) <= np.sort(np.abs(res))[nkeep(scale)[0] - 1]
+            y, n, res = y[sel], n[sel], res[sel]
+            # Small change y -> c + (1 + ds) R(dtheta) (y - c) + dt
+            c = y.mean(axis=0)
+            columns = [np.sum((y - c) * n, axis=1), n[:, 0], n[:, 1]]
+            if rotate:
+                columns.append(np.sum((y - c)[:, ::-1] * [-1, 1] * n, axis=1))
+            step = np.linalg.lstsq(np.column_stack(columns), res, rcond=None)[0]
+            ds, dt = step[0], step[1:3]
+            dtheta = step[3] if rotate else 0.0
+            turn = np.array(
+                [
+                    [np.cos(dtheta), -np.sin(dtheta)],
+                    [np.sin(dtheta), np.cos(dtheta)],
+                ]
+            )
+            scale = scale * (1 + ds)
+            rotation = turn @ rotation
+            shift = c + (1 + ds) * turn @ (shift - c) + dt
+            if abs(ds) + abs(dtheta) + np.max(np.abs(dt)) / size < 1e-12:
+                break
+
+        # Distance of the closest parts of each contour to the other
+        n_ab, n_ba = nkeep(scale)
+        d_ab = np.abs(pairs(scale, rotation, shift)[2])
+        d_ba = dense_a.closest(scale * b @ rotation.T + shift)[2]
+        distance = np.mean(np.sort(d_ab)[:n_ab] ** 2) + np.mean(
+            np.sort(d_ba)[:n_ba] ** 2
+        )
+        return distance, scale, rotation, shift
+
+    def fit(rotate):
+        """The better fit from the two starts"""
+        starts = (_similarity_fit(a, b_overlay, rotate), (1.0, np.eye(2), 0.0))
+        return min((icp(rotate, start) for start in starts), key=lambda f: f[0])
+
+    without = fit(rotate=False)
+    with_rotation = fit(rotate=True)
+    use = with_rotation if with_rotation[0] * rotation_gain < without[0] else without
+    _, scale, rotation, shift = use
+    return lambda P: scale * P @ rotation.T + shift
 
 
 def _dp_batch(problems):
@@ -211,6 +340,17 @@ def _dp_batch(problems):
     return paths, total
 
 
+def _strip_points(A, B):
+    """Points of contours A and B whose squared distances are the cost of
+    the rungs: B aligned to A, and the real coordinates weighted by
+    _REAL_WEIGHT"""
+    weight = np.sqrt(_REAL_WEIGHT)
+    return (
+        np.column_stack((A, weight * A)),
+        np.column_stack((_align(A, B)(B), weight * B)),
+    )
+
+
 def tile_contours(contours, pairs):
     """Triangulate the strips between pairs of contours
 
@@ -229,8 +369,8 @@ def tile_contours(contours, pairs):
         and last rung are the same. Each step between rungs advances
         either i or j by one point and forms one triangle.
     """
-    normalised = [_normalise(P) for P in contours]
-    points = [(normalised[ia][0], normalised[ib][0]) for ia, ib in pairs]
+    # Contour b of each strip, mapped onto contour a
+    points = [_strip_points(contours[ia], contours[ib]) for ia, ib in pairs]
 
     def solve(starts):
         """Optimal rungs of each strip, with the rung (i0, j0) fixed"""
@@ -275,18 +415,17 @@ def tile_contours(contours, pairs):
             )
         return rungs
 
-    # Fix the rung of the first point of A to its best guess partner
+    # Fix the rung of the first point of A to the closest point of B
     first_pass = solve(
         [
-            (k, 0, _start_point(*normalised[ia], *normalised[ib]))
-            for k, (ia, ib) in enumerate(pairs)
+            (k, 0, int(np.argmin(np.sum((B - A[0]) ** 2, axis=1))))
+            for k, (A, B) in enumerate(points)
         ]
     )
 
     # The fixed rung biases the path near the first point of A. Solve
     # again with the rung of the opposite point of A fixed, which the
-    # optimal path is not sensitive to. The result then does not depend
-    # on where the contours start.
+    # optimal path is not sensitive to.
     second = []
     for k, (ia, _) in enumerate(pairs):
         i0 = len(contours[ia]) // 2

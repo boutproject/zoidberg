@@ -78,6 +78,25 @@ def notch(phi, t):
     return np.interp(t, s, P[:, 0]), np.interp(t, s, P[:, 1])
 
 
+def d_shape(n):
+    th = np.pi + np.linspace(0, 2 * np.pi, n, endpoint=False)
+    return np.column_stack((2 + 0.5 * np.cos(th + 0.3 * np.sin(th)), 0.8 * np.sin(th)))
+
+
+def with_duct(P, length, half_width):
+    """Contour P with a rectangular duct on the outboard side"""
+    cut = (P[:, 0] > 2.2) & (np.abs(P[:, 1]) < half_width)
+    first, last = np.flatnonzero(cut)[[0, -1]]
+    lower, upper = P[first - 1], P[last + 1]
+    duct = [
+        [lower[0], -half_width],
+        [lower[0] + length, -half_width],
+        [lower[0] + length, half_width],
+        [upper[0], half_width],
+    ]
+    return np.vstack((P[:first], duct, P[last + 1 :]))
+
+
 def related_pair(rng):
     """Random star-shaped contour A and a perturbed copy B, with random
     numbers of points and spacing"""
@@ -201,6 +220,10 @@ def brute_force_dp(pa, pb):
                 left = D[i, j - 1] if j > 0 else np.inf
                 D[i, j] = cost[i, j] + min(up, left)
     return D[m, n]
+
+
+def strip_cost(pa, pb, rungs):
+    return np.sum((pa[rungs[:-1, 0]] - pb[rungs[:-1, 1]]) ** 2)
 
 
 def closed(P, start=0):
@@ -399,6 +422,28 @@ def test_batches_respect_budget(monkeypatch):
         assert np.array_equal(a, b)
 
 
+def test_align_recovers_rotation_scaling_and_shift():
+    """B is A turned, scaled, shifted and renumbered"""
+    t = np.linspace(0, 1, 80, endpoint=False)
+    A = wallgeometry.clean_contour(*rotating_ellipse(4)(0.0, t))
+    angle = 0.3
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    B = 1.7 * np.roll(A, 13, axis=0) @ rotation.T + [0.4, -0.2]
+    transform = wallgeometry._align(A, B)
+    assert np.allclose(transform(B), np.roll(A, 13, axis=0), atol=1e-9)
+
+
+def test_align_ignores_a_port():
+    """The duct changes the centroid and the area of the contour, but the
+    rest of the wall does not move"""
+    A = d_shape(200)
+    B = with_duct(A, 1.0, 0.2)
+    transform = wallgeometry._align(A, B)
+    assert np.allclose(transform(A), A, atol=1e-6)
+
+
 def test_rungs_cover_both_contours():
     lines = sample(bean, phis_for(2), lambda j: (40, 73)[j], random_start=True)
     contours = wallgeometry.Wall(lines).contours
@@ -412,41 +457,100 @@ def test_rungs_cover_both_contours():
     assert di.sum() == 40 and dj.sum() == 73
 
 
-def test_start_point_finds_shift():
-    """The best start point of B, for B a rolled, shifted and scaled copy of A"""
-    t = np.linspace(0, 1, 50, endpoint=False)
-    A = wallgeometry.clean_contour(*bean(0.0, t))
-    qa, sa = wallgeometry._normalise(A)
-    for roll in (0, 7, 31):
-        B = 3.0 * np.roll(A, -roll, axis=0) + [5.0, -2.0]
-        qb, sb = wallgeometry._normalise(B)
-        assert wallgeometry._start_point(qa, sa, qb, sb) == (-roll) % 50
+def test_strip_is_optimal_and_independent_of_numbering():
+    """The rungs minimise the cost over all paths around the strip, not
+    only those through a fixed rung, whatever the numbering"""
+    rng = np.random.default_rng(7)
+    tested = 0
+    while tested < 30:
+        (Ra, Za), (Rb, Zb) = related_pair(rng)
+        try:
+            A = wallgeometry.clean_contour(Ra, Za)
+            B = wallgeometry.clean_contour(Rb, Zb)
+        except ValueError:
+            continue
+        tested += 1
+        pa, pb = wallgeometry._strip_points(A, B)
+        _, costs = wallgeometry._dp_batch(
+            [(closed(pa), closed(pb, j0)) for j0 in range(len(B))]
+        )
+        (rungs,) = wallgeometry.tile_contours([A, B], [(0, 1)])
+        assert strip_cost(pa, pb, rungs) == pytest.approx(np.min(costs), rel=1e-12)
+
+        # Renumbered contours give the same rungs
+        ra, rb = rng.integers(len(A)), rng.integers(len(B))
+        (rolled,) = wallgeometry.tile_contours(
+            [np.roll(A, -ra, axis=0), np.roll(B, -rb, axis=0)], [(0, 1)]
+        )
+        original = {(i, j) for i, j in rungs[:-1]}
+        renumbered = {((i + ra) % len(A), (j + rb) % len(B)) for i, j in rolled[:-1]}
+        assert original == renumbered
+
+
+# ---------------------------------------------------------------------
+# Mesh
 
 
 CASES = {
-    "ellipse": (ellipse, 64, {"npoints": lambda j: 64}),
+    # Tolerances are about 1.5 times the errors at the time of writing.
+    # With few points per section, the errors are mostly those of the
+    # polygons themselves; with many, those of the triangles between them.
+    "ellipse": (ellipse, 64, {"npoints": lambda j: 64}, 0.0011, 0.0012),
     "ellipse_random_start": (
         ellipse,
         64,
         {"npoints": lambda j: 64, "random_start": True},
+        0.0011,
+        0.0012,
     ),
-    "bean_clustered": (bean, 48, {"npoints": lambda j: 96, "warp": True}),
+    "bean_clustered": (
+        bean,
+        48,
+        {"npoints": lambda j: 96, "warp": True},
+        0.0075,
+        0.004,
+    ),
     "bean_varying_points": (
         bean,
         48,
         {"npoints": lambda j: 60 + (37 * j) % 80, "warp": True, "random_start": True},
+        0.0095,
+        0.0055,
+    ),
+    "bean_fine": (
+        bean,
+        32,
+        {
+            "npoints": lambda j: 1000 + (37 * j) % 400,
+            "warp": True,
+            "random_start": True,
+        },
+        0.0041,
+        0.0025,
+    ),
+    "roaming_fine": (
+        roaming,
+        32,
+        {
+            "npoints": lambda j: 1000 + (37 * j) % 400,
+            "warp": True,
+            "random_start": True,
+        },
+        0.008,
+        0.03,
     ),
 }
 
 
 @pytest.mark.parametrize("case", CASES)
 def test_mesh_close_to_exact_surface(case):
-    func, nsections, kwargs = CASES[case]
+    func, nsections, kwargs, max_distance, max_area = CASES[case]
     phis = phis_for(nsections)
     wall = wallgeometry.Wall(sample(func, phis, **kwargs), phi=phis, yperiod=yperiod)
-    distance, area = error_to_exact(wall, func)
-    assert distance < 0.006
-    assert area < 0.005
+    every = 4 if "fine" in case else 1
+    distance, area = error_to_exact(wall, func, every=every)
+    assert distance < max_distance
+    assert area < max_area
 
 
 def test_closure_of_rotating_contours():
@@ -471,36 +575,71 @@ def test_closure_of_rotating_contours():
 
 
 def test_contours_moving_and_changing_size():
-    """Matching is done in coordinates normalised by the centroid and
-    the size of the contours. In R, Z the mesh would fold over here."""
+    """The contours are aligned before they are matched. In R, Z the mesh
+    would fold over here, see test_check_detects_fold."""
     phis = phis_for(32)
     lines = sample(roaming, phis, lambda j: 90 + 7 * j, random_start=True)
     wall = wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
     distance, area = error_to_exact(wall, roaming)
-    assert distance < 0.01
+    assert distance < 0.0086
     assert area < 0.04
 
 
+@pytest.mark.parametrize("appears", [True, False])
+@pytest.mark.parametrize(
+    "length, half_width, tolerance",
+    [
+        (1.0, 0.2, 2e-4),
+        (2.0, 0.03, 2e-4),
+        (2.0, 0.3, 2e-4),
+        # The duct is two thirds of the length of the contour
+        (4.0, 0.3, 2e-4),
+        (6.0, 0.4, 5e-3),
+    ],
+)
+def test_port_does_not_move_the_wall(length, half_width, tolerance, appears):
+    """Regression: a duct appearing or disappearing between two sections
+    moved the rest of the wall sideways by up to 1.3 m, as it moves the
+    centroid and changes the area and length of the contour"""
+    A = d_shape(200)
+    lines = [Line(A), Line(with_duct(A, length, half_width))]
+    if not appears:
+        lines = lines[::-1]
+    wall = wallgeometry.Wall(lines, phi=[0.0, 0.02])
+    R, Z = wall.section(0.01)
+    far = np.abs(Z) > 0.35
+    distance = shapely.distance(
+        shapely.points(np.column_stack((R[far], Z[far]))), shapely.LinearRing(A)
+    )
+    # The triangles between the sections sag by 0.1 mm
+    assert np.max(distance) < tolerance
+
+
 def test_sharp_corners_and_growing_notch():
-    for nsections, tolerance in ((40, 0.008), (160, 0.003)):
+    for nsections, tolerance in ((40, 0.007), (160, 0.0019)):
         phis = phis_for(nsections)
         wall = wallgeometry.Wall(notch_lines(phis), phi=phis, yperiod=yperiod)
         distance, _ = error_to_exact(wall, notch)
         assert distance < tolerance
 
 
-def test_second_order_convergence_with_sections():
-    """The faceted wall between the sections converges with second order"""
-    levels = np.array([16, 32, 64, 128])
+@pytest.mark.parametrize("aspect", [2, 10])
+def test_second_order_convergence_with_sections(aspect):
+    """The faceted wall between the sections converges with second order,
+    also for elongated, turning sections (regression: points slid along
+    the flanks, giving first order for aspect ratio 10)"""
+    func = rotating_ellipse(aspect)
+    levels = np.array([16, 32, 64])
     errors = []
     for nsections in levels:
         phis = phis_for(nsections)
-        lines = sample(ellipse, phis, lambda j: 512 + (j % 3), random_start=True)
+        lines = sample(func, phis, lambda j: 512 + (j % 3), random_start=True)
         wall = wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
         # The ellipse turns rigidly, so a few strips are representative
-        errors.append(error_to_exact(wall, ellipse, every=nsections // 8)[0])
+        errors.append(error_to_exact(wall, func, every=nsections // 8)[0])
     order = -np.polyfit(np.log(levels), np.log(errors), 1)[0]
-    assert order == pytest.approx(2, abs=0.25), errors
+    assert order == pytest.approx(2, abs=0.15), errors
+    assert errors[0] < 0.0075
 
 
 def test_input_points_are_vertices():
@@ -566,20 +705,22 @@ def test_normals_point_out_of_concave_walls(case):
             assert polygon.contains(shapely.Point(np.hypot(p[0], p[1]), p[2])) == inside
 
 
-def test_independent_of_start_point_and_orientation():
+@pytest.mark.parametrize("func", [bean, rotating_ellipse(6)])
+def test_independent_of_start_point_and_orientation(func):
     phis = phis_for(16)
     reference = wallgeometry.Wall(
-        sample(bean, phis, lambda j: 64), phi=phis, yperiod=yperiod
+        sample(func, phis, lambda j: 64), phi=phis, yperiod=yperiod
     )
-    lines = sample(bean, phis, lambda j: 64, random_start=True)
-    # Reverse every other contour
-    for line in lines[::2]:
-        line.R, line.Z = line.R[::-1].copy(), line.Z[::-1].copy()
-    wall = wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
-    for phi in mid_phis(wall):
-        a = shapely.LinearRing(np.column_stack(wall.section(phi)))
-        b = shapely.LinearRing(np.column_stack(reference.section(phi)))
-        assert shapely.hausdorff_distance(a, b) < 1e-12
+    for seed in range(3):
+        lines = sample(func, phis, lambda j: 64, seed=seed, random_start=True)
+        # Reverse every other contour
+        for line in lines[seed % 2 :: 2]:
+            line.R, line.Z = line.R[::-1].copy(), line.Z[::-1].copy()
+        wall = wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
+        for phi in mid_phis(wall):
+            a = shapely.LinearRing(np.column_stack(wall.section(phi)))
+            b = shapely.LinearRing(np.column_stack(reference.section(phi)))
+            assert shapely.hausdorff_distance(a, b) < 1e-12
 
 
 @pytest.mark.parametrize("periodic", ["yperiod", "close_toroidal", "open"])
@@ -787,15 +928,12 @@ def test_check_detects_triangles_not_matching_rungs(good_wall):
 
 
 def test_check_detects_fold(monkeypatch):
-    """Matched in R, Z instead of normalised coordinates, the wall of
-    contours that move and change size folds over"""
-    normalise = wallgeometry._normalise
-    monkeypatch.setattr(
-        wallgeometry, "_normalise", lambda P: (P.copy(), normalise(P)[1])
-    )
+    """Matched without aligning them first, contours that move and change
+    size give a wall that folds over"""
+    monkeypatch.setattr(wallgeometry, "_align", lambda A, B: lambda P: P)
     phis = phis_for(16)
     lines = sample(roaming, phis, lambda j: 90 + 7 * j, random_start=True)
-    with pytest.raises(ValueError, match="folds over"):
+    with pytest.raises(ValueError, match="(folds over|pinched)"):
         wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
 
 
