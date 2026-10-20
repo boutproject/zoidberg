@@ -8,9 +8,20 @@ done in real space.
 The wall resolution is independent of the grid: typically the wall is
 built from many more cross-sections than the grid has poloidal slices.
 
+Each strip between two neighbouring contours is triangulated on its own
+(lofting). The contours may have different numbers of points, different
+start points and different point spacing; the points of the contours are
+the vertices of the mesh. Which points are joined is found by dynamic
+programming, minimising the summed squared length of the edges between
+the contours (rungs) in coordinates normalised by the centroid and the
+area of each contour (Fuchs, Kedem & Uselton, Commun. ACM 20, 693 (1977)).
+
 """
 
 import numpy as np
+
+# Total number of cells of the dynamic programming tables processed at once
+_DP_BATCH_CELLS = 2**25
 
 
 def rzphi_to_xyz(r, z, phi):
@@ -25,79 +36,248 @@ def _signed_area(r, z):
     )
 
 
-def orient_contours(A):
-    """
-    Make all contours run anticlockwise in the (R, Z) plane.
+def clean_contour(R, Z):
+    """Check a closed contour and orient it anticlockwise in (R, Z)
+
+    Repeated consecutive points, including a last point equal to the
+    first, are removed.
 
     Parameters
     ----------
-    A : ndarray, shape (n_sections, n_points, 2)
+    R, Z : array_like
+        Points of the contour
 
     Returns
     -------
-    B : ndarray
-        Copy of A with clockwise contours reversed.
+    ndarray, shape (n_points, 2)
+
+    Raises
+    ------
+    ValueError
+        If the contour has fewer than three distinct points, is not
+        finite, has no area or intersects itself
     """
-    B = np.array(A, copy=True)
-    clockwise = _signed_area(B[:, :, 0], B[:, :, 1]) < 0
-    B[clockwise] = B[clockwise, ::-1]
-    return B
+    import shapely
+
+    P = np.column_stack((np.ravel(R), np.ravel(Z))).astype(float)
+    if not np.all(np.isfinite(P)):
+        raise ValueError("Wall contour contains non-finite points")
+    scale = np.max(np.abs(P)) if P.size else 0.0
+    if scale > 0:
+        step = np.linalg.norm(P - np.roll(P, 1, axis=0), axis=1)
+        P = P[step > 1e-12 * scale]
+    if len(P) < 3:
+        raise ValueError("Wall contour needs at least three distinct points")
+    area = _signed_area(P[:, 0], P[:, 1])
+    if abs(area) <= 1e-12 * scale**2:
+        raise ValueError("Wall contour has no area")
+    if not shapely.LinearRing(P).is_simple:
+        raise ValueError("Wall contour intersects itself")
+    return P if area > 0 else P[::-1].copy()
 
 
-def align_contours(A):
+def _normalise(P):
+    """Scale-free coordinates and arc length fraction of a closed,
+    anticlockwise contour"""
+    x, y = P[:, 0], P[:, 1]
+    xn, yn = np.roll(x, -1), np.roll(y, -1)
+    cross = x * yn - xn * y
+    area = 0.5 * np.sum(cross)
+    centroid = np.array([np.sum((x + xn) * cross), np.sum((y + yn) * cross)]) / (
+        6 * area
+    )
+    q = (P - centroid) / np.sqrt(area)
+    seg = np.linalg.norm(np.roll(P, -1, axis=0) - P, axis=1)
+    s = np.concatenate(([0.0], np.cumsum(seg)[:-1])) / np.sum(seg)
+    return q, s
+
+
+def _resample(q, s, M):
+    """q at M uniformly spaced arc length fractions"""
+    u = np.arange(M) / M
+    s_closed = np.append(s, 1.0)
+    q_closed = np.vstack((q, q[:1]))
+    return np.column_stack([np.interp(u, s_closed, q_closed[:, k]) for k in (0, 1)])
+
+
+def _start_point(qa, sa, qb, sb, M=1024):
+    """Point of B that corresponds to the first point of A
+
+    The shift sigma of the arc length that best overlays the normalised
+    contours is the maximum of their cross-correlation.
     """
-    Align ordered contours by finding the optimal cyclic shift
-    between neighboring cross-sections.
+    a = _resample(qa, sa, M)
+    b = _resample(qb, sb, M)
+    corr = sum(
+        np.fft.ifft(np.conj(np.fft.fft(a[:, k])) * np.fft.fft(b[:, k])).real
+        for k in (0, 1)
+    )
+    target = (sa[0] + np.argmax(corr) / M) % 1.0
+    d = np.abs(sb - target)
+    return int(np.argmin(np.minimum(d, 1 - d)))
 
-    All contours must have the same orientation, see `orient_contours`.
+
+def _dp_batch(problems):
+    """Optimal monotone paths for a batch of strips
 
     Parameters
     ----------
-    A : ndarray, shape (n_sections, n_points, 2)
-        A[j, i, 0] = R coordinate
-        A[j, i, 1] = Z coordinate
+    problems : list of (qa, qb)
+        qa : (m + 1, 2) normalised points of A, first point repeated at the end
+        qb : (n + 1, 2) normalised points of B in the order of the path,
+            first point repeated at the end
 
     Returns
     -------
-    B : ndarray
-        Copy of A with contours cyclically shifted to align
-        neighboring cross-sections.
+    paths : list of (m + n + 1, 2) int arrays of (i, j)
+    costs : ndarray, total cost of each path
     """
-    B = np.array(A, copy=True)
+    nb = len(problems)
+    m = np.array([len(qa) - 1 for qa, _ in problems])
+    n = np.array([len(qb) - 1 for _, qb in problems])
+    mmax, nmax = m.max(), n.max()
 
-    n_sections, n_points, _ = B.shape
+    # Padding beyond n does not change columns <= n, as D[i, j] only
+    # depends on columns <= j. Rows beyond m are never used.
+    QA = np.zeros((2, nb, mmax + 1))
+    QB = np.zeros((2, nb, nmax + 1))
+    for k, (qa, qb) in enumerate(problems):
+        QA[:, k, : len(qa)] = qa.T
+        QB[:, k, : len(qb)] = qb.T
 
-    for j in range(1, n_sections):
-        reference = B[j - 1]
-        current = B[j]
+    def row_cost(i):
+        dx = QA[0, :, i, None] - QB[0]
+        dz = QA[1, :, i, None] - QB[1]
+        return dx * dx + dz * dz
 
-        # Find the best cyclic shift.
-        errors = np.empty(n_points)
+    # D[i, j] = cost[i, j] + min(D[i - 1, j], D[i, j - 1]), the minimal
+    # cost of a path from (0, 0) to (i, j). from_a[i, j] is True if the
+    # optimal path reaches (i, j) from (i - 1, j)
+    from_a = np.zeros((nb, mmax + 1, nmax + 1), dtype=bool)
+    total = np.empty(nb)
+    batch = np.arange(nb)
 
-        for k in range(n_points):
-            shifted = np.roll(current, -k, axis=0)
+    D = np.cumsum(row_cost(0), axis=1)
+    for i in range(1, mmax + 1):
+        cost = row_cost(i)
+        C = np.cumsum(cost, axis=1)
+        D_new = C + np.minimum.accumulate(D - C + cost, axis=1)
+        from_a[:, i, 0] = True
+        from_a[:, i, 1:] = D[:, 1:] <= D_new[:, :-1]
+        D = D_new
+        done = m == i
+        total[done] = D[batch[done], n[done]]
 
-            diff = reference - shifted
+    # Backtrack. Every step reduces i + j by one, so the node with
+    # i + j = p is the p-th node of the path
+    i, j = m.copy(), n.copy()
+    nodes = np.zeros((nb, mmax + nmax + 1, 2), dtype=int)
+    nodes[batch, i + j] = np.column_stack((i, j))
+    for _ in range(mmax + nmax):
+        active = i + j > 0
+        step_a = active & from_a[batch, i, j]
+        step_b = active & ~step_a
+        i = i - step_a
+        j = j - step_b
+        nodes[batch[active], (i + j)[active]] = np.column_stack((i, j))[active]
 
-            errors[k] = np.sum(diff**2)
-
-        # Apply the optimal shift.
-        k_best = np.argmin(errors)
-
-        B[j] = np.roll(current, -k_best, axis=0)
-
-    return B
+    paths = [nodes[k, : m[k] + n[k] + 1] for k in range(nb)]
+    return paths, total
 
 
-def create_wall_mesh(B, phi, close_toroidal=True, yperiod=None):
-    """
-    Create a triangular surface mesh from aligned R-Z contours.
+def tile_contours(contours, pairs):
+    """Triangulate the strips between pairs of contours
 
     Parameters
     ----------
-    B : ndarray, shape (n_sections, n_points, 2)
-        B[j, i, 0] = R
-        B[j, i, 1] = Z
+    contours : list of ndarray, shape (n_points, 2)
+        Anticlockwise contours, see `clean_contour`
+    pairs : list of (a, b)
+        Indices of the two contours of each strip
+
+    Returns
+    -------
+    list of ndarray, shape (m + n + 1, 2)
+        For each strip the rungs (i, j), pairs of points of contour a
+        and b joined by an edge, in order around the strip. The first
+        and last rung are the same. Each step between rungs advances
+        either i or j by one point and forms one triangle.
+    """
+    normalised = [_normalise(P) for P in contours]
+
+    def solve(starts):
+        """Optimal rungs of each strip, with the rung (i0, j0) fixed"""
+        problems = []
+        for k, i0, j0 in starts:
+            qa = normalised[pairs[k][0]][0]
+            qb = normalised[pairs[k][1]][0]
+            m, n = len(qa), len(qb)
+            problems.append(
+                (qa[(i0 + np.arange(m + 1)) % m], qb[(j0 + np.arange(n + 1)) % n])
+            )
+
+        rungs = []
+        first = 0
+        while first < len(problems):
+            # Batches limited by the size of the tables
+            last, cells = first, 0
+            while last < len(problems):
+                size = len(problems[last][0]) * len(problems[last][1])
+                if last > first and cells + size > _DP_BATCH_CELLS:
+                    break
+                cells += size
+                last += 1
+            paths, _ = _dp_batch(problems[first:last])
+            for (k, i0, j0), path in zip(starts[first:last], paths):
+                m = len(contours[pairs[k][0]])
+                n = len(contours[pairs[k][1]])
+                rungs.append(
+                    np.column_stack(((i0 + path[:, 0]) % m, (j0 + path[:, 1]) % n))
+                )
+            first = last
+        return rungs
+
+    # Fix the rung of the first point of A to its best guess partner
+    first_pass = solve(
+        [
+            (k, 0, _start_point(*normalised[ia], *normalised[ib]))
+            for k, (ia, ib) in enumerate(pairs)
+        ]
+    )
+
+    # The fixed rung biases the path near the first point of A. Solve
+    # again with the rung of the opposite point of A fixed, which the
+    # optimal path is not sensitive to. The result then does not depend
+    # on where the contours start.
+    second = []
+    for k, (ia, _) in enumerate(pairs):
+        i0 = len(contours[ia]) // 2
+        rungs = first_pass[k]
+        second.append((k, i0, rungs[np.argmax(rungs[:, 0] == i0), 1]))
+    return solve(second)
+
+
+def _strip_triangles(a, b):
+    """Triangles of a strip from its rungs (a, b), first rung repeated at
+    the end. A step along A gives (a_i, a_i+1, b_j), along B
+    (a_i, b_j+1, b_j)"""
+    step_a = (a[1:] != a[:-1])[:, None]
+    return np.where(
+        step_a,
+        np.column_stack((a[:-1], a[1:], b[:-1])),
+        np.column_stack((a[:-1], b[1:], b[:-1])),
+    )
+
+
+def create_wall_mesh(contours, phi, close_toroidal=True, yperiod=None):
+    """
+    Create a triangular surface mesh from R-Z contours.
+
+    Parameters
+    ----------
+    contours : list of ndarray, shape (n_points, 2)
+        Anticlockwise (R, Z) contours, see `clean_contour`. The number
+        of points may differ between contours.
 
     phi : ndarray, shape (n_sections,)
         Toroidal angles in radians.
@@ -115,66 +295,47 @@ def create_wall_mesh(B, phi, close_toroidal=True, yperiod=None):
     Returns
     -------
     vertices : ndarray, shape (n_vertices, 3)
-        Cartesian coordinates of the vertices
+        Cartesian coordinates of the vertices, the points of all
+        contours in order
     triangles : ndarray, shape (n_triangles, 3)
-        Vertex indices of each triangle. The two triangles between
-        sections j, j+1 and points i, i+1 have indices
-        2 * (j * n_points + i) and 2 * (j * n_points + i) + 1
+        Vertex indices of each triangle, strip by strip
+    strip_rungs : list of ndarray, shape (m + n, 2)
+        Vertex indices of the rungs of each strip in order, see
+        `tile_contours`; the closing rung is not repeated
     """
-
-    B = np.asarray(B, dtype=float)
+    contours = [np.asarray(c, dtype=float) for c in contours]
     phi = np.asarray(phi, dtype=float)
 
-    n_sections, n_points, _ = B.shape
-
-    if len(phi) != n_sections:
+    if len(phi) != len(contours):
         raise ValueError("phi must contain one angle per cross-section.")
 
     if yperiod is not None:
         # Repeat the first section one period later
-        B = np.concatenate((B, B[:1]))
+        contours = contours + contours[:1]
         phi = np.append(phi, phi[0] + yperiod)
-        n_sections += 1
-        close_toroidal = False
+        pairs = [(k, k + 1) for k in range(len(contours) - 1)]
+    elif close_toroidal:
+        pairs = [(k, (k + 1) % len(contours)) for k in range(len(contours))]
+    else:
+        pairs = [(k, k + 1) for k in range(len(contours) - 1)]
 
-    # --------------------------------------------------
-    # 1. Convert R-Z contours to Cartesian coordinates
-    # --------------------------------------------------
+    offsets = np.cumsum([0] + [len(c) for c in contours])
+    vertices = np.vstack(
+        [
+            np.column_stack(rzphi_to_xyz(c[:, 0], c[:, 1], p))
+            for c, p in zip(contours, phi)
+        ]
+    )
 
-    vertices = np.zeros((n_sections, n_points, 3))
+    triangles = []
+    strip_rungs = []
+    for (ia, ib), r in zip(pairs, tile_contours(contours, pairs)):
+        a = offsets[ia] + r[:, 0]
+        b = offsets[ib] + r[:, 1]
+        strip_rungs.append(np.column_stack((a, b))[:-1])
+        triangles.append(_strip_triangles(a, b))
 
-    vertices[:, :, 0] = B[:, :, 0] * np.cos(phi[:, None])
-    vertices[:, :, 1] = B[:, :, 0] * np.sin(phi[:, None])
-    vertices[:, :, 2] = B[:, :, 1]
-
-    # Flatten to (n_sections * n_points, 3)
-    vertices = vertices.reshape(-1, 3)
-
-    # --------------------------------------------------
-    # 2. Connect neighboring cross-sections
-    # --------------------------------------------------
-
-    n_connections = n_sections if close_toroidal else n_sections - 1
-
-    j, i = np.meshgrid(np.arange(n_connections), np.arange(n_points), indexing="ij")
-    j_next = (j + 1) % n_sections
-    i_next = (i + 1) % n_points
-
-    p00 = j * n_points + i
-    p10 = j * n_points + i_next
-    p01 = j_next * n_points + i
-    p11 = j_next * n_points + i_next
-
-    # Two triangles per quadrilateral
-    triangles = np.stack(
-        (
-            np.stack((p00, p10, p01), axis=-1),
-            np.stack((p10, p11, p01), axis=-1),
-        ),
-        axis=2,
-    ).reshape(-1, 3)
-
-    return vertices, triangles.astype(np.int64)
+    return vertices, np.vstack(triangles).astype(np.int64), strip_rungs
 
 
 class Wall:
@@ -183,50 +344,39 @@ class Wall:
     Parameters
     ----------
     outer_lines : list of :py:obj:`~zoidberg.rzline.RZline`
-        One closed contour per cross-section. All contours must have
-        the same number of points.
+        One closed contour per cross-section. The contours may have
+        different numbers of points, start points and orientation.
     MXG : int, optional
         Unused, kept for backwards compatibility
     phi : array_like, optional
         Toroidal angle of each cross-section. If given, the mesh is
         created immediately, see `create_mesh`.
-    close_toroidal, yperiod : optional
+    close_toroidal, yperiod, check : optional
         Passed to `create_mesh`
     """
 
     def __init__(
-        self, outer_lines, MXG=2, phi=None, close_toroidal=False, yperiod=None
+        self,
+        outer_lines,
+        MXG=2,
+        phi=None,
+        close_toroidal=False,
+        yperiod=None,
+        check=True,
     ):
-        # Number of cross sections
-        n_crosssection = len(outer_lines)
-
-        # Number of points, basically nz
-        n_pnts = outer_lines[0].R.size
-
-        # Create a 3D array that contains all the grid points
-        # 1st dimension is the cross section
-        # 2nd dimension is the different points
-        # 3rd dimension is the coordinates of the point, so 2
-        pnts = np.zeros((n_crosssection, n_pnts, 2))
-
-        for i in range(n_crosssection):
-            if outer_lines[i].R.size != n_pnts:
-                raise ValueError(
-                    "All wall contours must have the same number of points"
-                )
-            pnts[i, :, 0] = outer_lines[i].R
-            pnts[i, :, 1] = outer_lines[i].Z
-
-        self.pnts = np.copy(pnts)
-
-        # This assumes that all the points are ordered
-        ordered_pnts = align_contours(orient_contours(pnts))
-        self.ordered_pnts = np.copy(ordered_pnts)
+        self.contours = []
+        for i, line in enumerate(outer_lines):
+            try:
+                self.contours.append(clean_contour(line.R, line.Z))
+            except ValueError as error:
+                raise ValueError(f"Wall cross-section {i}: {error}") from error
 
         if phi is not None:
-            self.create_mesh(phi, close_toroidal=close_toroidal, yperiod=yperiod)
+            self.create_mesh(
+                phi, close_toroidal=close_toroidal, yperiod=yperiod, check=check
+            )
 
-    def create_mesh(self, phi, close_toroidal=False, yperiod=None):
+    def create_mesh(self, phi, close_toroidal=False, yperiod=None, check=True):
         """Create the triangle mesh
 
         Parameters
@@ -240,8 +390,14 @@ class Wall:
             one period, i.e. phi[-1] - phi[0] < yperiod. If neither
             yperiod nor close_toroidal is given the mesh is open at
             both ends.
+        check : bool
+            Check the mesh, see `check`
         """
         phi = np.asarray(phi, dtype=float)
+        if phi.ndim != 1 or len(phi) != len(self.contours):
+            raise ValueError("phi must contain one angle per cross-section")
+        if len(phi) < 2 and yperiod is None and not close_toroidal:
+            raise ValueError("An open wall needs at least two cross-sections")
         if np.any(np.diff(phi) <= 0):
             raise ValueError("phi must be strictly increasing")
         if close_toroidal and yperiod is None:
@@ -249,17 +405,17 @@ class Wall:
         if yperiod is not None and phi[-1] - phi[0] >= yperiod:
             raise ValueError("The cross-sections must lie within one period")
 
-        vertices, triangles = create_wall_mesh(
-            self.ordered_pnts, phi, close_toroidal=False, yperiod=yperiod
+        vertices, triangles, strip_rungs = create_wall_mesh(
+            self.contours, phi, close_toroidal=False, yperiod=yperiod
         )
 
         self.vertices = vertices
         self.triangles = triangles
+        self.strip_rungs = strip_rungs
         self.yperiod = yperiod
         # Toroidal angle of every section in the mesh, including the
         # repeated first section if periodic
         self.mesh_phi = phi if yperiod is None else np.append(phi, phi[0] + yperiod)
-        self.n_points = self.ordered_pnts.shape[1]
         self._intersect_cache = None
 
         tri = vertices[triangles]
@@ -267,7 +423,95 @@ class Wall:
         # (p10 - p00) x (p01 - p00) points inwards, so reverse it to get
         # the outward normal
         normals = np.cross(tri[:, 2] - tri[:, 0], tri[:, 1] - tri[:, 0])
-        self.normals = normals / np.linalg.norm(normals, axis=1)[:, None]
+        norm = np.linalg.norm(normals, axis=1)
+        self.normals = normals / np.where(norm > 0, norm, 1.0)[:, None]
+
+        if check:
+            self.check()
+
+    def check(self, fractions=(0.25, 0.5, 0.75), min_area_ratio=0.5):
+        """Check that the mesh is a valid wall surface
+
+        - the rungs of every strip join each point of both contours in
+          order, and the triangles are those of the rungs. Each strip is
+          then a band of consistently oriented triangles.
+        - no edge is shared by more than two triangles, which happens if
+          a whole contour is joined to a single point, and no triangle
+          is degenerate
+        - the cross-sections at the given fractions of every strip are
+          simple polygons, i.e. the wall does not fold over or twist,
+          and their area is at least min_area_ratio times the smaller
+          area of the two neighbouring cross-sections, i.e. the wall is
+          not pinched
+
+        Raises
+        ------
+        ValueError
+            Describing the first problem found
+        """
+        import shapely
+
+        sizes = [len(c) for c in self.contours]
+        if self.yperiod is not None:
+            sizes.append(sizes[0])
+        offsets = np.cumsum([0] + sizes)
+        triangles = []
+        for k, rungs in enumerate(self.strip_rungs):
+            closed = np.vstack((rungs, rungs[:1]))
+            a = closed[:, 0] - offsets[k]
+            b = closed[:, 1] - offsets[k + 1]
+            da = np.diff(a) % sizes[k]
+            db = np.diff(b) % sizes[k + 1]
+            if not (
+                np.all((a >= 0) & (a < sizes[k]) & (b >= 0) & (b < sizes[k + 1]))
+                and np.all((da + db == 1) & (da * db == 0))
+                and np.sum(da) == sizes[k]
+                and np.sum(db) == sizes[k + 1]
+            ):
+                raise ValueError(
+                    f"Invalid rungs between cross-sections {k} and {k + 1}"
+                )
+            triangles.append(_strip_triangles(closed[:, 0], closed[:, 1]))
+        if not np.array_equal(np.vstack(triangles), self.triangles):
+            raise ValueError("The triangles of the wall mesh do not match its rungs")
+
+        tri = self.vertices[self.triangles]
+        area = 0.5 * np.linalg.norm(
+            np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1
+        )
+        scale = np.max(np.abs(self.vertices))
+        if np.any(area <= 1e-14 * scale**2):
+            raise ValueError("The wall mesh contains degenerate triangles")
+
+        # Triangles sharing an edge traverse it in opposite directions,
+        # so a third triangle repeats one direction
+        nv = len(self.vertices)
+        start = self.triangles.ravel()
+        end = self.triangles[:, [1, 2, 0]].ravel()
+        directed = np.sort(start * nv + end)
+        if np.any(directed[1:] == directed[:-1]):
+            raise ValueError(
+                "The wall mesh has edges shared by more than two triangles"
+            )
+
+        section_area = [abs(_signed_area(*self.section(p))) for p in self.mesh_phi]
+        for k in range(len(self.mesh_phi) - 1):
+            phi0, phi1 = self.mesh_phi[k], self.mesh_phi[k + 1]
+            for f in fractions:
+                phi = phi0 + f * (phi1 - phi0)
+                R, Z = self.section(phi)
+                if not shapely.LinearRing(np.column_stack((R, Z))).is_simple:
+                    raise ValueError(
+                        f"The wall folds over between cross-sections {k} and {k + 1}"
+                        f" (phi = {phi0} to {phi1}); add more cross-sections"
+                    )
+                if abs(_signed_area(R, Z)) < min_area_ratio * min(
+                    section_area[k], section_area[k + 1]
+                ):
+                    raise ValueError(
+                        f"The wall is pinched between cross-sections {k} and {k + 1}"
+                        f" (phi = {phi0} to {phi1}); add more cross-sections"
+                    )
 
     def to_base_period(self, phi):
         """Shift toroidal angles into the period covered by the mesh
@@ -306,24 +550,19 @@ class Wall:
         j = np.clip(
             np.searchsorted(mesh_phi, phi_b, side="right") - 1, 0, len(mesh_phi) - 2
         )
-        n = self.n_points
-        V = self.vertices.reshape(-1, n, 3)
+        # Every triangle of the strip has one rung on each side, so the
+        # cuts of the rungs in order form the section
+        rungs = self.strip_rungs[j]
+        A = self.vertices[rungs[:, 0]]
+        B = self.vertices[rungs[:, 1]]
 
         m = np.array([-np.sin(phi_b), np.cos(phi_b), 0.0])
-
-        def cut(A, B):
-            mA = A @ m
-            mB = B @ m
-            denom = mA - mB
-            lam = np.divide(mA, denom, out=np.zeros_like(mA), where=np.abs(denom) > 0)
-            lam = np.clip(lam, 0.0, 1.0)
-            return A + lam[:, None] * (B - A)
-
-        # Edges between the sections, and the diagonals of each quad
-        E = cut(V[j], V[j + 1])
-        D = cut(np.roll(V[j], -1, axis=0), V[j + 1])
-
-        P = np.stack((E, D), axis=1).reshape(-1, 3)
+        mA = A @ m
+        mB = B @ m
+        denom = mA - mB
+        lam = np.divide(mA, denom, out=np.zeros_like(mA), where=np.abs(denom) > 0)
+        lam = np.clip(lam, 0.0, 1.0)
+        P = A + lam[:, None] * (B - A)
         R = P[:, 0] * np.cos(phi_b) + P[:, 1] * np.sin(phi_b)
         return R, P[:, 2]
 

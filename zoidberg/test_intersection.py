@@ -20,7 +20,7 @@ from scipy.optimize import brentq
 
 from . import field, grid, intersection, poloidal_grid, rzline, wallgeometry
 
-pytest.importorskip("shapely")
+shapely = pytest.importorskip("shapely")
 
 Ra, Za = 2.0, 0.0  # Magnetic axis
 a, iota = 0.3, 1.5  # Radial drift, rotational transform
@@ -228,18 +228,20 @@ def test_mms_tracing_convergence(mms_grid):
     assert np.all(status == intersection.HIT)
 
 
+def hit_on_wall(R0, Z0, y0, y1):
+    """First crossing of the exact field lines with the exact wall"""
+
+    def distance(phi, line):
+        R, Z = exact_position(R0[line], Z0[line], y0, phi)
+        Rc, Zc = wall_centre(phi)
+        return (R - Rc) ** 2 + (Z - Zc) ** 2 - rw**2
+
+    return first_roots(distance, y0, y1, R0.size)
+
+
 def test_mms_wall_convergence(mms_grid):
     """Convergence with the resolution of the wall, against the exact
     (continuous) wall. The faceted wall converges with second order."""
-
-    def hit_on_wall(R0, Z0, y0, y1):
-        def distance(phi, line):
-            R, Z = exact_position(R0[line], Z0[line], y0, phi)
-            Rc, Zc = wall_centre(phi)
-            return (R - Rc) ** 2 + (Z - Zc) ** 2 - rw**2
-
-        return first_roots(distance, y0, y1, R0.size)
-
     refs = references(mms_grid, hit_on_wall)
     assert len(refs) > 100
 
@@ -275,6 +277,102 @@ def test_mms_wall_convergence(mms_grid):
             abs(tangent @ grad) / np.linalg.norm(tangent) / np.linalg.norm(grad)
         )
         assert result[f"{prefix}_hit_angle"][index] == pytest.approx(angle, abs=0.02)
+
+
+def test_irregular_wall_sections(mms_grid):
+    """A wall built from sections with different numbers of points,
+    start points and orientations is as accurate as a regular wall"""
+    refs = references(mms_grid, hit_on_wall)
+    nsections = 64
+    phis = np.linspace(0, yperiod, nsections, endpoint=False)
+    rng = np.random.default_rng(5)
+    lines = []
+    for j, phi in enumerate(phis):
+        n = int(rng.integers(100, 160))
+        theta = np.roll(np.linspace(0, 2 * np.pi, n, endpoint=False), rng.integers(n))
+        if j % 2:
+            theta = theta[::-1]
+        Rc, Zc = wall_centre(phi)
+        lines.append(
+            rzline.RZline(
+                Rc + rw * np.cos(theta), Zc + rw * np.sin(theta), anticlockwise=False
+            )
+        )
+    irregular = wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
+    regular = make_wall(nsections, 128)
+
+    rms = []
+    for wall in (regular, irregular):
+        result = intersection.find_wall_intersections(
+            mms_grid, SpiralField(), wall, dphi_max=yperiod / 128
+        )
+        status, err = errors(result, refs)
+        assert np.all(status == intersection.HIT)
+        rms.append(np.sqrt(np.mean(err**2)))
+
+        # The crossings lie on the faceted wall
+        for prefix in ("forward", "backward"):
+            hit = result[f"{prefix}_status"] == intersection.HIT
+            for phi, R, Z in zip(
+                result[f"{prefix}_hit_phi"][hit],
+                result[f"{prefix}_hit_R"][hit],
+                result[f"{prefix}_hit_Z"][hit],
+            ):
+                wall_R, wall_Z = wall.section(phi)
+                ring = shapely.LinearRing(np.column_stack((wall_R, wall_Z)))
+                assert shapely.distance(ring, shapely.Point(R, Z)) < 1e-9
+    assert rms[1] < 2 * rms[0], rms
+
+
+def test_open_wall(capsys):
+    """A wall that covers only part of the period. Grid slices outside it
+    are outside the wall, and field lines leaving it don't hit it"""
+    nsections = 16
+    phis = np.linspace(0.2, 0.6, nsections) * yperiod
+    theta = np.linspace(0, 2 * np.pi, 32, endpoint=False)
+    lines = []
+    for phi in phis:
+        Rc, Zc = wall_centre(phi)
+        lines.append(rzline.RZline(Rc + rw * np.cos(theta), Zc + rw * np.sin(theta)))
+    wall = wallgeometry.Wall(lines, phi=phis)
+    g = make_grid(ny=4)
+    result = intersection.find_wall_intersections(
+        g, SpiralField(), wall, dphi_max=0.01, quiet=False
+    )
+    assert "slice 4 of 4" in capsys.readouterr().out
+
+    for j in range(4):
+        _, y0 = g.getPoloidalGrid(j)
+        location = result["start_location"][:, j, :]
+        if not phis[0] <= y0 <= phis[-1]:
+            assert np.all(location == intersection.OUTSIDE)
+        else:
+            assert np.any(location == intersection.INSIDE)
+    for prefix in ("forward", "backward"):
+        hit = result[f"{prefix}_status"] == intersection.HIT
+        assert np.any(hit)
+        assert np.all(result[f"{prefix}_hit_phi"][hit] >= phis[0] - 1e-12)
+        assert np.all(result[f"{prefix}_hit_phi"][hit] <= phis[-1] + 1e-12)
+
+
+def test_no_lines_and_empty_legs():
+    wall = make_wall(8, 16)
+    empty = np.zeros(0)
+    result = intersection.wall_intersections_between(
+        SpiralField(), wall, empty, empty, 0.0, 0.1
+    )
+    assert all(value.size == 0 for value in result.values())
+    R = np.array([Ra + 0.1])
+    result = intersection.wall_intersections_between(
+        SpiralField(), wall, R, np.array([Za]), 0.1, 0.1
+    )
+    assert result["status"][0] == intersection.NO_HIT
+    # No hit: the line stays well inside the wall
+    result = intersection.wall_intersections_between(
+        SpiralField(), wall, R, np.array([Za]), 0.1, 0.2
+    )
+    assert result["status"][0] == intersection.NO_HIT
+    assert np.isnan(result["hit_length"][0])
 
 
 def test_hit_direction_and_start_location(mms_grid):
@@ -384,6 +482,19 @@ def test_wall_periodic_closure():
         wallgeometry.rzphi_to_xyz(R, np.full(30, Zc), np.full(30, phi))
     )
     assert wallgeometry.first_wall_intersection_fast(wall, line)[0] is None
+
+    # From the axis outwards, the line hits the wall once
+    R = np.linspace(Ra, Rc + 0.8, 30)
+    line = np.column_stack(
+        wallgeometry.rzphi_to_xyz(R, np.full(30, Zc), np.full(30, phi))
+    )
+    point, segment, triangle, distance = wallgeometry.first_wall_intersection_fast(
+        wall, line
+    )
+    assert np.hypot(point[0], point[1]) == pytest.approx(Rc + rw, abs=0.01)
+    assert line[segment, 0] < point[0] < line[segment + 1, 0]
+    assert distance == pytest.approx(np.hypot(point[0], point[1]) - Ra)
+    assert wall.normals[triangle] @ (line[-1] - line[0]) > 0
 
     # The mesh covers exactly one period
     assert wall.mesh_phi[0] == 0.0
