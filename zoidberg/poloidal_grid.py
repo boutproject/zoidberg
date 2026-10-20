@@ -816,16 +816,15 @@ def grid_elliptic(
         dx[dx < -np.pi] += np.pi * 2
         dx[dx > np.pi] -= np.pi * 2
         f = np.fft.fft(dx)
-        n = len(f)
-        nh = n // 2
         nq = maxmode
-        f[nq:nh] = 0
-        f[nh + 1 : -nq] = 0
+        # Remove modes above maxmode, including the Nyquist mode
+        f[nq:-nq] = 0
         dxn = np.real(np.fft.ifft(f))
         xnew = np.empty_like(x)
         xnew[0] = x[0]
+        # dx[i] = x[i] - x[i-1]
         for i in range(len(x) - 1):
-            xnew[i + 1] = xnew[i] + dxn[i]
+            xnew[i + 1] = xnew[i] + dxn[i + 1]
         return xnew % (np.pi * 2)
 
     if (nx > restrict_size) or (nz > restrict_size):
