@@ -1157,7 +1157,11 @@ class SmoothedMagneticField(MagneticField):
         self.attributes = {}
 
     def Bxfunc(self, x, z, phi):
-        raise RuntimeError("Not implemented")
+        raise NotImplementedError("Not implemented")
+
+    def Bzfunc(self, x, z, phi):
+        # Don't fall back to the base class, which returns zeros
+        raise NotImplementedError("Not implemented")
 
     def Byfunc(self, x, z, phi):
         """
