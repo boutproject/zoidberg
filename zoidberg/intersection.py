@@ -196,22 +196,35 @@ def _segment_triangle(origin, direction, v0, e1, e2):
 
 
 def _wall_tree(wall):
+    """Search trees of the triangle centroids. The triangles are grouped
+    by size, so that a few large triangles do not enlarge the search
+    radius for all others."""
     cache = _wall_cache(wall)
-    if "tree" not in cache:
-        cache["tree"] = cKDTree(cache["centroid"])
-        cache["radius_max"] = np.max(cache["radius"])
+    if "trees" not in cache:
+        radius = cache["radius"]
+        group = np.floor(np.log2(radius / np.min(radius))).astype(int)
+        cache["trees"] = []
+        for g in np.unique(group):
+            index = np.flatnonzero(group == g)
+            tree = cKDTree(cache["centroid"][index])
+            cache["trees"].append((tree, index, np.max(radius[index])))
     return cache
 
 
 def _candidate_pairs(cache, points, radius, lines):
     """Pairs of (line, triangle) with triangles within radius of points"""
-    found = cache["tree"].query_ball_point(
-        points, radius + cache["radius_max"], return_sorted=False, workers=-1
-    )
-    counts = np.fromiter((len(f) for f in found), dtype=int, count=len(found))
-    if counts.sum() == 0:
+    pair_line, pair_tri = [], []
+    for tree, index, radius_max in cache["trees"]:
+        found = tree.query_ball_point(
+            points, radius + radius_max, return_sorted=False, workers=-1
+        )
+        counts = np.fromiter((len(f) for f in found), dtype=int, count=len(found))
+        if counts.sum() > 0:
+            pair_line.append(np.repeat(lines, counts))
+            pair_tri.append(index[np.concatenate(found).astype(int)])
+    if not pair_line:
         return np.zeros(0, dtype=int), np.zeros(0, dtype=int)
-    return np.repeat(lines, counts), np.concatenate(found).astype(int)
+    return np.concatenate(pair_line), np.concatenate(pair_tri)
 
 
 def first_crossings(wall, R, Z, phis, failed=None, min_distance=1e-9):

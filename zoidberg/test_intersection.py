@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 from scipy.integrate import quad
 from scipy.optimize import brentq
+from scipy.spatial import cKDTree
 
 from . import field, grid, intersection, poloidal_grid, rzline, wallgeometry
 
@@ -322,6 +323,59 @@ def test_irregular_wall_sections(mms_grid):
                 ring = shapely.LinearRing(np.column_stack((wall_R, wall_Z)))
                 assert shapely.distance(ring, shapely.Point(R, Z)) < 1e-9
     assert rms[1] < 2 * rms[0], rms
+
+
+def coarse_section_wall():
+    """Wall of fine sections and one coarse one, with large triangles"""
+    nsections = 32
+    phis = np.linspace(0, yperiod, nsections, endpoint=False)
+    lines = []
+    for j, phi in enumerate(phis):
+        n = 6 if j == 10 else 64
+        theta = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        Rc, Zc = wall_centre(phi)
+        lines.append(rzline.RZline(Rc + rw * np.cos(theta), Zc + rw * np.sin(theta)))
+    return wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
+
+
+def test_coarse_section_same_as_brute_force(monkeypatch):
+    """The search for triangles near a segment finds all crossings, also
+    with triangles of very different size"""
+    wall = coarse_section_wall()
+    g = make_grid(ny=2, nx=4, nz=8)
+    result = intersection.find_wall_intersections(g, SpiralField(), wall)
+
+    def all_pairs(cache, points, radius, lines):
+        ntri = len(cache["v0"])
+        return np.repeat(lines, ntri), np.tile(np.arange(ntri), len(lines))
+
+    monkeypatch.setattr(intersection, "_candidate_pairs", all_pairs)
+    reference = intersection.find_wall_intersections(g, SpiralField(), wall)
+    assert np.any(result["forward_status"] == intersection.HIT)
+    for key, value in reference.items():
+        assert np.array_equal(result[key], value, equal_nan=True), key
+
+
+def test_large_triangles_do_not_enlarge_search():
+    """The few large triangles of a coarse section are searched with their
+    own radius, the others with a small one"""
+    wall = coarse_section_wall()
+    cache = intersection._wall_tree(wall)
+    points = cache["centroid"][::7]
+    lines = np.arange(len(points))
+    _, found = intersection._candidate_pairs(cache, points, 0.0, lines)
+    single = cKDTree(cache["centroid"]).query_ball_point(
+        points, np.max(cache["radius"])
+    )
+    assert len(found) < 0.2 * sum(len(f) for f in single)
+    # but still all triangles that may touch the points
+    distance = (
+        np.linalg.norm(cache["centroid"][None] - points[:, None], axis=-1)
+        - cache["radius"][None]
+    )
+    near = np.argwhere(distance <= 0)
+    pairs = set(zip(*intersection._candidate_pairs(cache, points, 0.0, lines)))
+    assert all((i, t) in pairs for i, t in near)
 
 
 def test_open_wall(capsys):
