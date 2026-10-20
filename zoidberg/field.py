@@ -931,59 +931,48 @@ class VMEC(MagneticField):
     """
 
     def __rolling_average(self, field):
+        """Convert from the VMEC half grid to the full grid in s
+
+        ``field`` has shape (modes, ns). Index 0 of the half grid is
+        unused; index j is at s_{j-1/2}
+        """
         result = np.zeros_like(field)
-        result[:, 0] = field[:, 1] - 0.5 * field[:, 2]
-        result[:, 2:-2] = 0.5 * (field[:, 2:-2] + field[:, 3:-1])
-        result[:, -1] = 2 * field[:, -2] - field[:, -3]
+        result[:, 1:-1] = 0.5 * (field[:, 1:-1] + field[:, 2:])
+        # Extrapolate to the axis and the boundary
+        result[:, 0] = 1.5 * field[:, 1] - 0.5 * field[:, 2]
+        result[:, -1] = 1.5 * field[:, -1] - 0.5 * field[:, -2]
         return result
 
-    def cfunct(self, field):
-        """VMEC DCT"""
-        ns = field.shape[0]
-        lt = self.theta.size
-        lz = self.zeta.size
-        # Create mode x angle arrays
-        mt = self.xm[:, np.newaxis] * self.theta
-        nz = self.xn[:, np.newaxis] * self.zeta
-        # Create Trig Arrays
-        cosmt = np.cos(mt)
-        sinmt = np.sin(mt)
-        cosnz = np.cos(nz)
-        sinnz = np.sin(nz)
-        # Calculate the transform
-        f = np.zeros((ns, lt, lz))
-        for k, field_slice in enumerate(field):
-            rmn = np.repeat(field_slice[:, np.newaxis], lt, axis=1)
-            a = rmn * cosmt
-            b = np.dot(a.T, cosnz)
-            c = rmn * sinmt
-            d = np.dot(c.T, sinnz)
-            f[k, :, :] = b - d
-        return f
+    def _transform(self, field, trig, xm=None, xn=None):
+        """Evaluate sum_mn field[s, mn] * trig(m * theta - n * zeta)
 
-    def sfunct(self, field):
+        VMEC uses the angle m * theta - n * zeta, with xn including the
+        number of field periods.
+        """
+        xm = self.xm if xm is None else xm
+        xn = self.xn if xn is None else xn
+        cosmt = np.cos(np.outer(xm, self.theta))
+        sinmt = np.sin(np.outer(xm, self.theta))
+        cosnz = np.cos(np.outer(xn, self.zeta))
+        sinnz = np.sin(np.outer(xn, self.zeta))
+        field = np.asarray(field)
+        if trig == "cos":
+            # cos(a - b) = cos(a)cos(b) + sin(a)sin(b)
+            return np.einsum("sm,mt,mz->stz", field, cosmt, cosnz) + np.einsum(
+                "sm,mt,mz->stz", field, sinmt, sinnz
+            )
+        # sin(a - b) = sin(a)cos(b) - cos(a)sin(b)
+        return np.einsum("sm,mt,mz->stz", field, sinmt, cosnz) - np.einsum(
+            "sm,mt,mz->stz", field, cosmt, sinnz
+        )
+
+    def cfunct(self, field, xm=None, xn=None):
+        """VMEC DCT"""
+        return self._transform(field, "cos", xm, xn)
+
+    def sfunct(self, field, xm=None, xn=None):
         """VMEC DST"""
-        ns = field.shape[0]
-        lt = self.theta.size
-        lz = self.zeta.size
-        # Create mode x angle arrays
-        mt = self.xm[:, np.newaxis] * self.theta
-        nz = self.xn[:, np.newaxis] * self.zeta
-        # Create Trig Arrays
-        cosmt = np.cos(mt)
-        sinmt = np.sin(mt)
-        cosnz = np.cos(nz)
-        sinnz = np.sin(nz)
-        # Calculate the transform
-        f = np.zeros((ns, lt, lz))
-        for k, field_slice in enumerate(field):
-            rmn = np.repeat(field_slice[:, np.newaxis], lt, axis=1)
-            a = rmn * sinmt
-            b = np.dot(a.T, cosnz)
-            c = rmn * cosmt
-            d = np.dot(c.T, sinnz)
-            f[k, :, :] = b + d
-        return f
+        return self._transform(field, "sin", xm, xn)
 
     def read_vmec_file(self, vmec_file, ntheta=None, nzeta=None):
         """Read a VMEC equilibrium file"""
@@ -991,30 +980,19 @@ class VMEC(MagneticField):
 
         # Read necessary stuff
         with DataFile(vmec_file, write=False) as f:
-            self.xm = f["xm"].T
-            self.xn = f["xn"].T
-            ns = int(f["ns"])
-            xm_big = np.repeat(self.xm[:, np.newaxis], ns, axis=1)
-            xn_big = np.repeat(self.xn[:, np.newaxis], ns, axis=1)
-            # s and c seem to swap meanings here...
-            rumns = -f["rmnc"].T * xm_big
-            rvmns = -f["rmnc"].T * xn_big
-            zumnc = f["zmns"].T * xm_big
-            zvmnc = f["zmns"].T * xn_big
+            self.xm = np.asarray(f["xm"]).ravel()
+            self.xn = np.asarray(f["xn"]).ravel()
+            # B^u and B^v are on the Nyquist mode set
+            try:
+                xm_nyq = np.asarray(f["xm_nyq"]).ravel()
+                xn_nyq = np.asarray(f["xn_nyq"]).ravel()
+            except KeyError:
+                xm_nyq, xn_nyq = self.xm, self.xn
 
             try:
                 iasym = f["iasym"]
             except KeyError:
                 iasym = 0
-
-            if iasym:
-                rumnc = -f["rmns"].T * xm_big
-                rvmnc = -f["rmns"].T * xn_big
-                zumns = f["zmnc"].T * xm_big
-                zvmns = f["zmnc"].T * xn_big
-
-            bsupumnc = self.__rolling_average(f["bsupumnc"].T).T
-            bsupvmnc = self.__rolling_average(f["bsupvmnc"].T).T
 
             if ntheta is None:
                 self.ntheta = int(f["mpol"])
@@ -1028,24 +1006,43 @@ class VMEC(MagneticField):
 
             self.theta = np.linspace(0, 2 * np.pi, self.ntheta)
             self.zeta = np.linspace(0, 2 * np.pi, self.nzeta)
-            # R, Z on (s, theta, zeta)
-            self.r_stz = self.cfunct(f["rmnc"])
-            self.z_stz = self.sfunct(f["zmns"])
 
-            bu = self.cfunct(bsupumnc)
-            bv = self.cfunct(bsupvmnc)
+            rmnc = np.asarray(f["rmnc"])
+            zmns = np.asarray(f["zmns"])
+            bsupumnc = self.__rolling_average(np.asarray(f["bsupumnc"]).T).T
+            bsupvmnc = self.__rolling_average(np.asarray(f["bsupvmnc"]).T).T
 
-            drdu = self.sfunct(rumns.T)
-            drdv = self.sfunct(rvmns.T)
-            dzdu = self.cfunct(zumnc.T)
-            dzdv = self.cfunct(zvmnc.T)
+            m = self.xm[np.newaxis, :]
+            n = self.xn[np.newaxis, :]
+
+            # With angle a = m*u - n*v:
+            # R = rmnc cos(a) => dR/du = -m rmnc sin(a), dR/dv = n rmnc sin(a)
+            # Z = zmns sin(a) => dZ/du = m zmns cos(a), dZ/dv = -n zmns cos(a)
+            self.r_stz = self.cfunct(rmnc)
+            self.z_stz = self.sfunct(zmns)
+            drdu = self.sfunct(-m * rmnc)
+            drdv = self.sfunct(n * rmnc)
+            dzdu = self.cfunct(m * zmns)
+            dzdv = self.cfunct(-n * zmns)
+
+            bu = self.cfunct(bsupumnc, xm_nyq, xn_nyq)
+            bv = self.cfunct(bsupvmnc, xm_nyq, xn_nyq)
+
             if iasym:
-                self.r_stz = self.r_stz + self.sfunct(f["rmnc"])
-                drdu = drdu + self.cfunct(rumnc.T)
-                drdv = drdv + self.cfunct(rvmnc.T)
-                self.z_stz = self.z_stz + self.cfunct(f["zmnc"])
-                dzdu = dzdu + self.sfunct(zumns.T)
-                dzdv = dzdv + self.sfunct(zvmns.T)
+                # R += rmns sin(a), Z += zmnc cos(a)
+                rmns = np.asarray(f["rmns"])
+                zmnc = np.asarray(f["zmnc"])
+                self.r_stz = self.r_stz + self.sfunct(rmns)
+                self.z_stz = self.z_stz + self.cfunct(zmnc)
+                drdu = drdu + self.cfunct(m * rmns)
+                drdv = drdv + self.cfunct(-n * rmns)
+                dzdu = dzdu + self.sfunct(-m * zmnc)
+                dzdv = dzdv + self.sfunct(n * zmnc)
+
+                bsupumns = self.__rolling_average(np.asarray(f["bsupumns"]).T).T
+                bsupvmns = self.__rolling_average(np.asarray(f["bsupvmns"]).T).T
+                bu = bu + self.sfunct(bsupumns, xm_nyq, xn_nyq)
+                bv = bv + self.sfunct(bsupvmns, xm_nyq, xn_nyq)
 
         # Convert to bR, bZ, bphi
         self.br = bu * drdu + bv * drdv
@@ -1157,7 +1154,11 @@ class SmoothedMagneticField(MagneticField):
         self.attributes = {}
 
     def Bxfunc(self, x, z, phi):
-        raise RuntimeError("Not implemented")
+        raise NotImplementedError("Not implemented")
+
+    def Bzfunc(self, x, z, phi):
+        # Don't fall back to the base class, which returns zeros
+        raise NotImplementedError("Not implemented")
 
     def Byfunc(self, x, z, phi):
         """
@@ -1235,8 +1236,8 @@ class GEQDSK(MagneticField):
         print(f"Major radius: {self.rmin} -> {self.rmax} m")
         print(f"Height: {self.zmin} -> {self.zmax} m")
 
-        # Poloidal flux
-        self.psi = np.transpose(data["psi"])
+        # Poloidal flux, indexed [R, Z]
+        self.psi = np.asarray(data["psi"])
         nr, nz = self.psi.shape
 
         # Normalising factors: psi on axis and boundary
@@ -1336,7 +1337,7 @@ class W7X_vacuum(MagneticField):
         ny=32,
         nz=128,
         x_range=(4.05, 6.55),
-        z_range=(-1.35, 1, 35),
+        z_range=(-1.35, 1.35),
         phimax=2.0 * np.pi,
         configuration=0,
         plot_poincare=False,
@@ -1516,6 +1517,7 @@ class W7X_vacuum(MagneticField):
 
         return Br, Bphi, Bz
 
+    @staticmethod
     def plasma_field(r, phi, z, wout_file="wout.nc"):
         """This uses EXTENDER via the IPP webservices to get the magnetic
         field from the plasma given 3d arrrays for R, phi, and Z. Only
@@ -1627,15 +1629,13 @@ class W7X_vacuum(MagneticField):
         magnetic_axis_r = np.sqrt(
             np.asarray(magnetic_axis_x) ** 2 + np.asarray(magnetic_axis_y**2)
         )
-        magnetic_axis_phi = np.arctan(magnetic_axis_y / magnetic_axis_x)
+        magnetic_axis_phi = np.arctan2(magnetic_axis_y, magnetic_axis_x)
 
-        index = np.where(
-            (magnetic_axis_phi >= 0.97 * phi_axis)
-            & (magnetic_axis_phi <= 1.03 * phi_axis)
-        )
-        index = index[0]
+        # Closest vertex in toroidal angle, accounting for wrapping
+        dphi = np.angle(np.exp(1j * (magnetic_axis_phi - phi_axis)))
+        index = np.argmin(np.abs(dphi))
 
-        return np.asarray([magnetic_axis_r[index], magnetic_axis_z[index]])[:, 0]
+        return np.asarray([magnetic_axis_r[index], magnetic_axis_z[index]])
 
     def Bxfunc(self, x, z, phi):
         phi = np.mod(phi, 2.0 * np.pi)
@@ -1712,8 +1712,14 @@ def _set_config(config, configuration):
         -1: [1, 1, 1, 1, 1, 1, 1],
         "FMM002": [13423, 13423, 13423, 13423, 13423, -3544, -3544],
     }
-    currents = known[configuration]
-    currents = np.array([108] * 5 + [36] * 2) * np.array(currents)
+    if isinstance(configuration, (int, str)):
+        currents = known[configuration]
+    else:
+        # A list of coil currents
+        currents = configuration
+    currents = np.array(currents, dtype=float)
+    # Multiply the main (non-planar and planar) coil currents by the number of windings
+    currents[:7] *= np.array([108] * 5 + [36] * 2)
     print(currents)
     coils = (
         [160, 165, 170, 175, 180, 185, 190, 195, 200, 205]
@@ -1810,7 +1816,7 @@ class W7X_VMEC(MagneticField):
         if phi_range is None:
             phi_range = [0, 2 * np.pi]
         if z_range is None:
-            z_range = [-1.35, 1, 35]
+            z_range = [-1.35, 1.35]
         if x_range is None:
             x_range = [4.05, 6.55]
         r = np.linspace(x_range[0], x_range[-1], nx)
@@ -1846,22 +1852,19 @@ class W7X_VMEC(MagneticField):
         vmec = Client("http://esb.ipp-hgw.mpg.de:8280/services/vmec_v5?wsdl")
 
         pos = vmec.types.Points3D()
+        shape = np.broadcast(r, phi, z).shape
 
         # x in Cartesian (real-space)
-        pos.x1 = np.ndarray.flatten(
-            np.ones((self.nx, self.ny, self.nz)) * r * np.cos(phi)
-        )
+        pos.x1 = np.ndarray.flatten(np.ones(shape) * r * np.cos(phi))
         # y in Cartesian (real-space)
-        pos.x2 = np.ndarray.flatten(
-            np.ones((self.nx, self.ny, self.nz)) * r * np.sin(phi)
-        )
-        pos.x3 = np.ndarray.flatten(z)  # z in Cartesian (real-space)
+        pos.x2 = np.ndarray.flatten(np.ones(shape) * r * np.sin(phi))
+        pos.x3 = np.ndarray.flatten(np.ones(shape) * z)  # z in Cartesian (real-space)
         b = vmec.service.magneticField(str(vmec_id), pos)
 
         ## Reshape to 3d array
-        Bx = np.ndarray.reshape(np.asarray(b.field.x1), (self.nx, self.ny, self.nz))
-        By = np.ndarray.reshape(np.asarray(b.field.x2), (self.nx, self.ny, self.nz))
-        Bz = np.ndarray.reshape(np.asarray(b.field.x3), (self.nx, self.ny, self.nz))
+        Bx = np.ndarray.reshape(np.asarray(b.field.x1), shape)
+        By = np.ndarray.reshape(np.asarray(b.field.x2), shape)
+        Bz = np.ndarray.reshape(np.asarray(b.field.x3), shape)
 
         ## Convert to cylindrical coordinates
         Br = Bx * np.cos(phi) + By * np.sin(phi)
@@ -1909,6 +1912,9 @@ class EMC3(MagneticField):
 
     def Bxyzfunc(self, x, z, phi):
         raise NotImplementedError("Use maybe EMC3 tracer?")
+
+    def Rfunc(self, x, z, phi):
+        return x
 
     def Bmag(self, x, z, phi):
         vals = self.ds.emc3.evaluate_at_rpz(x, phi, z, "Bmean", delta_phi=1e-6)[

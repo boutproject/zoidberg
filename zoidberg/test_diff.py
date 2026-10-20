@@ -53,7 +53,16 @@ def test_diff_c2_np():
         np.sin,
         np.cos,
         1,
-        slices=[slice(0, 1), slice(1, -1), slice(-1)],
+        slices=[slice(0, 1), slice(1, -1), slice(-1, None)],
+    )
+    assert check_l2s(l2, [2, 2, 2])
+
+    l2 = mms(
+        lambda x: diff.c2(x, 0, False),
+        lambda x: np.sin(x + 1),
+        lambda x: np.cos(x + 1),
+        1,
+        slices=[slice(0, 1), slice(1, -1), slice(-1, None)],
     )
     assert check_l2s(l2, [2, 2, 2])
 
@@ -71,7 +80,7 @@ def test_diff_c4_np():
         np.sin,
         np.cos,
         1,
-        slices=[slice(0, 2), slice(2, -2), slice(-2)],
+        slices=[slice(0, 2), slice(2, -2), slice(-2, None)],
     )
     assert check_l2s(l2, [4, 4, 4])
 

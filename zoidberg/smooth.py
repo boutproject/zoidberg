@@ -256,6 +256,7 @@ def gen_newr(r, z, splitedlist, bounds, plot):
             newr[start_index : start_index + len(alist)] = X
             newz[start_index : start_index + len(alist)] = Y
         if plot:
+            import matplotlib.pyplot as plt
             from matplotlib.collections import LineCollection
 
             S = np.linspace(0, 1, 1000)
@@ -332,9 +333,10 @@ def smooth(r, z, cutoff=0.75, bounds=10, bounds_find=None, plot=False):
         bounds += 1
         debs += [deb[-1]]
         if bounds > bounds0 * 5:
-            plt.legend()
-            plt.gca().set_aspect("equal")
-            plt.title("failed")
+            if plot:
+                plt.legend()
+                plt.gca().set_aspect("equal")
+                plt.title("failed")
             alldeb.append(debs)
             return
 
