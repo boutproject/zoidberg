@@ -138,17 +138,18 @@ def edge_counts(triangles):
     return np.unique(edges, axis=0, return_counts=True)
 
 
-def brute_force_dp(qa, qb):
-    """Minimal path cost, written as plainly as possible"""
-    m, n = len(qa) - 1, len(qb) - 1
+def brute_force_dp(pa, pb):
+    """Minimal path cost, written as plainly as possible. The first node
+    is not counted: in a strip it is the same rung as the last"""
+    m, n = len(pa) - 1, len(pb) - 1
     cost = np.array(
-        [[np.sum((qa[i] - qb[j]) ** 2) for j in range(n + 1)] for i in range(m + 1)]
+        [[np.sum((pa[i] - pb[j]) ** 2) for j in range(n + 1)] for i in range(m + 1)]
     )
     D = np.full((m + 1, n + 1), np.inf)
     for i in range(m + 1):
         for j in range(n + 1):
             if i == 0 and j == 0:
-                D[i, j] = cost[i, j]
+                D[i, j] = 0.0
             else:
                 up = D[i - 1, j] if i > 0 else np.inf
                 left = D[i, j - 1] if j > 0 else np.inf
@@ -156,8 +157,8 @@ def brute_force_dp(qa, qb):
     return D[m, n]
 
 
-# ---------------------------------------------------------------------
-# Input contours
+def closed(P, start=0):
+    return P[(start + np.arange(len(P) + 1)) % len(P)]
 
 
 def test_clean_contour_orients_anticlockwise():
@@ -237,20 +238,20 @@ def test_dp_batch_is_optimal():
     rng = np.random.default_rng(3)
     problems = []
     for m, n in [(3, 3), (3, 9), (8, 4), (12, 12), (5, 17)]:
-        qa = rng.normal(size=(m, 2))
-        qb = rng.normal(size=(n, 2))
-        problems.append((np.vstack((qa, qa[:1])), np.vstack((qb, qb[:1]))))
+        problems.append(
+            (closed(rng.normal(size=(m, 2))), closed(rng.normal(size=(n, 2))))
+        )
     paths, costs = wallgeometry._dp_batch(problems)
-    for (qa, qb), path, total in zip(problems, paths, costs):
-        m, n = len(qa) - 1, len(qb) - 1
-        assert total == pytest.approx(brute_force_dp(qa, qb), rel=1e-12)
+    for (pa, pb), path, total in zip(problems, paths, costs):
+        m, n = len(pa) - 1, len(pb) - 1
+        assert total == pytest.approx(brute_force_dp(pa, pb), rel=1e-12)
         # The path is monotone, from (0, 0) to (m, n), one step at a time
         assert len(path) == m + n + 1
         assert tuple(path[0]) == (0, 0) and tuple(path[-1]) == (m, n)
         steps = np.diff(path, axis=0)
         assert np.all(np.sum(steps, axis=1) == 1) and np.all(steps >= 0)
         # and its cost is the reported optimum
-        path_cost = np.sum((qa[path[:, 0]] - qb[path[:, 1]]) ** 2)
+        path_cost = np.sum((pa[path[1:, 0]] - pb[path[1:, 1]]) ** 2)
         assert path_cost == pytest.approx(total, rel=1e-12)
 
 
@@ -261,6 +262,36 @@ def test_batching_does_not_change_the_mesh(monkeypatch):
     monkeypatch.setattr(wallgeometry, "_DP_BATCH_CELLS", 1)
     wall = wallgeometry.Wall(lines, phi=phis_for(12), yperiod=yperiod)
     assert np.array_equal(wall.triangles, reference.triangles)
+
+
+def test_batches_respect_budget(monkeypatch):
+    """Strips of very different size are not padded to the largest one"""
+    phis = phis_for(40)
+    lines = sample(bean, phis, lambda j: 600 if j % 10 == 0 else 20)
+    contours = wallgeometry.Wall(lines).contours
+    pairs = [(k, k + 1) for k in range(len(contours) - 1)]
+    reference = wallgeometry.tile_contours(contours, pairs)
+
+    budget = 2**16
+    padded = []
+    dp_batch = wallgeometry._dp_batch
+
+    def recording(problems):
+        rows = max(len(pa) for pa, _ in problems)
+        cols = max(len(pb) for _, pb in problems)
+        padded.append((len(problems), len(problems) * rows * cols))
+        return dp_batch(problems)
+
+    monkeypatch.setattr(wallgeometry, "_DP_BATCH_CELLS", budget)
+    monkeypatch.setattr(wallgeometry, "_dp_batch", recording)
+    rungs = wallgeometry.tile_contours(contours, pairs)
+    assert all(cells <= budget or count == 1 for count, cells in padded)
+    assert max(count for count, _ in padded) > 1
+    # Strips of similar size are batched together, so that little is padded
+    cells = 2 * sum((len(contours[a]) + 1) * (len(contours[b]) + 1) for a, b in pairs)
+    assert sum(cells for _, cells in padded) < 1.5 * cells
+    for a, b in zip(rungs, reference):
+        assert np.array_equal(a, b)
 
 
 def test_start_point_finds_shift():

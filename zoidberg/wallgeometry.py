@@ -20,8 +20,8 @@ area of each contour (Fuchs, Kedem & Uselton, Commun. ACM 20, 693 (1977)).
 
 import numpy as np
 
-# Total number of cells of the dynamic programming tables processed at once
-_DP_BATCH_CELLS = 2**25
+# Padded cells of the dynamic programming tables processed at once
+_DP_BATCH_CELLS = 2**28
 
 
 def rzphi_to_xyz(r, z, phi):
@@ -122,48 +122,58 @@ def _dp_batch(problems):
 
     Parameters
     ----------
-    problems : list of (qa, qb)
-        qa : (m + 1, 2) normalised points of A, first point repeated at the end
-        qb : (n + 1, 2) normalised points of B in the order of the path,
-            first point repeated at the end
+    problems : list of (pa, pb)
+        pa : (m + 1, 2) points of A in the order of the path, first
+            point repeated at the end
+        pb : (n + 1, 2) points of B, the same
 
     Returns
     -------
     paths : list of (m + n + 1, 2) int arrays of (i, j)
-    costs : ndarray, total cost of each path
+        From (0, 0) to (m, n), minimising the sum over the nodes,
+        except the first, of the squared distance |pa[i] - pb[j]|^2
+    costs : ndarray
+        Total cost of each path
     """
     nb = len(problems)
-    m = np.array([len(qa) - 1 for qa, _ in problems])
-    n = np.array([len(qb) - 1 for _, qb in problems])
+    m = np.array([len(pa) - 1 for pa, _ in problems])
+    n = np.array([len(pb) - 1 for _, pb in problems])
     mmax, nmax = m.max(), n.max()
 
     # Padding beyond n does not change columns <= n, as D[i, j] only
     # depends on columns <= j. Rows beyond m are never used.
-    QA = np.zeros((2, nb, mmax + 1))
-    QB = np.zeros((2, nb, nmax + 1))
-    for k, (qa, qb) in enumerate(problems):
-        QA[:, k, : len(qa)] = qa.T
-        QB[:, k, : len(qb)] = qb.T
+    ndim = problems[0][0].shape[1]
+    PA = np.zeros((ndim, nb, mmax + 1))
+    PB = np.zeros((ndim, nb, nmax + 1))
+    for k, (pa, pb) in enumerate(problems):
+        PA[:, k, : len(pa)] = pa.T
+        PB[:, k, : len(pb)] = pb.T
 
     def row_cost(i):
-        dx = QA[0, :, i, None] - QB[0]
-        dz = QA[1, :, i, None] - QB[1]
-        return dx * dx + dz * dz
+        cost = np.zeros((nb, nmax + 1))
+        for d in range(ndim):
+            diff = PA[d, :, i, None] - PB[d]
+            cost += diff * diff
+        return cost
 
     # D[i, j] = cost[i, j] + min(D[i - 1, j], D[i, j - 1]), the minimal
-    # cost of a path from (0, 0) to (i, j). from_a[i, j] is True if the
-    # optimal path reaches (i, j) from (i - 1, j)
-    from_a = np.zeros((nb, mmax + 1, nmax + 1), dtype=bool)
+    # cost of a path from (0, 0) to (i, j). Bit j of from_a[:, i] is
+    # set if the optimal path reaches (i, j) from (i - 1, j)
+    from_a = np.zeros((nb, mmax + 1, (nmax + 8) // 8), dtype=np.uint8)
     total = np.empty(nb)
     batch = np.arange(nb)
+    row = np.empty((nb, nmax + 1), dtype=bool)
 
     D = np.cumsum(row_cost(0), axis=1)
+    D -= D[:, :1]
+    total[m == 0] = D[m == 0, n[m == 0]]
     for i in range(1, mmax + 1):
         cost = row_cost(i)
         C = np.cumsum(cost, axis=1)
         D_new = C + np.minimum.accumulate(D - C + cost, axis=1)
-        from_a[:, i, 0] = True
-        from_a[:, i, 1:] = D[:, 1:] <= D_new[:, :-1]
+        row[:, 0] = True
+        row[:, 1:] = D[:, 1:] <= D_new[:, :-1]
+        from_a[:, i] = np.packbits(row, axis=1)
         D = D_new
         done = m == i
         total[done] = D[batch[done], n[done]]
@@ -175,7 +185,8 @@ def _dp_batch(problems):
     nodes[batch, i + j] = np.column_stack((i, j))
     for _ in range(mmax + nmax):
         active = i + j > 0
-        step_a = active & from_a[batch, i, j]
+        bit = (from_a[batch, i, j >> 3] >> (7 - (j & 7))) & 1
+        step_a = active & (bit == 1)
         step_b = active & ~step_a
         i = i - step_a
         j = j - step_b
@@ -204,37 +215,49 @@ def tile_contours(contours, pairs):
         either i or j by one point and forms one triangle.
     """
     normalised = [_normalise(P) for P in contours]
+    points = [(normalised[ia][0], normalised[ib][0]) for ia, ib in pairs]
 
     def solve(starts):
         """Optimal rungs of each strip, with the rung (i0, j0) fixed"""
         problems = []
         for k, i0, j0 in starts:
-            qa = normalised[pairs[k][0]][0]
-            qb = normalised[pairs[k][1]][0]
-            m, n = len(qa), len(qb)
-            problems.append(
-                (qa[(i0 + np.arange(m + 1)) % m], qb[(j0 + np.arange(n + 1)) % n])
-            )
+            A, B = points[k]
+            pa = A[(i0 + np.arange(len(A) + 1)) % len(A)]
+            pb = B[(j0 + np.arange(len(B) + 1)) % len(B)]
+            # The Python loop of the dynamic programming runs over the
+            # rows, so use the shorter contour for them
+            problems.append((pb, pa, True) if len(A) > len(B) else (pa, pb, False))
+
+        # Batches of similar size, limited by the padded table size
+        order = sorted(
+            range(len(problems)),
+            key=lambda p: (len(problems[p][0]), len(problems[p][1])),
+        )
+        paths = [None] * len(problems)
+        first = 0
+        while first < len(order):
+            last = first + 1
+            cols = len(problems[order[first]][1])
+            while last < len(order):
+                # Rows increase along order, so the last has the most
+                rows = len(problems[order[last]][0])
+                new_cols = max(cols, len(problems[order[last]][1]))
+                if (last + 1 - first) * rows * new_cols > _DP_BATCH_CELLS:
+                    break
+                cols = new_cols
+                last += 1
+            batch = order[first:last]
+            result, _ = _dp_batch([problems[p][:2] for p in batch])
+            for p, path in zip(batch, result):
+                paths[p] = path[:, ::-1] if problems[p][2] else path
+            first = last
 
         rungs = []
-        first = 0
-        while first < len(problems):
-            # Batches limited by the size of the tables
-            last, cells = first, 0
-            while last < len(problems):
-                size = len(problems[last][0]) * len(problems[last][1])
-                if last > first and cells + size > _DP_BATCH_CELLS:
-                    break
-                cells += size
-                last += 1
-            paths, _ = _dp_batch(problems[first:last])
-            for (k, i0, j0), path in zip(starts[first:last], paths):
-                m = len(contours[pairs[k][0]])
-                n = len(contours[pairs[k][1]])
-                rungs.append(
-                    np.column_stack(((i0 + path[:, 0]) % m, (j0 + path[:, 1]) % n))
-                )
-            first = last
+        for (k, i0, j0), path in zip(starts, paths):
+            m, n = len(contours[pairs[k][0]]), len(contours[pairs[k][1]])
+            rungs.append(
+                np.column_stack(((i0 + path[:, 0]) % m, (j0 + path[:, 1]) % n))
+            )
         return rungs
 
     # Fix the rung of the first point of A to its best guess partner
