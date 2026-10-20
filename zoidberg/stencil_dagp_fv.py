@@ -87,7 +87,8 @@ def doit(pols, plot=False, isSlab=False):
     #
     ### Go in a line around the cell
 
-    Ar = np.empty((pols[0].nx, len(pols), pols[0].nz))
+    # The x-boundary cells are not calculated, and set to zero
+    Ar = np.zeros((pols[0].nx, len(pols), pols[0].nz))
     todo = enumerate(pols)
     if tqdm and len(pols) > 1:
         todo = tqdm(todo, total=len(pols))
