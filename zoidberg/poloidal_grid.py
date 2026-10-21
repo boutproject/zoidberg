@@ -824,8 +824,9 @@ def grid_elliptic(
         dxn = np.real(np.fft.ifft(f))
         xnew = np.empty_like(x)
         xnew[0] = x[0]
+        # dx[i] = x[i] - x[i-1]
         for i in range(len(x) - 1):
-            xnew[i + 1] = xnew[i] + dxn[i]
+            xnew[i + 1] = xnew[i] + dxn[i + 1]
         return xnew % (np.pi * 2)
 
     if (nx > restrict_size) or (nz > restrict_size):
