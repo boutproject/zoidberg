@@ -1074,6 +1074,9 @@ def grid_inverse_harmonic(
     maxiter=50,
     eps=1e-4,
     max_refine=1,
+    curvature_weight=0.0,
+    continuation=True,
+    continuation_modes=8,
     linear_solver="auto",
     verbose=False,
     **elliptic_options,
@@ -1096,7 +1099,8 @@ def grid_inverse_harmonic(
         \\nabla \\cdot (\\omega \\nabla t) = 0
 
     with x = 0 on the inner and x = 1 on the outer boundary and t
-    periodic. The boundary points are equally spaced in arc length.
+    periodic. The boundary points are equally spaced in arc length, or in
+    an arc length weighted by the curvature (`curvature_weight`).
 
     For omega = 1 (``homogenize=0``) the exact solution is free of folds:
     in conformal coordinates (s, phi) of the annulus, x is linear in s
@@ -1122,9 +1126,15 @@ def grid_inverse_harmonic(
     the nondivergence form A : H(R) = A : H(Z) = 0, tested with the
     Laplacian of the test functions, provides the initial guess for a
     Newton iteration on the regularised weak form, whose 1/det(J)
-    barrier keeps the discrete map from folding. The Jacobian
-    determinant is then checked on a dense sample of every element; if
-    it is not positive the spline is refined and the solve repeated.
+    barrier keeps the discrete map from folding. If that does not give a
+    valid map, which happens for narrow features such as a slot cut into
+    the outer boundary (closed divertor), the outer line is first
+    smoothed and then morphed step by step into the given one, each step
+    starting from the previous solution (continuation in the boundary
+    data). The Jacobian determinant is then checked on a dense sample of
+    every element; if it is not positive the spline is refined and the
+    solve repeated. For narrow features, `curvature_weight` puts more
+    boundary points where the lines are strongly curved.
 
     Parameters
     ----------
@@ -1171,6 +1181,21 @@ def grid_inverse_harmonic(
     max_refine : int, optional
         How often the spline may be refined if the map folds. Each
         refinement needs about four times the memory and run time.
+    curvature_weight : float, optional
+        Spacing of the boundary points: 0 spaces them equally in arc length.
+        Larger values concentrate them where the lines are curved, using
+        the arc length weighted by 1 + curvature_weight * kappa / kappa_ref
+        (at most 10), where kappa is the curvature and kappa_ref that of a
+        circle with the same perimeter. Useful to resolve narrow features
+        such as the tip of a slot (closed divertor), e.g. with 0.05.
+    continuation : bool, optional
+        If no valid grid is found directly, solve for a smoothed outer line
+        first and morph it step by step into the given outer line, starting
+        each step from the previous solution (continuation in the boundary
+        data). Helps with narrow features such as slots.
+    continuation_modes : float, optional
+        Width of the Gaussian low-pass filter, in Fourier modes of the outer
+        line, which gives the smoothed outer line for the continuation
     linear_solver : {"auto", "pardiso", "superlu"}, optional
         Sparse direct solver for the linear systems. "pardiso" uses the
         multi-threaded Intel MKL PARDISO solver from the optional package
@@ -1228,6 +1253,8 @@ def grid_inverse_harmonic(
     check(resolution * nz >= degree + 1, "nz is too small for the spline degree")
     check(homogenize >= 0, "homogenize must not be negative")
     check(eps > 0, "eps must be positive")
+    check(curvature_weight >= 0, "curvature_weight must not be negative")
+    check(continuation_modes > 0, "continuation_modes must be positive")
     check(
         linear_solver in ("auto", "pardiso", "superlu"),
         'linear_solver must be "auto", "pardiso" or "superlu"',
@@ -1251,12 +1278,34 @@ def grid_inverse_harmonic(
     )
 
     def arclength_inverse(line):
-        """Return function mapping arc length fraction u to line theta"""
+        """Return function mapping arc length fraction u to line theta. With
+        curvature_weight, the arc length is weighted by the curvature."""
         nfine = max(64 * len(line.R), 4096)
         theta = linspace(0, 2 * pi, nfine, endpoint=False)
-        speed = np.hypot(line.Rvalue(theta, deriv=1), line.Zvalue(theta, deriv=1))
+        dR, dZ = line.Rvalue(theta, deriv=1), line.Zvalue(theta, deriv=1)
+        speed = np.hypot(dR, dZ)
         if np.amin(speed) <= 0.0:
             raise ValueError("Boundary line has a vanishing tangent")
+        if curvature_weight:
+            # Weight 1 + c |kappa| / kappa_ref, at most 10, where kappa_ref
+            # is the curvature of a circle with the same perimeter.
+            # Smoothed over one output grid spacing.
+            d2R, d2Z = line.Rvalue(theta, deriv=2), line.Zvalue(theta, deriv=2)
+            kappa = np.abs(dR * d2Z - dZ * d2R) / speed**3
+            arc = np.concatenate(([0.0], np.cumsum(speed))) * (2 * pi / nfine)
+            perimeter = arc[-1]
+            weight = np.minimum(
+                1 + curvature_weight * kappa * perimeter / (2 * pi), 10.0
+            )
+            # Periodic Gaussian smoothing (by FFT) on a grid equally spaced in
+            # arc length, with a width of one output grid spacing
+            s_uniform = linspace(0, perimeter, nfine, endpoint=False)
+            w_uniform = np.interp(s_uniform, arc[:-1], weight, period=perimeter)
+            width = nfine / nz  # In samples
+            k = np.fft.fftfreq(nfine, 1.0 / nfine)
+            filter_ = np.exp(-0.5 * (2 * pi * k * width / nfine) ** 2)
+            smooth = np.real(np.fft.ifft(np.fft.fft(w_uniform) * filter_))
+            speed = speed * np.interp(arc[:-1], s_uniform, smooth, period=perimeter)
         speed = CubicSpline(
             np.append(theta, 2 * pi), np.append(speed, speed[0]), bc_type="periodic"
         )
@@ -1533,10 +1582,12 @@ def grid_inverse_harmonic(
         g22 = J[0, 1] ** 2 + J[1, 1] ** 2
         return g22, -g12, g11
 
-    def initial_guess(S):
+    def initial_guess(S, outer_coefficients=None):
         """Linear interpolation between the boundaries"""
+        if outer_coefficients is None:
+            outer_coefficients = S.boundary[:, 1]
         g = S.greville[None, :, None]
-        return (1 - g) * S.boundary[:, :1] + g * S.boundary[:, 1:]
+        return (1 - g) * S.boundary[:, :1] + g * outer_coefficients[:, None, :]
 
     # One PARDISO instance is shared by all solvers (creating one searches
     # for the MKL library), as they are used one after the other
@@ -1563,6 +1614,13 @@ def grid_inverse_harmonic(
             state["factorised"] = A
             A = A.tocsr()
             A.sort_indices()
+            pattern = state.get("pattern")
+            if pattern is None or not (
+                np.array_equal(pattern[0], A.indptr)
+                and np.array_equal(pattern[1], A.indices)
+            ):
+                state["analysed"] = False
+                state["pattern"] = (A.indptr.copy(), A.indices.copy())
             try:
                 # Numeric factorisation reusing the analysis, then solve
                 if not state["analysed"]:
@@ -1783,6 +1841,48 @@ def grid_inverse_harmonic(
         Rt, Zt = (Cx[0] @ C[k] @ Ct[1].T for k in range(2))
         return np.amin(Rx * Zt - Rt * Zx)
 
+    smoothed = {}
+
+    def smoothed_outer(sigma, deriv):
+        """Low-pass filtered outer line, which has no narrow features such
+        as slots. Starting point of the continuation in the boundary."""
+        if not smoothed:
+            n = max(4096, 16 * len(outer.R))
+            theta = linspace(0, 2 * pi, n, endpoint=False)
+            line = np.fft.fft(outer.Rvalue(theta) + 1j * outer.Zvalue(theta))
+            modes = np.fft.fftfreq(n, 1.0 / n)
+            line = np.fft.ifft(line * np.exp(-((modes / continuation_modes) ** 2)))
+            theta = np.append(theta, 2 * pi)
+            for name, values in (("R", line.real), ("Z", line.imag)):
+                smoothed[name] = CubicSpline(
+                    theta, np.append(values, values[0]), bc_type="periodic"
+                )
+        sigma = np.remainder(sigma, 2 * pi)
+        return smoothed["R"](sigma, deriv), smoothed["Z"](sigma, deriv)
+
+    def outer_curve(sigma, deriv=0, lam=1.0):
+        """Normalised outer line and its derivative at line parameters sigma.
+        For lam < 1, the line is blended with the smoothed outer line."""
+        R = outer.Rvalue(sigma, deriv=deriv)
+        Z = outer.Zvalue(sigma, deriv=deriv)
+        if lam < 1:
+            Rs, Zs = smoothed_outer(sigma, deriv)
+            R = lam * R + (1 - lam) * Rs
+            Z = lam * Z + (1 - lam) * Zs
+        if deriv == 0:
+            R, Z = R - centre.real, Z - centre.imag
+        return np.array([R, Z]) / scale
+
+    def boundary_coefficients(S, sigma, lam):
+        """Spline coefficients interpolating the outer line at sigma"""
+        return np.linalg.solve(S.colloc_t, outer_curve(sigma, 0, lam).T).T
+
+    def move_boundary(S, C, coefficients):
+        """Set the outer boundary row, moving the other rows along linearly
+        in x, so that the map stays close to valid"""
+        g = S.greville[None, :, None]
+        return C + g * (coefficients - C[:, -1])[:, None, :]
+
     def weak_solve(S, C):
         """Newton on the weak form. With cell-size control, the plain
         inverse harmonic map is computed first and used as initial guess,
@@ -1793,10 +1893,96 @@ def grid_inverse_harmonic(
                 return C, False
         return newton(S, C, eps, tol, 1.0 + homogenize)
 
+    failure = {}  # Why the continuation failed, for the error message
+
+    def smoothed_spacing():
+        """Line parameters which space the points on the smoothed outer line
+        (by its own arc length), or None if that line is not valid"""
+        line = SimpleNamespace(
+            R=outer.R,
+            Rvalue=lambda theta, deriv=0: smoothed_outer(theta, deriv)[0],
+            Zvalue=lambda theta, deriv=0: smoothed_outer(theta, deriv)[1],
+            position=lambda theta: smoothed_outer(theta, 0),
+        )
+        polygon = shapely.Polygon(zip(*line.position(linspace(0, 2 * pi, 8 * nz))))
+        if not (polygon.is_valid and polygon.contains(polygons[0])):
+            failure["reason"] = (
+                "the smoothed outer line for the continuation intersects itself or "
+                "the inner line; try a larger continuation_modes"
+            )
+            return None
+        return arclength_inverse(line)
+
+    def solve_continuation(S):
+        """Continuation in the outer boundary: solve for the smoothed outer
+        line first, then morph the outer line step by step into the given
+        one, starting each step from the previous solution. The spacing of
+        the boundary points is blended along with the lines. Steps after
+        which the map folds are repeated with a smaller step."""
+        smoothed_theta = smoothed_spacing()
+        if smoothed_theta is None:
+            return None, False, -np.inf
+
+        def valid(C, converged):
+            return converged and min_det(S, C) > 0
+
+        # Spacing of the points on the smoothed line at the start: first as
+        # on the given line. As the given line's points can crowd on the
+        # smoothed line (where a slot was removed), the fallback is the
+        # smoothed line's own spacing, shifted along it so that on average
+        # the points are where those on the given line are.
+        given = outer_theta(S.centres)
+        phase = 0.0
+        for _ in range(4):
+            phase -= np.mean(smoothed_theta(S.centres + phase) - given) / (2 * pi)
+        for start in (given, smoothed_theta(S.centres + phase)):
+            lam = 0.0
+            C = initial_guess(S, boundary_coefficients(S, start, lam))
+            C = fixed_point(S, C, maxit=30, tolerance=1e-3)
+            C, converged = newton(S, C, eps, 1e-6, 1.0)
+            if verbose:
+                print(f"  continuation: lam = 0 converged={converged}")
+            if valid(C, converged):
+                break
+        else:
+            failure["reason"] = "no valid grid for the smoothed outer line"
+            return C, False, -np.inf
+
+        def sigma(lam):
+            return (1 - lam) * start + lam * given
+
+        step = 0.25
+        while lam < 1:
+            new = min(1.0, lam + step)
+            trial = move_boundary(S, C, boundary_coefficients(S, sigma(new), new))
+            trial, converged = newton(S, trial, eps, 1e-6, 1.0)
+            converged = valid(trial, converged)
+            if verbose:
+                print(f"  continuation: lam = {new:.4f} valid={converged}")
+            if converged:
+                lam, C = new, trial
+                step = min(2 * step, 0.25)
+            else:
+                step /= 2
+                if step < 1.0 / 1024:
+                    failure["reason"] = (
+                        f"the continuation got stuck at {lam:.3f} of the way from the "
+                        "smoothed to the given outer line"
+                    )
+                    return C, False, -np.inf
+        # The given outer line is reached: final solve, with cell-size control
+        C, converged = weak_solve(S, C)
+        mindet = min_det(S, C)
+        if mindet <= 0:
+            failure["reason"] = "the grid for the given outer line folds"
+        return C, converged, mindet
+
     def solve(S):
         """Fixed point iteration for the initial guess, then Newton on the
         weak form. Should Newton fail, retry with continuation in the
-        regularisation, i.e. untangle with a softer barrier first."""
+        regularisation, i.e. untangle with a softer barrier first. If that
+        fails too, use the continuation in the outer boundary."""
+        failure.clear()
         # A rough initial guess usually suffices for Newton's method
         C0 = fixed_point(S, initial_guess(S), maxit=8, tolerance=3e-2)
         C, converged = weak_solve(S, C0.copy())
@@ -1810,6 +1996,12 @@ def grid_inverse_harmonic(
                     C, _ = newton(S, C, epsilon, 1e-3, 1.0)
             C, converged = weak_solve(S, C)
         mindet = min_det(S, C)
+        # If Newton converged to a folded map, the spline is too coarse
+        # (refinement follows); if it did not converge, try the continuation.
+        if continuation and not converged:
+            Cc, cc, mc = solve_continuation(S)
+            if mc > 0 or mindet <= 0:  # Else keep the valid, unconverged map
+                C, converged, mindet = Cc, cc, mc
         if verbose:
             print(f"  {S.nex}x{S.nt}: converged={converged}, min det J {mindet:.3e}")
         return C, converged, mindet
@@ -1835,9 +2027,14 @@ def grid_inverse_harmonic(
                 "spline elements, refining"
             )
     else:
+        if "reason" in failure:
+            mindet_text = f"continuation: {failure['reason']}"
+        else:
+            mindet_text = f"min det J = {mindet:.3e}"
         raise RuntimeError(
             "grid_inverse_harmonic: failed to find a grid without folds "
-            f"(min det J = {mindet:.3e}). Try more points or a smaller homogenize."
+            f"({mindet_text}). Try more points, curvature_weight > 0 (e.g. "
+            "0.05), or round sharp corners of the boundary lines slightly."
         )
     knots, nt = S.knots, S.nt
 

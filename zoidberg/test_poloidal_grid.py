@@ -273,3 +273,69 @@ def test_inverse_harmonic_linear_solvers(monkeypatch):
         poloidal_grid.grid_inverse_harmonic(
             inner, outer, 12, 32, linear_solver="pardiso"
         )
+
+
+def slotted_circle(R0=3.0, r=1.5, width=0.05, depth=0.9, lean=0.3, n=600):
+    """Circle with a narrow slot cut in from the bottom (closed divertor)"""
+    theta = np.linspace(
+        -np.pi / 2 + width / (2 * r), 3 * np.pi / 2 - width / (2 * r), n
+    )
+    points = list(zip(R0 + r * np.cos(theta), r * np.sin(theta)))
+    d = np.array([np.sin(lean), np.cos(lean)])  # Into the domain
+    normal = np.array([d[1], -d[0]])
+    mouth = np.array([R0, -np.sqrt(r**2 - (width / 2) ** 2)])
+    side = np.linspace(0, depth, int(depth / 0.02))
+    points += [mouth - normal * width / 2 + s * d for s in side[1:]]
+    angle = np.linspace(np.pi, 0, 12)[1:-1]
+    tip = mouth + depth * d
+    points += [tip + width / 2 * (np.cos(a) * normal + np.sin(a) * d) for a in angle]
+    points += [mouth + normal * width / 2 + s * d for s in side[::-1][:-1]]
+    points = np.array(points)
+    return rzline.RZline(points[:, 0], points[:, 1])
+
+
+def signed_cell_areas(R, Z):
+    R = np.concatenate([R, R[:, :1]], axis=1)
+    Z = np.concatenate([Z, Z[:, :1]], axis=1)
+    c = [(R[:-1, :-1], Z[:-1, :-1]), (R[1:, :-1], Z[1:, :-1])]
+    c += [(R[1:, 1:], Z[1:, 1:]), (R[:-1, 1:], Z[:-1, 1:])]
+    return 0.5 * sum(c[i][0] * c[i - 3][1] - c[i - 3][0] * c[i][1] for i in range(4))
+
+
+def test_inverse_harmonic_continuation():
+    # A narrow, leaning slot: no valid grid is found directly, but with
+    # the continuation from a smoothed outer line
+    inner = rzline.circle(R0=3.0, r=0.4, n=100)
+    outer = slotted_circle()
+    kw = {"homogenize": 0.0, "max_refine": 0}
+    with pytest.raises(RuntimeError):
+        poloidal_grid.grid_inverse_harmonic(
+            inner, outer, 12, 64, continuation=False, **kw
+        )
+    R, Z = poloidal_grid.grid_inverse_harmonic(
+        inner, outer, 12, 64, return_coords=True, **kw
+    )
+    assert np.all(signed_cell_areas(R, Z) > 0)
+    # The grid fits the given outer line, not the smoothed one
+    theta = np.linspace(0, 2 * np.pi, 200000, endpoint=False)
+    ring = shapely.LinearRing(np.column_stack(outer.position(theta)))
+    distance = shapely.distance(ring, shapely.points(np.column_stack([R[-1], Z[-1]])))
+    assert np.amax(distance) < 1e-6
+
+
+def test_inverse_harmonic_curvature_weight():
+    # Elongated ellipse: weighting by curvature puts more points at the tips
+    theta = np.linspace(0, 2 * np.pi, 400, endpoint=False)
+    outer = rzline.RZline(3.0 + 1.5 * np.cos(theta), 0.5 * np.sin(theta))
+    inner = rzline.circle(R0=3.0, r=0.2, n=100)
+    ratio = []
+    for weight in (0.0, 0.5):
+        R, Z = poloidal_grid.grid_inverse_harmonic(
+            inner, outer, 8, 64, return_coords=True, curvature_weight=weight
+        )
+        spacing = np.hypot(
+            np.diff(R[-1], append=R[-1, 0]), np.diff(Z[-1], append=Z[-1, 0])
+        )
+        tips = np.abs(R[-1] - 3.0) > 1.3
+        ratio.append(spacing[tips].mean() / spacing[~tips].mean())
+    assert ratio[1] < 0.6 * ratio[0]
