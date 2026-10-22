@@ -49,6 +49,10 @@ tests = [
     "xarray",
     "shapely",
 ]
+# Multi-threaded sparse solver for poloidal_grid.grid_inverse_harmonic
+fast = [
+    "pypardiso",
+]
 
 [project.scripts]
 zoidberg-rotating-ellipse = "zoidberg.examples.rotating_ellipse:main"
