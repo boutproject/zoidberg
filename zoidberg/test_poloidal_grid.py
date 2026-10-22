@@ -252,3 +252,24 @@ def test_inverse_harmonic_clockwise():
         inner, clockwise, 10, 32, return_coords=True
     )
     assert np.allclose(result, expected, atol=1e-8)
+
+
+def test_inverse_harmonic_linear_solvers(monkeypatch):
+    inner = rzline.circle(R0=3.0, r=0.4, n=50)
+    outer = lobed_line(amp=0.3)
+    superlu = poloidal_grid.grid_inverse_harmonic(
+        inner, outer, 12, 32, return_coords=True, linear_solver="superlu"
+    )
+    if poloidal_grid.pypardiso is not None:
+        pardiso = poloidal_grid.grid_inverse_harmonic(
+            inner, outer, 12, 32, return_coords=True, linear_solver="pardiso"
+        )
+        assert np.allclose(pardiso, superlu, atol=1e-10)
+    # Without the optional pypardiso, "auto" falls back to SuperLU
+    monkeypatch.setattr(poloidal_grid, "pypardiso", None)
+    auto = poloidal_grid.grid_inverse_harmonic(inner, outer, 12, 32, return_coords=True)
+    assert np.allclose(auto, superlu, atol=1e-10)
+    with pytest.raises(ImportError):
+        poloidal_grid.grid_inverse_harmonic(
+            inner, outer, 12, 32, linear_solver="pardiso"
+        )

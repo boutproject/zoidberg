@@ -28,7 +28,7 @@ import numpy as np
 import shapely
 from numpy import linspace, pi, zeros
 from scipy.interpolate import BSpline, CubicSpline, RectBivariateSpline
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, kron
 from scipy.sparse.linalg import LinearOperator, gmres, splu
 from scipy.spatial import cKDTree as KDTree
 
@@ -39,6 +39,13 @@ try:
 except ImportError:
     warnings.warn("Couldn't import matplotlib, plotting not available.")
     plotting_available = False
+
+try:
+    # Optional: multi-threaded sparse direct solver (Intel MKL PARDISO),
+    # which makes grid_inverse_harmonic considerably faster
+    import pypardiso
+except ImportError:
+    pypardiso = None
 
 from . import rzline
 
@@ -1067,6 +1074,7 @@ def grid_inverse_harmonic(
     maxiter=50,
     eps=1e-4,
     max_refine=1,
+    linear_solver="auto",
     verbose=False,
     **elliptic_options,
 ):
@@ -1163,6 +1171,13 @@ def grid_inverse_harmonic(
     max_refine : int, optional
         How often the spline may be refined if the map folds. Each
         refinement needs about four times the memory and run time.
+    linear_solver : {"auto", "pardiso", "superlu"}, optional
+        Sparse direct solver for the linear systems. "pardiso" uses the
+        multi-threaded Intel MKL PARDISO solver from the optional package
+        `pypardiso`, which is several times faster; "superlu" uses scipy.
+        "auto" uses PARDISO if `pypardiso` is installed. Its number of
+        threads is set by MKL, e.g. with the environment variable
+        MKL_NUM_THREADS.
     verbose : bool, optional
         Print the convergence history
     restrict_size, restrict_factor, legacy_align, inner_ort,
@@ -1213,6 +1228,15 @@ def grid_inverse_harmonic(
     check(resolution * nz >= degree + 1, "nz is too small for the spline degree")
     check(homogenize >= 0, "homogenize must not be negative")
     check(eps > 0, "eps must be positive")
+    check(
+        linear_solver in ("auto", "pardiso", "superlu"),
+        'linear_solver must be "auto", "pardiso" or "superlu"',
+    )
+    if linear_solver == "pardiso" and pypardiso is None:
+        raise ImportError(
+            "grid_inverse_harmonic: linear_solver='pardiso' needs pypardiso"
+        )
+    use_pardiso = pypardiso is not None and linear_solver != "superlu"
     p = degree
 
     # Both lines must be simple closed curves, the inner inside the outer
@@ -1330,12 +1354,16 @@ def grid_inverse_harmonic(
         ]  # Shape (nq, p+1) for element 0
         # Global t index of local function b on element e
         S.tidx = (np.arange(nt)[:, None] + first + np.arange(p + 1)[None, :]) % nt
+        S.first = first
+        # Element for which global function t is the local function b
+        S.element_of_row = [(np.arange(nt) - first - b) % nt for b in range(p + 1)]
         S.weights = ((gauss_w / nex)[:, None] * (gauss_w / nt)[None, :]).ravel()
 
         S.free = np.arange(nt, (nr - 1) * nt)  # Interior dofs of one component
         S.fixed = np.concatenate((np.arange(nt), np.arange((nr - 1) * nt, S.ndof)))
         S.free2 = np.concatenate((S.free, S.free + S.ndof))
         S.patterns = {}
+        S.solvers = {}
 
         # Collocation matrices: Greville abscissae reproduce linear functions
         # in x; the centres of the periodic functions include the output
@@ -1355,62 +1383,147 @@ def grid_inverse_harmonic(
             coef = np.linalg.solve(S.colloc_t, pos)
             S.boundary[0, i] = coef.real
             S.boundary[1, i] = coef.imag
+
+        # Products of basis function derivatives at the quadrature points,
+        # which only depend on the element row. With these, element matrices
+        # are matrix products (see `element_matrices`).
+        def products(left, rights):
+            return np.stack(
+                [left[:, :, :, None] * right[:, :, None, :] for right in rights], axis=1
+            ).reshape(nex, len(rights) * nq * nq, -1)
+
+        exs = np.arange(nex)
+        grads = (tensor(S, exs, 1, 0), tensor(S, exs, 0, 1))
+        S.products_weak = np.concatenate(
+            [products(grads[b], grads) for b in range(2)], axis=1
+        )  # Index (beta, m, q)
+        hessian = (tensor(S, exs, 2, 0), tensor(S, exs, 1, 1), tensor(S, exs, 0, 2))
+        S.products_ndf = products(hessian[0] + hessian[2], hessian)
         return S
 
-    def element_indices(S, ex):
-        """Global dof of local function (a, b) on elements (ex, :)"""
-        ix = ex + np.arange(p + 1)
+    # The following work on a contiguous range `exs` of element rows at once
+
+    def element_indices(S, exs):
+        """Global dof of local function (a, b) on the elements of rows exs,
+        shape (len(exs), nt, (p+1)^2)"""
+        ix = exs[:, None] + np.arange(p + 1)
         return (
-            (ix[None, :, None] * S.nt + S.tidx[:, None, :])
-            .reshape(S.nt, -1)
+            (ix[:, None, :, None] * S.nt + S.tidx[None, :, None, :])
+            .reshape(len(exs), S.nt, -1)
             .astype(np.int32)
         )
 
-    def tensor(S, ex, dx, dt):
-        """Tensor basis derivative on element row ex, shape (qx*qt, a*b)"""
-        v = S.Bx[dx][ex][:, None, :, None] * S.Bt[dt][None, :, None, :]
-        return v.reshape(nq * nq, -1)
+    def tensor(S, exs, dx, dt):
+        """Tensor basis derivative, shape (len(exs), qx*qt, (p+1)^2)"""
+        v = S.Bx[dx][exs][:, :, None, :, None] * S.Bt[dt][None, None, :, None, :]
+        return v.reshape(len(exs), nq * nq, -1)
 
-    def evaluate(S, C, ex, derivs):
-        """Derivatives of R and Z at the quadrature points of element row
-        ex, shape (2, len(derivs), nt, qx*qt)"""
-        idx = element_indices(S, ex)
-        out = np.empty((2, len(derivs), S.nt, nq * nq))
+    def evaluate(S, C, exs, derivs):
+        """Derivatives of R and Z at the quadrature points of element rows
+        exs, shape (2, len(derivs), len(exs), nt, qx*qt)"""
+        idx = element_indices(S, exs)
+        out = np.empty((2, len(derivs), len(exs), S.nt, nq * nq))
         for k in range(2):
-            local = C[k].ravel()[idx]  # (nt, (p+1)^2)
+            local = C[k].ravel()[idx]  # (len(exs), nt, (p+1)^2)
             for i, (dx, dt) in enumerate(derivs):
-                out[k, i] = local @ tensor(S, ex, dx, dt).T
+                out[k, i] = local @ tensor(S, exs, dx, dt).transpose(0, 2, 1)
         return out
 
-    def bilinear(Ga, w, Gb):
-        """Element matrices sum_q Ga[q, a] w[e, q] Gb[q, b]"""
-        return np.matmul(Ga.T[None, :, :] * w[:, None, :], Gb)
+    def element_matrices(products, coefficients):
+        """Element matrices sum_i,q c[e, t, i, q] P[e, (i, q), (a, b)] for
+        the elements (e, t), given the coefficients c (len(exs), nt, i, q)
+        and the basis function products P (len(exs), i*q, (p+1)^4). Done as
+        one matrix product per element row, which is efficient in BLAS."""
+        shape = coefficients.shape
+        return coefficients.reshape(shape[0], shape[1], -1) @ products
 
-    def sparse(S, key, rows, cols, vals, rowset, colset, n):
-        """CSR matrix K[rowset][:, colset] from element contributions. The
+    def assemble_chunks(assemble_rows, S):
+        """Assemble chunks of element rows and sum the residuals and
+        matrices. Chunks are limited in size to bound the memory of
+        temporary arrays."""
+        nchunks = min(-(-S.nex * S.nt // 4096), S.nex)
+        parts = [assemble_rows(c) for c in np.array_split(np.arange(S.nex), nchunks)]
+        res = sum(part[0] for part in parts)
+        G = None if parts[0][1] is None else sum(part[1] for part in parts)
+        return res, G, min(part[2] for part in parts)
+
+    def stencil(S, n):
+        """Storage for the entries of an n x n block matrix, indexed by
+        (block row, block column, x index, x offset + p, t index,
+        t offset + p). Coupled basis functions are at most p apart."""
+        return np.zeros((n, n, S.nr, 2 * p + 1, S.nt, 2 * p + 1))
+
+    def add_local(S, G, exs, local):
+        """Add the element matrices `local` (len(exs), nt, (p+1)^2, (p+1)^2)
+        of element rows exs to the stencil block G (nr, 2p+1, nt, 2p+1)"""
+        local = local.reshape((len(exs), S.nt) + (p + 1,) * 4)
+        x = slice(exs[0], exs[-1] + 1)
+        for b in range(p + 1):
+            # Local function (a, b) of element (ex, e) is the global function
+            # (ex + a, e + first + b); its columns are at offsets
+            # (a2 - a, b2 - b) for the local functions (a2, b2)
+            rows = local[:, :, :, b][:, S.element_of_row[b]].transpose(0, 2, 3, 1, 4)
+            for a in range(p + 1):
+                G[
+                    x.start + a : x.stop + a,
+                    p - a : 2 * p - a + 1,
+                    :,
+                    p - b : 2 * p - b + 1,
+                ] += rows[:, a]
+
+    def sparse(S, key, G, rowset, colset):
+        """CSR matrix K[rowset][:, colset] from the stencil storage G. The
         sparsity pattern is the same for every assembly in a space, so the
-        mapping of contributions to matrix entries is computed only once."""
+        mapping from G to the matrix entries is computed only once."""
+        n = G.shape[0]
         if key not in S.patterns:
-            ndof = n * S.ndof
-            rmap = np.full(ndof, -1, dtype=np.int32)
+            # Basis functions are coupled if their supports overlap: within
+            # p functions in x, and periodically within p functions in t
+            def band(size, periodic):
+                i = np.repeat(np.arange(size), 2 * p + 1)
+                j = i + np.tile(np.arange(-p, p + 1), size)
+                if periodic:
+                    j %= size
+                keep = (j >= 0) & (j < size)
+                ones = np.ones(np.count_nonzero(keep))
+                return csr_matrix((ones, (i[keep], j[keep])), shape=(size, size))
+
+            pattern = kron(
+                np.ones((n, n)), kron(band(S.nr, False), band(S.nt, True)), format="csr"
+            )
+            pattern = pattern[rowset][:, colset].tocsr()
+            pattern.sort_indices()
+            entries = (
+                np.repeat(
+                    np.arange(len(rowset), dtype=np.int64), np.diff(pattern.indptr)
+                )
+                * len(colset)
+                + pattern.indices
+            )
+            # Row and column of every entry of G
+            k, l, ix, dx, it, dt = np.ix_(*(np.arange(m) for m in G.shape))
+            jx = ix + dx - p
+            row = (k * S.ndof + ix * S.nt + it) + 0 * (l + dx + dt)
+            col = l * S.ndof + jx * S.nt + (it + dt - p) % S.nt + 0 * k
+            rmap = np.full(n * S.ndof, -1)
             rmap[rowset] = np.arange(len(rowset))
-            cmap = np.full(ndof, -1, dtype=np.int32)
+            cmap = np.full(n * S.ndof, -1)
             cmap[colset] = np.arange(len(colset))
-            r = rmap[np.concatenate(rows)]
-            c = cmap[np.concatenate(cols)]
-            mask = (r >= 0) & (c >= 0)
-            keys = r[mask].astype(np.int64) * len(colset) + c[mask]
-            del r, c
-            entries = np.unique(keys)
-            slot = np.searchsorted(entries, keys).astype(np.int32)
-            del keys
-            indptr = np.searchsorted(entries // len(colset), np.arange(len(rowset) + 1))
-            indices = (entries % len(colset)).astype(np.int32)
-            S.patterns[key] = (mask, slot, indices, indptr.astype(np.int32))
-        mask, slot, indices, indptr = S.patterns[key]
-        data = np.bincount(
-            slot, weights=np.concatenate(vals)[mask], minlength=len(indices)
-        )
+            inside = ((jx >= 0) & (jx < S.nr)) + 0 * (k + l + it + dt) > 0
+            r = np.where(inside, rmap[row], -1)
+            c = np.where(inside, cmap[np.where(inside, col, 0)], -1)
+            valid = ((r >= 0) & (c >= 0)).ravel()
+            keys = r.ravel()[valid].astype(np.int64) * len(colset) + c.ravel()[valid]
+            slot = np.searchsorted(entries, keys)
+            assert np.array_equal(entries[slot], keys)
+            S.patterns[key] = (
+                valid,
+                slot.astype(np.int32),
+                pattern.indices.astype(np.int32),
+                pattern.indptr.astype(np.int32),
+            )
+        valid, slot, indices, indptr = S.patterns[key]
+        data = np.bincount(slot, weights=G.ravel()[valid], minlength=len(indices))
         return csr_matrix((data, indices, indptr), shape=(len(rowset), len(colset)))
 
     def metric_A(J):
@@ -1425,9 +1538,64 @@ def grid_inverse_harmonic(
         g = S.greville[None, :, None]
         return (1 - g) * S.boundary[:, :1] + g * S.boundary[:, 1:]
 
+    # One PARDISO instance is shared by all solvers (creating one searches
+    # for the MKL library), as they are used one after the other
+    pardiso = {"solver": None, "owner": None}
+
+    def make_pardiso_solver():
+        """PARDISO solver for a sequence of matrices with the same sparsity
+        pattern: the symbolic analysis is done only once"""
+        if pardiso["solver"] is None:
+            pardiso["solver"] = pypardiso.PyPardisoSolver()
+        solver = pardiso["solver"]
+        state = {"analysed": False, "factorised": None}
+
+        def solve(A, b):
+            if pardiso["owner"] is not state:
+                # Another kind of matrix was factorised in between
+                if pardiso["owner"] is not None:
+                    solver.free_memory(everything=True)
+                    pardiso["owner"]["analysed"] = False
+                pardiso["owner"] = state
+                state["analysed"] = False
+                state["factorised"] = None
+            same = A is state["factorised"]
+            state["factorised"] = A
+            A = A.tocsr()
+            A.sort_indices()
+            try:
+                # Numeric factorisation reusing the analysis, then solve
+                if not state["analysed"]:
+                    solver.set_phase(11)
+                    solver._call_pardiso(A, np.zeros((A.shape[0], 1)))
+                    state["analysed"] = True
+                if not same:
+                    solver.set_phase(22)
+                    solver._call_pardiso(A, np.zeros((A.shape[0], 1)))
+                solver.set_phase(33)
+                x = solver._call_pardiso(A, b.reshape(-1, 1)).ravel()
+            except AttributeError:  # pypardiso without the private interface
+                x = solver.solve(A, b)
+            if np.linalg.norm(A @ x - b) <= 1e-8 * np.linalg.norm(b):
+                return x
+            # PARDISO uses static pivoting; fall back to SuperLU if inaccurate
+            return splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A").solve(b)
+
+        def release():
+            # pypardiso does not free MKL's memory by itself
+            if pardiso["owner"] is state:
+                solver.free_memory(everything=True)
+                pardiso["owner"] = None
+
+        solve.release = release
+        return solve
+
     def make_solver():
-        """Sparse direct solver which reuses an old LU factorisation as a
-        GMRES preconditioner for as long as that converges quickly"""
+        """Sparse direct solver for a sequence of matrices with the same
+        sparsity pattern. With SuperLU, an old LU factorisation is reused as
+        a GMRES preconditioner for as long as that converges quickly."""
+        if use_pardiso:
+            return make_pardiso_solver()
         state = {"lu": None, "symmetric": True}
 
         def solve(A, b):
@@ -1461,40 +1629,47 @@ def grid_inverse_harmonic(
             state["lu"] = lu
             return x
 
+        solve.release = state.clear
         return solve
+
+    def get_solver(S, key):
+        """Linear solver for the matrices of one kind in space S"""
+        if key not in S.solvers:
+            S.solvers[key] = make_solver()
+        return S.solvers[key]
 
     def fixed_point(S, C, maxit=30, tolerance=1e-3):
         """Fixed point iteration on the nondivergence form, eqs. (22)-(24):
         A_mu(x_k) : H(x_{k+1}) = mu Laplace(x_k), tested with
         gamma * Laplace(phi). Only used to find an initial guess."""
         mu = 1e-4
-        linsolve = make_solver()
-        for it in range(maxit):
-            rows, cols, vals = [], [], []
+        linsolve = get_solver(S, "fixed point")
+
+        def assemble_rows(exs):
+            G = stencil(S, 1)
             rhs = np.zeros((2, S.ndof))
-            for ex in range(S.nex):
-                D = evaluate(S, C, ex, ((1, 0), (0, 1), (2, 0), (0, 2)))
-                A11, A12, A22 = metric_A(D[:, :2])
-                A11 = A11 + mu
-                A22 = A22 + mu
-                gamma = (A11 + A22) / (A11**2 + 2 * A12**2 + A22**2)
-                w = gamma * S.weights[None, :]
-                lap = tensor(S, ex, 2, 0) + tensor(S, ex, 0, 2)
-                local = (
-                    bilinear(lap, w * A11, tensor(S, ex, 2, 0))
-                    + bilinear(lap, 2 * w * A12, tensor(S, ex, 1, 1))
-                    + bilinear(lap, w * A22, tensor(S, ex, 0, 2))
-                )
-                lapx = D[:, 2] + D[:, 3]  # (2, nt, qx*qt)
-                idx = element_indices(S, ex)
-                for k in range(2):
-                    np.add.at(rhs[k], idx, mu * (w * lapx[k]) @ lap)
-                if "ff" not in S.patterns:
-                    rows.append(np.repeat(idx, idx.shape[1], axis=1).ravel())
-                    cols.append(np.tile(idx, (1, idx.shape[1])).ravel())
-                vals.append(local.ravel())
-            Kff = sparse(S, "ff", rows, cols, vals, S.free, S.free, 1)
-            Kfb = sparse(S, "fb", rows, cols, vals, S.free, S.fixed, 1)
+            D = evaluate(S, C, exs, ((1, 0), (0, 1), (2, 0), (0, 2)))
+            A11, A12, A22 = metric_A(D[:, :2])
+            A11 = A11 + mu
+            A22 = A22 + mu
+            gamma = (A11 + A22) / (A11**2 + 2 * A12**2 + A22**2)
+            w = gamma * S.weights
+            lap = tensor(S, exs, 2, 0) + tensor(S, exs, 0, 2)
+            # Laplace(phi) * (A11 phi_xx + 2 A12 phi_xt + A22 phi_tt)
+            local = element_matrices(
+                S.products_ndf[exs], np.stack((w * A11, 2 * w * A12, w * A22), axis=2)
+            )
+            lapx = D[:, 2] + D[:, 3]  # (2, len(exs), nt, qx*qt)
+            idx = element_indices(S, exs)
+            for k in range(2):
+                np.add.at(rhs[k], idx, mu * (w * lapx[k]) @ lap)
+            add_local(S, G[0, 0], exs, local)
+            return rhs, G, np.inf
+
+        for it in range(maxit):
+            rhs, G, _ = assemble_chunks(assemble_rows, S)
+            Kff = sparse(S, "ff", G, S.free, S.free)
+            Kfb = sparse(S, "fb", G, S.free, S.fixed)
             change = 0.0
             for k in range(2):
                 c = C[k].ravel()
@@ -1512,14 +1687,12 @@ def grid_inverse_harmonic(
         """Residual and Jacobian of the regularised weak form, eqs. (36)-(38),
         with the diffusivity omega = det(J)^-k, q = 1 + k (section 4.3,
         method 2)"""
-        res = np.zeros((2, S.ndof))
-        rows, cols, vals = [], [], []
-        mindet = np.inf
-        for ex in range(S.nex):
-            J = evaluate(S, C, ex, ((1, 0), (0, 1)))
+
+        def assemble_rows(exs):
+            res = np.zeros((2, S.ndof))
+            J = evaluate(S, C, exs, ((1, 0), (0, 1)))
             A11, A12, A22 = metric_A(J)
             det = J[0, 0] * J[1, 1] - J[0, 1] * J[1, 0]
-            mindet = min(mindet, np.amin(det))
             root = np.sqrt(4 * epsilon**2 + det**2)
             # Regularised det, eq. (38), avoiding cancellation for det < 0
             Rd = np.empty_like(det)
@@ -1529,14 +1702,13 @@ def grid_inverse_harmonic(
             dRd = Rd / root  # Derivative of Rd
             Rq = Rd**-q
             A = np.array([[A11, A12], [A12, A22]])
-            F = A * Rq  # (2, 2, nt, qx*qt): F[k, beta]
-            w = S.weights[None, :]
-            grads = (tensor(S, ex, 1, 0), tensor(S, ex, 0, 1))
-            idx = element_indices(S, ex)
+            F = A * Rq * S.weights  # (2, 2, len(exs), nt, qx*qt): F[k, beta]
+            grads = (tensor(S, exs, 1, 0), tensor(S, exs, 0, 1))
+            idx = element_indices(S, exs)
             for k in range(2):
-                np.add.at(res[k], idx, sum((F[k, b] * w) @ grads[b] for b in range(2)))
+                np.add.at(res[k], idx, sum(F[k, b] @ grads[b] for b in range(2)))
             if not need_matrix:
-                continue
+                return res, None, np.amin(det)
             # T[k, beta, l, m] = dF[k, beta] / dJ[l, m]
             cof = np.array([[J[1, 1], -J[1, 0]], [-J[0, 1], J[0, 0]]])
             dA = np.zeros((2, 2, 2, 2) + det.shape)
@@ -1547,26 +1719,28 @@ def grid_inverse_harmonic(
                 dA[0, 1, l, 1] = -J[l, 0]
                 dA[1, 0, l] = dA[0, 1, l]
             T = dA * Rq - q * A[:, :, None, None] * (Rq / Rd * dRd) * cof[None, None]
-            n = idx.shape[1]
+            T *= S.weights
+            G = stencil(S, 2)
             for k in range(2):
                 for l in range(2):
-                    local = sum(
-                        bilinear(grads[b], T[k, b, l, m] * w, grads[m])
-                        for b in range(2)
-                        for m in range(2)
+                    # sum_beta,m dphi/dbeta T[k, beta, l, m] dpsi/dm
+                    coefficients = np.moveaxis(T[k, :, l, :], (0, 1), (2, 3))
+                    local = element_matrices(
+                        S.products_weak[exs],
+                        coefficients.reshape(*det.shape[:2], 4, -1),
                     )
-                    if "newton" not in S.patterns:
-                        rows.append(np.repeat(idx + k * S.ndof, n, axis=1).ravel())
-                        cols.append(np.tile(idx + l * S.ndof, (1, n)).ravel())
-                    vals.append(local.ravel())
+                    add_local(S, G[k, l], exs, local)
+            return res, G, np.amin(det)
+
+        res, G, mindet = assemble_chunks(assemble_rows, S)
         if not need_matrix:
             return res, None, mindet
-        return res, sparse(S, "newton", rows, cols, vals, S.free2, S.free2, 2), mindet
+        return res, sparse(S, "newton", G, S.free2, S.free2), mindet
 
     def newton(S, C, epsilon, tolerance, q):
         """Damped Newton iteration on the regularised weak form. Converged
         when the full Newton update is smaller than the tolerance."""
-        linsolve = make_solver()
+        linsolve = get_solver(S, "newton")
         res, K, _ = assemble(S, C, epsilon, q)
         norm = np.linalg.norm(res[:, S.free])
         for it in range(maxiter):
@@ -1614,7 +1788,7 @@ def grid_inverse_harmonic(
         inverse harmonic map is computed first and used as initial guess,
         as recommended in section 4.3 of the paper."""
         if homogenize:
-            C, converged = newton(S, C, eps, max(tol, 1e-6), 1.0)
+            C, converged = newton(S, C, eps, max(tol, 1e-3), 1.0)
             if not converged:
                 return C, False
         return newton(S, C, eps, tol, 1.0 + homogenize)
@@ -1643,7 +1817,11 @@ def grid_inverse_harmonic(
     # If the map folds, refine the spline as suggested in the paper
     for refine in range(max_refine + 1):
         S = make_space(2**refine * resolution * (nx - 1), 2**refine * resolution * nz)
-        C, converged, mindet = solve(S)
+        try:
+            C, converged, mindet = solve(S)
+        finally:
+            for linsolve in S.solvers.values():
+                linsolve.release()
         if mindet > 0:
             if not converged:
                 warnings.warn(
