@@ -916,7 +916,9 @@ def first_wall_intersection_fast(wall, line, eps=1e-10):
         h = np.cross(direction, e2)
         a = np.einsum("ij,ij->i", e1, h)
 
-        valid = np.abs(a) > eps
+        # a scales with the cube of the size, so compare it relative to that
+        scale = seg_len * np.linalg.norm(e1, axis=1) * np.linalg.norm(e2, axis=1)
+        valid = np.abs(a) > eps * scale
         if not np.any(valid):
             continue
 

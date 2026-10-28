@@ -481,8 +481,12 @@ def test_hit_direction_and_start_location(mms_grid):
         assert np.all(result[f"{prefix}_hit_triangle"][~hit] == -1)
 
 
-def test_start_on_wall():
-    """Points on the wall must not hit it at their starting point"""
+@pytest.mark.parametrize("dphi_max", [0.01, 0.2])
+def test_start_on_wall(dphi_max):
+    """Points on the wall must not hit it at their starting point.
+    Regression: with long segments the refinement fails on the triangle
+    of the straight segment more often, and the search of the
+    neighbouring triangles found the start point"""
     nsections = 16
     wall = make_wall(nsections, 32)
     # Grid slices on wall sections, grid points on wall vertices
@@ -498,13 +502,126 @@ def test_start_on_wall():
             )
         )
     g = grid.Grid(polys, ycoords, yperiod, yperiodic=True)
-    result = intersection.find_wall_intersections(g, SpiralField(), wall, dphi_max=0.01)
+    result = intersection.find_wall_intersections(
+        g, SpiralField(), wall, dphi_max=dphi_max
+    )
 
     assert np.all(result["start_location"][-1] == intersection.ON_WALL)
     assert np.all(result["start_location"][:-1] == intersection.INSIDE)
     for prefix in ("forward", "backward"):
-        hit = result[f"{prefix}_status"] == intersection.HIT
+        hit = result[f"{prefix}_status"] > 0
+        assert np.any(hit[-1])
         assert np.all(result[f"{prefix}_hit_length"][hit] > 1e-6)
+
+
+@pytest.mark.parametrize(
+    "refine, status",
+    [
+        (True, intersection.HIT),
+        (False, intersection.HIT),
+        ("fails", intersection.HIT_UNREFINED),
+    ],
+)
+def test_crossings_lie_on_the_wall(mms_grid, monkeypatch, refine, status):
+    """Also crossings of the straight segment, if not refined or if the
+    refinement fails, are points of the faceted wall: regression, their
+    toroidal angle was that of the field line, not of the straight segment"""
+    if refine == "fails":
+        monkeypatch.setattr(
+            intersection,
+            "_refine_on_plane",
+            lambda segments, sel, cache, tri: (
+                np.zeros(len(tri)),
+                np.zeros(len(tri), bool),
+            ),
+        )
+    wall = make_wall(32, 64)
+    result = intersection.find_wall_intersections(
+        mms_grid, SpiralField(), wall, dphi_max=0.04, refine=bool(refine)
+    )
+    for prefix in ("forward", "backward"):
+        hit = result[f"{prefix}_status"] != intersection.NO_HIT
+        assert np.any(hit)
+        assert np.all(result[f"{prefix}_status"][hit] == status)
+        for phi, R, Z in zip(
+            result[f"{prefix}_hit_phi"][hit],
+            result[f"{prefix}_hit_R"][hit],
+            result[f"{prefix}_hit_Z"][hit],
+        ):
+            ring = shapely.LinearRing(np.column_stack(wall.section(phi)))
+            assert shapely.distance(ring, shapely.Point(R, Z)) < 1e-9
+
+
+# Unit triangle in the plane z = 0
+TRIANGLE = (np.zeros(3), np.array([1.0, 0, 0]), np.array([0.0, 1, 0]))
+
+
+@pytest.mark.parametrize(
+    "origin, direction, t_expected",
+    [
+        ([0.2, 0.2, 1], [0, 0, -2], 0.5),
+        # On an edge and at a vertex the crossing counts for each triangle
+        ([0.5, 0.5, 1], [0, 0, -2], 0.5),
+        ([0.5, 0.0, 1], [0, 0, -2], 0.5),
+        ([0.0, 0.0, 1], [0, 0, -2], 0.5),
+        ([1.0, 0.0, 1], [0, 0, -2], 0.5),
+        # The ends of the segment are included
+        ([0.2, 0.2, 1], [0, 0, -1], 1.0),
+        ([0.2, 0.2, 0], [0, 0, -1], 0.0),
+        ([0.2, 0.2, 1], [0.1, -0.1, -2], 0.5),
+        # Misses
+        ([0.2, 0.2, 1], [0, 0, -0.999], None),
+        ([0.2, 0.2, -0.001], [0, 0, -1], None),
+        ([0.6, 0.6, 1], [0, 0, -2], None),
+        ([-1e-9, 0.2, 1], [0, 0, -2], None),
+        # Parallel to the triangle, also in its plane, and zero length
+        ([0.2, 0.2, 1], [1, 0, 0], None),
+        ([-1.0, 0.2, 0], [2, 0, 0], None),
+        ([0.2, 0.2, 0], [0, 0, 0], None),
+    ],
+)
+@pytest.mark.parametrize("scale", [1.0, 1e-6, 1e3])
+def test_segment_triangle(origin, direction, t_expected, scale):
+    """Crossings of a segment with a triangle at their boundaries, at
+    any length scale"""
+    v0, e1, e2 = (scale * x[None] for x in TRIANGLE)
+    t, hit = intersection._segment_triangle(
+        scale * np.array([origin], dtype=float),
+        scale * np.array([direction], dtype=float),
+        v0,
+        e1,
+        e2,
+    )
+    if t_expected is None:
+        assert not hit[0]
+    else:
+        assert hit[0]
+        assert t[0] == pytest.approx(t_expected, abs=1e-12)
+
+
+def test_crossings_at_vertices_and_edges_are_found():
+    """The mesh has no gaps: straight lines through every vertex and edge
+    of the sections the wall was built from cross it, also at the period
+    boundary. The line ends on the wall in one segment and starts on it in
+    the next, also across the period boundary"""
+    wall = make_wall(16, 32)
+    for k in (0, 5, 16):
+        phi = wall.mesh_phi[k]
+        R, Z = wall.contours[k % 16].T
+        centre = np.mean(R), np.mean(Z)
+        for r, z in ((R, Z), (0.5 * (R + np.roll(R, -1)), 0.5 * (Z + np.roll(Z, -1)))):
+            # Within the section
+            Rs = np.vstack((np.full_like(r, centre[0]), 2 * r - centre[0]))
+            Zs = np.vstack((np.full_like(z, centre[1]), 2 * z - centre[1]))
+            segment, *_ = intersection.first_crossings(wall, Rs, Zs, np.full(2, phi))
+            assert np.all(segment == 0)
+
+            # From inside to outside, through a node on the wall
+            phis = phi + np.array([-0.01, 0.0, 0.01])
+            Rs = np.vstack((0.5 * (r + centre[0]), r, 1.5 * r - 0.5 * centre[0]))
+            Zs = np.vstack((0.5 * (z + centre[1]), z, 1.5 * z - 0.5 * centre[1]))
+            segment, *_ = intersection.first_crossings(wall, Rs, Zs, phis)
+            assert np.all(segment >= 0)
 
 
 def test_trace_failure():
@@ -581,55 +698,40 @@ def test_wall_periodic_closure():
     assert wall.to_base_period(-0.1)[0] == pytest.approx(yperiod - 0.1)
 
 
-def test_wall_normals_point_outwards():
-    for reverse in (False, True):
-        phis = np.linspace(0, yperiod, 8, endpoint=False)
-        theta = np.linspace(0, 2 * np.pi, 16, endpoint=False)
-        if reverse:
-            theta = theta[::-1]
-        lines = []
-        for phi in phis:
-            Rc, Zc = wall_centre(phi)
-            line = rzline.RZline(
-                Rc + rw * np.cos(theta), Zc + rw * np.sin(theta), anticlockwise=False
-            )
-            lines.append(line)
-        wall = wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
-
-        tri = wall.vertices[wall.triangles]
-        centroid = tri.mean(axis=1)
-        phi = np.arctan2(centroid[:, 1], centroid[:, 0])
-        Rc, Zc = wall_centre(phi)
-        axis = np.column_stack(wallgeometry.rzphi_to_xyz(Rc, Zc, phi))
-        assert np.all(np.einsum("ij,ij->i", wall.normals, centroid - axis) > 0)
-
-
-def test_wall_section():
-    wall = make_wall(8, 16)
-    # At a cross-section, the section is the contour
-    R, Z = wall.section(wall.mesh_phi[2])
-    Rc, Zc = wall_centre(wall.mesh_phi[2])
-    assert np.allclose(np.hypot(R - Rc, Z - Zc), rw)
-
-    # Between cross-sections the section lies on the facets, close to the
-    # exact wall, also in other periods
-    phi = 0.5 * (wall.mesh_phi[2] + wall.mesh_phi[3])
-    Rc, Zc = wall_centre(phi)
-    for shift in (0, yperiod, -2 * yperiod):
-        R, Z = wall.section(phi + shift)
-        assert np.allclose(np.hypot(R - Rc, Z - Zc), rw, atol=0.02)
-        R_fine, Z_fine = make_wall(32, 64).section(phi + shift)
-        assert np.allclose(np.hypot(R_fine - Rc, Z_fine - Zc), rw, atol=0.002)
-
-    Rc, Zc = wall_centre(wall.mesh_phi[0])
-    location = intersection.start_locations(
-        wall,
-        np.array([Ra, Ra + 1.0, Rc + rw]),
-        np.array([Za, Za, Zc]),
-        wall.mesh_phi[0],
-    )
-    assert list(location) == [
-        intersection.INSIDE,
-        intersection.OUTSIDE,
-        intersection.ON_WALL,
+@pytest.mark.parametrize("scale", [1e-2, 1e-3])
+def test_first_wall_intersection_independent_of_scale(scale):
+    """Regression: the test for segments parallel to a triangle used an
+    absolute tolerance, so that all crossings of a small wall were missed"""
+    phis = np.linspace(0, yperiod, 32, endpoint=False)
+    theta = np.linspace(0, 2 * np.pi, 64, endpoint=False)
+    lines = [
+        rzline.RZline(scale * (2 + 0.5 * np.cos(theta)), scale * 0.5 * np.sin(theta))
+        for _ in phis
     ]
+    wall = wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
+    R = scale * np.linspace(2.0, 2.8, 400)
+    line = np.column_stack(
+        wallgeometry.rzphi_to_xyz(R, np.zeros_like(R), np.full_like(R, 0.5 * yperiod))
+    )
+    point, *_ = wallgeometry.first_wall_intersection_fast(wall, line)
+    assert np.hypot(point[0], point[1]) == pytest.approx(2.5 * scale, rel=1e-9)
+
+
+def test_start_locations():
+    wall = make_wall(8, 16)
+    for shift in (0, yperiod, -2 * yperiod):
+        phi = wall.mesh_phi[0] + shift
+        Rc, Zc = wall_centre(phi)
+        location = intersection.start_locations(
+            wall,
+            np.array([Ra, Ra + 1.0, Rc + rw, Rc + rw - 1e-8, Rc + rw + 1e-8]),
+            np.array([Za, Za, Zc, Zc, Zc]),
+            phi,
+        )
+        assert list(location) == [
+            intersection.INSIDE,
+            intersection.OUTSIDE,
+            intersection.ON_WALL,
+            intersection.INSIDE,
+            intersection.OUTSIDE,
+        ]

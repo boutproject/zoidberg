@@ -414,8 +414,13 @@ def _refine_on_plane(segments, sel, cache, tri, niter=60):
     return u, ok
 
 
-def refine_crossings(magnetic_field, wall, R, Z, S, phis, segment, triangle, t, shift):
+def refine_crossings(
+    magnetic_field, wall, R, Z, S, phis, segment, triangle, t, shift, min_distance=1e-9
+):
     """Refine the crossing points found by `first_crossings`
+
+    Crossings on the first segment closer than min_distance to the
+    start of the line are ignored, as in `first_crossings`.
 
     Returns
     -------
@@ -433,8 +438,16 @@ def refine_crossings(magnetic_field, wall, R, Z, S, phis, segment, triangle, t, 
     segments = _Segments(magnetic_field, R, Z, S, phis, segment, shift)
     nhit = len(segment)
     all_hits = np.arange(nhit)
+    start = segments.xyz(np.zeros(nhit))
+
+    def away_from_start(u, sel):
+        """A line starting on the wall lies in the planes of the triangles
+        there, which the bisection would return as crossings"""
+        distance = np.linalg.norm(segments.xyz(u, sel) - start[sel], axis=1)
+        return (segment[sel] > 0) | (distance >= min_distance)
 
     u, refined = _refine_on_plane(segments, all_hits, cache, triangle)
+    refined &= away_from_start(u, all_hits)
     triangle = triangle.copy()
 
     # The curved field line can cross a neighbouring triangle instead.
@@ -450,6 +463,7 @@ def refine_crossings(magnetic_field, wall, R, Z, S, phis, segment, triangle, t, 
         pair_line, pair_tri = _candidate_pairs(cache, guess, seglen, retry)
         if pair_line.size > 0:
             u_pair, ok = _refine_on_plane(segments, pair_line, cache, pair_tri)
+            ok &= away_from_start(u_pair, pair_line)
             pair_line, pair_tri, u_pair = pair_line[ok], pair_tri[ok], u_pair[ok]
             order = np.lexsort((u_pair, pair_line))
             _, first = np.unique(pair_line[order], return_index=True)
@@ -566,6 +580,11 @@ def wall_intersections_between(
     chord = p0 + t[:, None] * (p1 - p0)
     chord_r = np.hypot(chord[:, 0], chord[:, 1])
     chord_s = Ss[k, hit] + t * (Ss[k + 1, hit] - Ss[k, hit])
+    # The chord is not at phis[k] + t * h, so turn from p0 to the crossing
+    chord_phi = phis[k] + np.arctan2(
+        p0[:, 0] * chord[:, 1] - p0[:, 1] * chord[:, 0],
+        p0[:, 0] * chord[:, 0] + p0[:, 1] * chord[:, 1],
+    )
 
     if refine:
         u, triangle_hit, refined, segments = refine_crossings(
@@ -579,12 +598,14 @@ def wall_intersections_between(
             triangle[hit],
             t,
             shift[hit],
+            min_distance=min_distance,
         )
         r, z, s, dr, dz = segments.evaluate(u)
         # Where the refinement failed, use the straight segment
         r = np.where(refined, r, chord_r)
         z = np.where(refined, z, chord[:, 2])
         s = np.where(refined, s, chord_s)
+        phi_hit = np.where(refined, segments.phi0 + u * segments.h, chord_phi)
         result["status"][hit] = np.where(refined, HIT, HIT_UNREFINED)
     else:
         u = t
@@ -594,9 +615,8 @@ def wall_intersections_between(
         )
         _, _, _, dr, dz = segments.evaluate(u)
         r, z, s = chord_r, chord[:, 2], chord_s
+        phi_hit = chord_phi
         result["status"][hit] = HIT
-
-    phi_hit = segments.phi0 + u * segments.h
 
     # Angle between the field line and the wall surface
     phi_b = phi_hit - segments.shift

@@ -495,14 +495,9 @@ CASES = {
     # Tolerances are about 1.5 times the errors at the time of writing.
     # With few points per section, the errors are mostly those of the
     # polygons themselves; with many, those of the triangles between them.
+    # The mesh does not depend on the start points of the contours, see
+    # test_independent_of_start_point_and_orientation
     "ellipse": (ellipse, 64, {"npoints": lambda j: 64}, 0.0011, 0.0012),
-    "ellipse_random_start": (
-        ellipse,
-        64,
-        {"npoints": lambda j: 64, "random_start": True},
-        0.0011,
-        0.0012,
-    ),
     "bean_clustered": (
         bean,
         48,
@@ -623,6 +618,35 @@ def test_sharp_corners_and_growing_notch():
         assert distance < tolerance
 
 
+def square(phi, t):
+    """Square that moves in R, t in [0, 1)"""
+    corners = np.array([[1.0, -0.5], [2.0, -0.5], [2.0, 0.5], [1.0, 0.5], [1.0, -0.5]])
+    s = np.linspace(0, 1, 5)
+    R = np.interp(t, s, corners[:, 0]) + 0.05 * np.sin(2 * np.pi * phi / yperiod)
+    return R, np.interp(t, s, corners[:, 1])
+
+
+def test_collinear_points_on_straight_sides():
+    """Many points on the straight sides of a polygon, as from CAD, with
+    different numbers of points on each side, give a valid wall close to
+    the exact one"""
+    phis = phis_for(24)
+    lines = []
+    for j, phi in enumerate(phis):
+        n = 5 + (3 * j) % 11
+        t = np.concatenate([(k + np.arange(n) / n) / 4 for k in range(4)])
+        lines.append(rzline.RZline(*square(phi, t), anticlockwise=False))
+    wall = wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
+    assert dense_sections_valid(wall, nfractions=20)
+    # The sides are exact, so the error is the sag of the triangles
+    # towards the axis plus that of the linear interpolation of the motion
+    sag = 2.05 * (1 - np.cos(np.pi / 5 / len(phis)))
+    motion = 0.05 * (2 * np.pi / len(phis)) ** 2 / 8
+    distance, area = error_to_exact(wall, square)
+    assert distance < 1.05 * (sag + motion)
+    assert area < 5e-4
+
+
 @pytest.mark.parametrize("aspect", [2, 10])
 def test_second_order_convergence_with_sections(aspect):
     """The faceted wall between the sections converges with second order,
@@ -684,14 +708,18 @@ def test_section_is_periodic():
         assert np.allclose(Rk, R, atol=1e-12) and np.allclose(Zk, Z, atol=1e-12)
 
 
+@pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("case", ["bean_varying_points", "notch"])
-def test_normals_point_out_of_concave_walls(case):
-    """A small step along the normal leaves the wall, against it enters"""
+def test_normals_point_out_of_concave_walls(case, reverse):
+    """A small step along the normal leaves the wall, against it enters,
+    whatever the orientation of the input contours"""
     phis = phis_for(24)
     if case == "notch":
         lines = notch_lines(phis)
     else:
         lines = sample(bean, phis, CASES[case][2]["npoints"], random_start=True)
+    if reverse:
+        lines = [Line(np.column_stack((line.R, line.Z))[::-1]) for line in lines]
     wall = wallgeometry.Wall(lines, phi=phis, yperiod=yperiod)
     tri = wall.vertices[wall.triangles]
     centroid = tri.mean(axis=1)
