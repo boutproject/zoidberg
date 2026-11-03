@@ -152,14 +152,19 @@ class FieldTracerReversible:
         field direction
     nsteps : int, optional
         Number of sub-steps between outputs
+    max_newton_iterations : int, optional
+        Maximum number of Newton iterations per sub-step
 
     """
 
-    def __init__(self, field, rtol=1e-8, eps=1e-5, nsteps=20):
+    def __init__(
+        self, field, rtol=1e-8, eps=1e-5, nsteps=20, max_newton_iterations=100
+    ):
         self.field_direction = field.field_direction
         self.rtol = float(rtol)
         self.eps = float(eps)
         self.nsteps = int(nsteps)
+        self.max_newton_iterations = int(max_newton_iterations)
 
     def follow_field_lines(
         self, x_values, z_values, y_values, rtol=None, eps=None, nsteps=None
@@ -241,9 +246,9 @@ class FieldTracerReversible:
 
         result = np.zeros((len(y_values),) + array_shape + (2,))
 
-        # Starting position
-        x_pos = x_values
-        z_pos = z_values
+        # Starting position. Copy, as these are updated in place
+        x_pos = np.array(x_values, dtype=float)
+        z_pos = np.array(z_values, dtype=float)
         y_pos = y_values[0]
 
         result[0, ..., 0] = x_pos
@@ -272,7 +277,7 @@ class FieldTracerReversible:
                 z_pos += dzdy * dy
                 y_pos += dy
 
-                while True:
+                for _ in range(self.max_newton_iterations):
                     dxdy, dzdy = self.field_direction((x_pos, z_pos), y_pos)
 
                     # Calculate derivatives (Jacobian matrix) by finite difference
@@ -309,6 +314,10 @@ class FieldTracerReversible:
                     # Check for convergence within tolerance
                     if np.amax(dx**2 + dz**2) < rtol:
                         break
+                else:
+                    raise RuntimeError(
+                        f"Newton iteration failed to converge at y = {y_pos}"
+                    )
                 # Finished Newton iteration, taken step to (x_pos,y_pos,z_pos)
             # Finished sub-steps, reached y_pos = y_next
             result[yindex, ..., 0] = x_pos
@@ -405,12 +414,42 @@ def trace_poincare(
 
 
 class CachingFieldTracer:
+    """Wrap a field tracer, caching results on disk
+
+    Parameters
+    ----------
+    tracer
+        The field tracer to wrap
+    cachename : str, optional
+        Filename template for the cache files, formatted with the hash
+    debug : bool, optional
+        Print debugging information
+    key : str, optional
+        Identifies the magnetic field / configuration being traced. The
+        cache key includes the tracer and field types and the tracing
+        arguments, but cannot detect other changes to the field, so use a
+        different key (or cachename) for different fields of the same type.
+    """
+
     def __init__(
-        self, tracer, cachename="_zoidberg_cache_tracing_%10.10s", debug=False
+        self,
+        tracer,
+        cachename="_zoidberg_cache_tracing_%10.10s",
+        debug=False,
+        key="",
     ):
         self.tracer = tracer
         self.cachename = cachename
         self.debug = debug
+        self.key = key
+
+    def _identity(self):
+        field = getattr(self.tracer, "field", None)
+        if field is None:
+            field = getattr(
+                getattr(self.tracer, "field_direction", None), "__self__", None
+            )
+        return f"{type(self.tracer).__qualname__}:{type(field).__qualname__}:{self.key}"
 
     def _myhash(self, *args):
         """
@@ -428,28 +467,31 @@ class CachingFieldTracer:
             m.update(s)
         return m.hexdigest()
 
-    def _guess_shape(self, x_values, y_values):
-        return len(y_values), *x_values.shape, 2
+    def _guess_shape(self, x_values, z_values, y_values):
+        xz_shape = np.broadcast(np.atleast_1d(x_values), np.atleast_1d(z_values)).shape
+        return len(np.atleast_1d(y_values)), *xz_shape, 2
 
     def follow_field_lines(self, x_values, z_values, y_values, **kwargs):
-        fn = self.cachename % self._myhash(x_values, z_values, y_values)
+        fn = self.cachename % self._myhash(
+            self._identity(),
+            sorted((k, str(v)) for k, v in kwargs.items()),
+            x_values,
+            z_values,
+            y_values,
+        )
+        shape = self._guess_shape(x_values, z_values, y_values)
         try:
             dat = np.loadtxt(fn)
-            dat.shape = self._guess_shape(x_values, y_values)
+            dat.shape = shape
             return dat
         except FileNotFoundError:
             if self.debug:
                 print("no cache", fn)
         ret = self.tracer.follow_field_lines(x_values, z_values, y_values, **kwargs)
-        shape = ret.shape
+        assert ret.shape == shape, f"Estimated {shape} but got {ret.shape}"
         if self.debug:
-            print(f"saving {ret.shape}, {x_values.shape}")
-        ret.shape = -1, shape[-1]
-        np.savetxt(fn, ret)
-        assert shape == self._guess_shape(x_values, y_values), (
-            f"Estimated {self._guess_shape(x_values, y_values)} but got {shape}"
-        )
-        ret.shape = shape
+            print(f"saving {ret.shape}")
+        np.savetxt(fn, ret.reshape(-1, ret.shape[-1]))
         return ret
 
 
@@ -766,8 +808,6 @@ class EMC3FieldTracer(FieldTracer):
         for i in itertools.product(*[range(x) for x in x_values.shape]):
             rz = np.array((x_values[i], z_values[i]))
             ab, ij, zid = self.rz_to_ab(rz, meshes[0], ij, zid)
-            if x_values.shape == ():
-                i = None
             out[(0, *i)] = rz
             ij1, zid1 = ij, zid
             cache = {0: (ab, ij, zid)}
@@ -956,7 +996,7 @@ class FusionSCTracer(FieldTracer):
         Z = z_values
         direction = "ccw" if y_values[0] < y_values[1] else "cw"
         pnts = fsc.flt.poincareInPhiPlanes(
-            [X, Y, Z], self.field, y_values[1:], 1, direction=direction, **self.kwargs
+            [X, Y, Z], self.field, y_values[1:], 1, direction=direction, **kwargs
         )
         assert pnts.shape[-1] == 1
         pnts = pnts[..., 0]

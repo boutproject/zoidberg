@@ -1157,7 +1157,11 @@ class SmoothedMagneticField(MagneticField):
         self.attributes = {}
 
     def Bxfunc(self, x, z, phi):
-        raise RuntimeError("Not implemented")
+        raise NotImplementedError("Not implemented")
+
+    def Bzfunc(self, x, z, phi):
+        # Don't fall back to the base class, which returns zeros
+        raise NotImplementedError("Not implemented")
 
     def Byfunc(self, x, z, phi):
         """
@@ -1336,7 +1340,7 @@ class W7X_vacuum(MagneticField):
         ny=32,
         nz=128,
         x_range=(4.05, 6.55),
-        z_range=(-1.35, 1, 35),
+        z_range=(-1.35, 1.35),
         phimax=2.0 * np.pi,
         configuration=0,
         plot_poincare=False,
@@ -1361,6 +1365,7 @@ class W7X_vacuum(MagneticField):
         r = np.linspace(x_range[0], x_range[-1], nx)
         phi = np.linspace(0, phimax, ny)
         z = np.linspace(z_range[0], z_range[-1], nz)
+        self.shape = nx, ny, nz
 
         self.attributes = {}
 
@@ -1516,6 +1521,7 @@ class W7X_vacuum(MagneticField):
 
         return Br, Bphi, Bz
 
+    @staticmethod
     def plasma_field(r, phi, z, wout_file="wout.nc"):
         """This uses EXTENDER via the IPP webservices to get the magnetic
         field from the plasma given 3d arrrays for R, phi, and Z. Only
@@ -1810,7 +1816,7 @@ class W7X_VMEC(MagneticField):
         if phi_range is None:
             phi_range = [0, 2 * np.pi]
         if z_range is None:
-            z_range = [-1.35, 1, 35]
+            z_range = [-1.35, 1.35]
         if x_range is None:
             x_range = [4.05, 6.55]
         r = np.linspace(x_range[0], x_range[-1], nx)
@@ -1848,20 +1854,18 @@ class W7X_VMEC(MagneticField):
         pos = vmec.types.Points3D()
 
         # x in Cartesian (real-space)
-        pos.x1 = np.ndarray.flatten(
-            np.ones((self.nx, self.ny, self.nz)) * r * np.cos(phi)
-        )
+        pos.x1 = np.ndarray.flatten(np.ones(self.shape) * r * np.cos(phi))
         # y in Cartesian (real-space)
-        pos.x2 = np.ndarray.flatten(
-            np.ones((self.nx, self.ny, self.nz)) * r * np.sin(phi)
-        )
-        pos.x3 = np.ndarray.flatten(z)  # z in Cartesian (real-space)
+        pos.x2 = np.ndarray.flatten(np.ones(self.shape) * r * np.sin(phi))
+        pos.x3 = np.ndarray.flatten(
+            np.ones(self.shape) * z
+        )  # z in Cartesian (real-space)
         b = vmec.service.magneticField(str(vmec_id), pos)
 
         ## Reshape to 3d array
-        Bx = np.ndarray.reshape(np.asarray(b.field.x1), (self.nx, self.ny, self.nz))
-        By = np.ndarray.reshape(np.asarray(b.field.x2), (self.nx, self.ny, self.nz))
-        Bz = np.ndarray.reshape(np.asarray(b.field.x3), (self.nx, self.ny, self.nz))
+        Bx = np.ndarray.reshape(np.asarray(b.field.x1), self.shape)
+        By = np.ndarray.reshape(np.asarray(b.field.x2), self.shape)
+        Bz = np.ndarray.reshape(np.asarray(b.field.x3), self.shape)
 
         ## Convert to cylindrical coordinates
         Br = Bx * np.cos(phi) + By * np.sin(phi)
@@ -1909,6 +1913,9 @@ class EMC3(MagneticField):
 
     def Bxyzfunc(self, x, z, phi):
         raise NotImplementedError("Use maybe EMC3 tracer?")
+
+    def Rfunc(self, x, z, phi):
+        return x
 
     def Bmag(self, x, z, phi):
         vals = self.ds.emc3.evaluate_at_rpz(x, phi, z, "Bmean", delta_phi=1e-6)[

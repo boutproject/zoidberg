@@ -97,7 +97,7 @@ def c4(f, axis, periodic=False):
     return out
 
 
-def field_line_length(RZ_coords, y_coords, refine=100):
+def field_line_length(RZ_coords, y_coords, refine=100, cylindrical=True):
     """
     This function takes the trace from a field line tracer and calculate
     the length along the points.
@@ -105,6 +105,9 @@ def field_line_length(RZ_coords, y_coords, refine=100):
     This is done by interpolating the points in cylindircal coordinates using
     a spline. Then the line is transformed to cartesian coordinates, where the
     sum of the point wise distance is computed.
+
+    If ``cylindrical`` is False, the coordinates are (x, z) and y is a
+    Cartesian coordinate rather than a toroidal angle.
     """
     from scipy.interpolate import CubicSpline as interp
 
@@ -120,8 +123,12 @@ def field_line_length(RZ_coords, y_coords, refine=100):
     slicer[0] = slice(None, None)
     y_fine = y_fine[tuple(slicer)]
 
-    X_fine = np.cos(y_fine) * R_fine
-    Y_fine = np.sin(y_fine) * R_fine
+    if cylindrical:
+        X_fine = np.cos(y_fine) * R_fine
+        Y_fine = np.sin(y_fine) * R_fine
+    else:
+        X_fine = R_fine
+        Y_fine = np.broadcast_to(y_fine, R_fine.shape)
 
     dXYZs = [(x[1:] - x[:-1]) ** 2 for x in [X_fine, Y_fine, Z_fine]]
     ds2 = np.sum(dXYZs, axis=0)

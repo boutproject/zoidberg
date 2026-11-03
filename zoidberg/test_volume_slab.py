@@ -45,6 +45,10 @@ class fld(zbfield.MagneticField):
     def Bzfunc(self, x, z, phi):
         return np.zeros(x.shape)
 
+    def Rfunc(self, x, z, phi):
+        # Cylindrical coordinates: y is the toroidal angle
+        return x
+
 
 # %% Create a slab grid and calculate the volumes of the cells
 
