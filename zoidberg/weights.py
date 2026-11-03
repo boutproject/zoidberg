@@ -448,8 +448,8 @@ def accumulate_interior_stencil(
         if hit_boundary:
             continue
 
-        x_base = int(mapped_x)
-        z_base = int(mapped_z)
+        x_base = int(np.floor(mapped_x))
+        z_base = int(np.floor(mapped_z))
 
         weights_x = catmull_rom_weights(mapped_x - x_base)
         weights_z = catmull_rom_weights(mapped_z - z_base)
