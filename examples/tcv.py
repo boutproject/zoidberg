@@ -1,16 +1,14 @@
 # This script creates a structured TCV grid.
 
-import sys
-import numpy as np
-import matplotlib.pyplot as plt
-import zoidberg as zb
 import json
-import xarray as xr
-import netCDF4
 
+import matplotlib.pyplot as plt
+import netCDF4
+import numpy as np
+import xarray as xr
 import zoidberg
+import zoidberg as zb
 from zoidberg.fieldtracer import trace_poincare
-from zoidberg.field import MagneticField
 
 
 def rzphi_to_xyz(r,z,phi):
@@ -36,7 +34,7 @@ def create_plate(x0,x1,z0,z1,n=50):
 
 
 
-class tcv_x21():
+class tcv_x21:
     def __init__(self, tcv_datafolderpath,
                  tcv_magneticfieldpath = "1.experimental_data/reference_scenario/" + "65402_t1.eqdsk",
                  tcv_divertordatapath = "1.experimental_data/reference_scenario/divertor_polygon.json"):
@@ -96,7 +94,7 @@ class tcv_x21():
             self.outer_line=zoidberg.rzline.RZline(newx,newz,smooth=0)
             
             if plotting:
-                fig,ax=plt.subplots()
+                _,ax=plt.subplots()
                 for i in range(np.shape(rzcoord)[0]):
                     ax.scatter(rzcoord[i,0,:,0],rzcoord[i,0,:,1],s=0.5,edgecolors="None", c="black")
                     
@@ -111,8 +109,7 @@ class tcv_x21():
                 ax.set_aspect("equal")
                 ax.scatter(self.divertordata["r_points"],self.divertordata["z_points"],c="green",edgecolors="None",s=1.0)
                 plt.show()
-        else:
-            raise("Wrong divertor option")
+
         
         
     def core(self, inner_fluxsurfaceposition, ddd_factor_core = 2, Rmaj = 0.9):
@@ -132,7 +129,7 @@ class tcv_x21():
         self.inner_line = inner_line.equallySpaced(n=self.nz)
         
     def plot_inner_outer(self, offset = 0.02,plot_plates=False):
-        fig,ax = plt.subplots(layout = "constrained")
+        _,ax = plt.subplots(layout = "constrained")
         ax.plot(self.outer_line.R, self.outer_line.Z)
         ax.plot(self.inner_line.R, self.inner_line.Z)
         for i in range(np.shape(self.poincare_RZ)[0]):
@@ -214,36 +211,34 @@ class tcv_x21():
         gridcopy=xr.open_dataset(self.filename)
         a=(gridcopy.forward_xt_prime)>(gridcopy.nx-3)
         b=(gridcopy.backward_xt_prime)>(gridcopy.nx-3)
-        indx=np.where(((a) & (b)))[0]
-        indy=np.where(((a) & (b)))[1]
-        indz=np.where(((a) & (b)))[2]
-        indxa=np.where(((a)))[0]
-        indya=np.where(((a)))[1]
-        indza=np.where(((a)))[2]
-        indxb=np.where(((b)))[0]
-        indyb=np.where(((b)))[1]
-        indzb=np.where(((b)))[2]
-        indall = np.where(((a) | (b)))
+
+        indxa=np.where(a)[0]
+        indya=np.where(a)[1]
+        indza=np.where(a)[2]
+        indxb=np.where(b)[0]
+        indyb=np.where(b)[1]
+        indzb=np.where(b)[2]
+
 
 
         
         thisy=0
         plt.close("all")
-        fig,(ax1)=plt.subplots(1,1,figsize=(4.8,4.8),layout="constrained")
+        _,(ax1)=plt.subplots(1,1,figsize=(4.8,4.8),layout="constrained")
         am=ax1.pcolormesh(gridcopy.R.isel(y=thisy),gridcopy.Z.isel(y=thisy),(a+b)[:,thisy,:])
         plt.colorbar(am, label = "cells outside xout")
         plt.show()
         
 
 
-        fig,(ax1)=plt.subplots(1,1,figsize=(4.8,4.8),layout="constrained")
+        _,(ax1)=plt.subplots(1,1,figsize=(4.8,4.8),layout="constrained")
         am=ax1.pcolormesh(gridcopy.R.isel(y=thisy),gridcopy.Z.isel(y=thisy),gridcopy.forward_xt_prime[:,thisy,:])
         plt.colorbar(am,label="foward_xt_prime")
         plt.show()
 
 
 
-        fig,(ax1)=plt.subplots(1,1,figsize=(4.8,4.8),layout="constrained")
+        _,(ax1)=plt.subplots(1,1,figsize=(4.8,4.8),layout="constrained")
         am=ax1.pcolormesh(gridcopy.R.isel(y=thisy),gridcopy.Z.isel(y=thisy),gridcopy.backward_xt_prime[:,thisy,:])
         plt.colorbar(am,label="backward_xt_prime")
         plt.show()
@@ -252,14 +247,14 @@ class tcv_x21():
         
         a=(gridcopy.forward_xt_prime) < 0.0
         b=(gridcopy.backward_xt_prime) < 0.0
-        indxa=np.where(((a)))[0]
-        indya=np.where(((a)))[1]
-        indza=np.where(((a)))[2]
-        indxb=np.where(((b)))[0]
-        indyb=np.where(((b)))[1]
-        indzb=np.where(((b)))[2]
+        indxa=np.where(a)[0]
+        indya=np.where(a)[1]
+        indza=np.where(a)[2]
+        indxb=np.where(b)[0]
+        indyb=np.where(b)[1]
+        indzb=np.where(b)[2]
         
-        fig,ax=plt.subplots()
+        _,ax=plt.subplots()
         ax.pcolormesh(gridcopy.R.isel(y=thisy),gridcopy.Z.isel(y=thisy),gridcopy.forward_xt_prime[:,thisy,:])
         for i in range(indxa.size):
             if indya[i]==0:
@@ -268,7 +263,7 @@ class tcv_x21():
         ax.set_aspect("equal")
         plt.show()
         
-        fig,ax=plt.subplots()
+        _,ax=plt.subplots()
         ax.pcolormesh(gridcopy.R.isel(y=thisy),gridcopy.Z.isel(y=thisy),gridcopy.backward_xt_prime[:,thisy,:])
         for i in range(indxa.size):
             if indya[i]==0:
@@ -277,7 +272,6 @@ class tcv_x21():
         ax.set_aspect("equal")
         plt.show()
         
-        # 
         if write_corrected:
             if self.divertoroption==1:
                 for i in range(indxa.size):
@@ -320,7 +314,11 @@ x_cutoff = 0.62
 
 # tcv_datafolderpath needs the path to the TCV-X21 Github repo
 # https://github.com/SPCData/TCV-X21
-tcv_datafolderpath 
+tcv_datafolderpath = "I need a path!"
+
+if tcv_datafolderpath=="I need a path!":
+    raise ValueError("tcv_datafolderpath needs to be the path to the TCV repo!")
+
 tcv = tcv_x21(tcv_datafolderpath=tcv_datafolderpath)
 
 
@@ -346,7 +344,7 @@ tcv.create_grids(restrict_size = 2560, align = False, inner_ort = True,
                  inner_maxmode = 4, nx_inner = 2, nx_outer = 0,
                  dz_relax = 1.75, redistribute=False,slab_diff = 0.05) #1.75
 
-fig,ax = tcv.plot_grid(show = False)
+_,ax = tcv.plot_grid(show = False)
 ax.plot(tcv.outer_line.R,tcv.outer_line.Z)
 plt.show()
 
@@ -356,12 +354,15 @@ plt.show()
 #%% Create the poloidal grids and create the maps
 
 # write_folder will determine where the grid will be saved.
-write_folder
+write_folder = "I need a path!"
+if write_folder=="I need a path!":
+    raise ValueError("write_folder needs to contain a path to the destination folder of the grid")
+
 tcv.write_grids(symmetry = symmetry, axysymmetric = False, write_folder =  write_folder, use_outside=False, return_maps=False)
 gc = tcv.correct_grids(write_corrected = True)
 
-fig,ax=plt.subplots()
-for i in range(0,5):
+_,ax=plt.subplots()
+for i in range(5):
     plt.plot(gc.backward_xt_prime[i,0,:],label=str(i))
 plt.legend()
 plt.show()
