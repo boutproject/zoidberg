@@ -1,14 +1,35 @@
 # This script creates a structured TCV grid.
 
 import json
+import os
+from urllib.request import urlretrieve
 
 import matplotlib.pyplot as plt
 import netCDF4
 import numpy as np
 import xarray as xr
+
 import zoidberg
 import zoidberg as zb
 from zoidberg.fieldtracer import trace_poincare
+
+# The required data files are downloaded from the TCV-X21 GitHub repository:
+# https://github.com/SPCData/TCV-X21
+TCV_X21_BASE_URL = "https://raw.githubusercontent.com/SPCData/TCV-X21/main/"
+
+# Files, relative to the TCV-X21 repository root, required by this example.
+TCV_X21_REQUIRED_FILES = [
+    "1.experimental_data/reference_scenario/65402_t1.eqdsk",
+    "1.experimental_data/reference_scenario/divertor_polygon.json",
+]
+
+
+def download_tcv_data(datafolderpath):
+    for relpath in TCV_X21_REQUIRED_FILES:
+        outpath = os.path.join(datafolderpath, relpath)
+        if not os.path.isfile(outpath):
+            os.makedirs(os.path.dirname(outpath), exist_ok=True)
+            urlretrieve(TCV_X21_BASE_URL + relpath, outpath)
 
 
 def rzphi_to_xyz(r, z, phi):
@@ -36,19 +57,24 @@ def create_plate(x0, x1, z0, z1, n=50):
 class tcv_x21:
     def __init__(
         self,
-        tcv_datafolderpath,
+        tcv_datafolderpath=None,
         tcv_magneticfieldpath="1.experimental_data/reference_scenario/"
         + "65402_t1.eqdsk",
         tcv_divertordatapath="1.experimental_data/reference_scenario/divertor_polygon.json",
     ):
-        self.datafolderpath = tcv_datafolderpath
+        # If no path to an existing TCV-X21 checkout is given, download the
+        # required files first.
+        self.datafolderpath = tcv_datafolderpath or "tcv_data"
+        download_tcv_data(self.datafolderpath)
         self.magneticfieldpath = tcv_magneticfieldpath
         self.magnetic_field = zoidberg.field.GEQDSK(
-            self.datafolderpath + self.magneticfieldpath
+            os.path.join(self.datafolderpath, self.magneticfieldpath)
         )
         self.divertordatapath = tcv_divertordatapath
 
-        with open(self.datafolderpath + self.divertordatapath, "r") as file:
+        with open(
+            os.path.join(self.datafolderpath, self.divertordatapath), "r"
+        ) as file:
             self.divertordata = json.load(file)
 
     def set_value(self, optdir, setting, value):
@@ -332,7 +358,7 @@ class tcv_x21:
 
         self.fn = f"TCV_X21_{self.nx}_{self.ny}_{self.nz}_{self.symmetry}_{self.divertoroption}.fci.grid.nc"
 
-        filename = self.write_folder + self.fn
+        filename = os.path.join(self.write_folder, self.fn)
         zoidberg.write_maps(
             self.grid, self.magnetic_field, self.maps, metric2d=False, gridfile=filename
         )
@@ -448,7 +474,7 @@ class tcv_x21:
                             self.nx
                         )
 
-            newfn = self.write_folder + "cor_" + self.fn
+            newfn = os.path.join(self.write_folder, "cor_" + self.fn)
             self.newfilename = newfn
             gridcopy.to_netcdf(newfn)
         return gridcopy
@@ -479,14 +505,11 @@ y_cutoff = -0.70
 # Inner Wall is at 0.625, we assume it is at 0.62
 x_cutoff = 0.62
 
-# tcv_datafolderpath needs the path to the TCV-X21 Github repo
-# https://github.com/SPCData/TCV-X21
-tcv_datafolderpath = "I need a path!"
-
-if tcv_datafolderpath == "I need a path!":
-    raise ValueError("tcv_datafolderpath needs to be the path to the TCV repo!")
-
-tcv = tcv_x21(tcv_datafolderpath=tcv_datafolderpath)
+# tcv_datafolderpath defaults to ./tcv_data. If the required files are not
+# present, they will be downloaded automatically from the TCV-X21 GitHub repo
+# (https://github.com/SPCData/TCV-X21). To use a local checkout instead,
+# pass its path: tcv = tcv_x21(tcv_datafolderpath="/path/to/TCV-X21/")
+tcv = tcv_x21()
 
 
 tcv.divertor(
@@ -531,12 +554,9 @@ plt.show()
 
 # %% Create the poloidal grids and create the maps
 
-# write_folder will determine where the grid will be saved.
-write_folder = "I need a path!"
-if write_folder == "I need a path!":
-    raise ValueError(
-        "write_folder needs to contain a path to the destination folder of the grid"
-    )
+# write_folder determines where the grid will be saved.
+# By default the current working directory is used.
+write_folder = os.getcwd() if len(sys.argv) < 2 else sys.argv[1]
 
 tcv.write_grids(
     symmetry=symmetry,
