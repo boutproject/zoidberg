@@ -1,0 +1,34 @@
+# This file requires prek rather than pre-commit
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+repos:
+- repo: builtin
+  hooks:
+    - id: trailing-whitespace
+    - id: end-of-file-fixer
+    - id: check-added-large-files
+
+# This would be nice to use, but it is a significant slowdown:
+
+# # Sync versions of hook tools with `uv.lock`
+# - repo: https://github.com/tsvikas/sync-with-uv
+#   rev: v0.5.0
+#   hooks:
+#     - id: sync-with-uv
+
+# Python linting and formatting
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.17.6
+  hooks:
+    # Run the linter.
+    - id: ruff-check
+    # Run the formatter.
+    - id: ruff-format
+
+# Various config files
+- repo: https://github.com/python-jsonschema/check-jsonschema
+  rev: 0.39.0
+  hooks:
+    - id: check-github-workflows
+    - id: check-dependabot

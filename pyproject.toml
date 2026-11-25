@@ -50,6 +50,13 @@ tests = [
     "shapely",
 ]
 
+[dependency-groups]
+dev = [
+     "prek>=0.4",
+     "ruff~=0.17",
+     "sync-with-uv~=0.6.0",
+]
+
 [project.scripts]
 zoidberg-rotating-ellipse = "zoidberg.examples.rotating_ellipse:main"
 zoidberg-screwpinch = "zoidberg.examples.screwpinch:main"
