@@ -1,5 +1,6 @@
-import zoidberg as zb
 import numpy as np
+
+import zoidberg as zb
 
 lst = [16, 32]  # , 64, 128]
 

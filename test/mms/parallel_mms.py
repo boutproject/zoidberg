@@ -1,6 +1,5 @@
-from mms_helper import extend, do_tests, plt, bc, np
+from mms_helper import bc, do_tests, extend, np, plt
 from parallel_grid import grids
-
 
 set1 = (
     lambda grid: np.sin(extend(grid["one"] * grid.phi) * 5),

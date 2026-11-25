@@ -1,8 +1,8 @@
 import boutpp as bc
-import xarray as xr
 import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
+import xarray as xr
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 lst = [4, 8, 16, 32, 64][:-1]
 

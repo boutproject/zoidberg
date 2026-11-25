@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
-import zoidberg
 import matplotlib.pyplot as plt
+
+import zoidberg
 
 nx = 5
 ny = 6

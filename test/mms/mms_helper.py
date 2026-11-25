@@ -1,9 +1,9 @@
+import boutconfig
+import boutpp as bc
+import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
-import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-import boutpp as bc
-import boutconfig
 
 assert (
     boutconfig.isMetric3D()

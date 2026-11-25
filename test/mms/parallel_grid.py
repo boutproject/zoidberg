@@ -1,9 +1,10 @@
 import warnings
 
-import zoidberg as zb
 import numpy as np
 import xarray as xr
 from mms_helper import lst
+
+import zoidberg as zb
 
 
 def ident(a, b):

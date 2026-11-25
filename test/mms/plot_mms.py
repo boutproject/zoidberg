@@ -1,6 +1,7 @@
+import sys
+
 import matplotlib.pyplot as plt
 import xarray as xr
-import sys
 
 
 def plot(ds, var, i):
