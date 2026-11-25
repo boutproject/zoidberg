@@ -20,7 +20,7 @@ class FixedCurvedSlab(zb.field.CurvedSlab):
 
 
 def gen_name(*args):
-    nx, ny, nz, R0, r0, r1, mode = args
+    nx, ny, nz, R0, _r0, _r1, mode = args
     return f"delp_{modes[mode][0]}_{nx}_{ny}_{nz}_{R0}.fci.nc"
 
 

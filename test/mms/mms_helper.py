@@ -57,7 +57,7 @@ def test(fn, inpf, anaf, testfunc, iname):
     l2 = np.sqrt(np.mean(clean(ana - calc)[1:-1] ** 2))
 
     if 1:
-        fig, axs = plt.subplots(1, 4)
+        _fig, axs = plt.subplots(1, 4)
         calcd = clean(calc)[:, 1]
         rz = [clean(extend(grid[d]))[:, 1] for d in "RZ"]
         anad = ana[:, 1]

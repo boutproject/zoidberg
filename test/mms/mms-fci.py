@@ -42,7 +42,6 @@ def fixup(fn):
     dzn = np.sqrt((diff(R, 2)) ** 2 + (diff(Z, 2)) ** 2)
     dzn /= np.mean(dzn) * R.shape[2] / 2 / np.pi
     ny = R.shape[1]
-    dy = 2 * np.pi / 5 / ny
 
     g = np.empty((3, 3), dtype=object)
     for i in range(3):
@@ -117,7 +116,7 @@ def test(fn):
     l2 = np.sqrt(np.mean(clean(ana - calc)[2:-2, 1:-1] ** 2))
     ## print(fn, l2)
     #
-    fig, axs = plt.subplots(1, 3)
+    _fig, axs = plt.subplots(1, 3)
     calcd = clean(calc)[:, 1]
     anad = ana[:, 1]
     for dat, label, ax in zip(
