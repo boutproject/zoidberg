@@ -2,8 +2,9 @@
 
 # Demonstrates how to generate Poincare plots of magnetic fields
 
-import zoidberg
 import numpy as np
+
+import zoidberg
 
 # Size of the domain in y (periodic)
 yperiod = 10.0

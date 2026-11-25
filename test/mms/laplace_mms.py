@@ -1,6 +1,5 @@
-from mms_helper import extend, do_tests, plt, bc, np
 from laplace_grid import grids
-
+from mms_helper import bc, do_tests, extend, np, plt
 
 sets = [
     # (

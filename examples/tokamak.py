@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import numpy as np
+
 import zoidberg
 
 field = zoidberg.field.GEQDSK("test_1.geqdsk")  # Read magnetic field

@@ -1,9 +1,10 @@
 import warnings
 
-import zoidberg as zb
 import numpy as np
 import xarray as xr
 from mms_helper import lst
+
+import zoidberg as zb
 
 print(zb.__path__)
 modes = [
@@ -13,7 +14,7 @@ modes = [
 
 
 def gen_name(*args):
-    nx, ny, nz, R0, r0, r1, mode = args
+    nx, ny, nz, R0, _r0, _r1, mode = args
     return f"radial_{modes[mode][0]}_{nx}_{ny}_{nz}_{R0}.fci.nc"
 
 

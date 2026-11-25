@@ -1,8 +1,7 @@
 import boutpp as bc
 import matplotlib.pyplot as plt
 import numpy as np
-
-from mms_helper import extend, do_tests
+from mms_helper import do_tests, extend
 from poloidal_grid import grids
 
 

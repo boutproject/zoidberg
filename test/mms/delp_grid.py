@@ -1,8 +1,9 @@
 import warnings
 
-import zoidberg as zb
 import numpy as np
 import xarray as xr
+
+import zoidberg as zb
 
 lst = [16, 32]
 
@@ -19,7 +20,7 @@ class FixedCurvedSlab(zb.field.CurvedSlab):
 
 
 def gen_name(*args):
-    nx, ny, nz, R0, r0, r1, mode = args
+    nx, ny, nz, R0, _r0, _r1, mode = args
     return f"delp_{modes[mode][0]}_{nx}_{ny}_{nz}_{R0}.fci.nc"
 
 
@@ -52,7 +53,7 @@ def gen_grid(nx, ny, nz, R0, r0, r1, mode=0):
         category=UserWarning,
     )
     with xr.open_dataset("tmp.nc") as ds:
-        for k in "g11,g33,g_11,g_33,nx,ny,nz".split(","):
+        for k in ["g11", "g33", "g_11", "g_33", "nx", "ny", "nz"]:
             assert np.all(ds[k] > 0)
         dims = ds.dz.dims
         ds["r_minor"] = dims, one * r[:, None, :]

@@ -6,7 +6,6 @@ import numpy as np
 
 import zoidberg
 
-
 #############################################################################
 # Define the magnetic field
 
@@ -74,7 +73,7 @@ maps = zoidberg.make_maps(grid, magnetic_field)
 
 filename = "stellarator.fci.nc"
 
-print("Writing to grid file '{0}'".format(filename))
+print(f"Writing to grid file '{filename}'")
 zoidberg.write_maps(
     grid, magnetic_field, maps, gridfile=filename, new_names=False, metric2d=False
 )
